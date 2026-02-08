@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from sqlalchemy import func
-import models, schemas
+from . import models, schemas
 
 def get_detailed_report_stats(db: Session):
     # Tickets por Cliente (Top 10)
@@ -156,11 +156,42 @@ def get_or_create_default_category(db: Session):
         db.refresh(db_cat)
     return db_cat
 
+# --- Status CRUD ---
+def get_statuses(db: Session):
+    return db.query(models.Status).all()
+
+def create_status(db: Session, status: schemas.StatusCreate):
+    db_status = models.Status(**status.dict())
+    db.add(db_status)
+    db.commit()
+    db.refresh(db_status)
+    return db_status
+
+def delete_status(db: Session, status_id: int):
+    db_status = db.query(models.Status).filter(models.Status.id == status_id).first()
+    if db_status:
+        db.delete(db_status)
+        db.commit()
+        return True
+    return False
+
+def get_or_create_default_status(db: Session):
+    default_name = "Aberto"
+    db_status = db.query(models.Status).filter(models.Status.name == default_name).first()
+    if not db_status:
+        db_status = models.Status(name=default_name, color="#3b82f6")
+        db.add(db_status)
+        db.commit()
+        db.refresh(db_status)
+    return db_status
+
 # --- Ticket CRUD ---
-def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None):
+def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None):
     query = db.query(models.Ticket)
     if status:
         query = query.filter(models.Ticket.status == status)
+    if client_id:
+        query = query.filter(models.Ticket.client_id == client_id)
     return query.offset(skip).limit(limit).all()
 
 def create_ticket(db: Session, ticket: schemas.TicketCreate):
@@ -168,6 +199,16 @@ def create_ticket(db: Session, ticket: schemas.TicketCreate):
     if not ticket_data.get("category_id"):
         default_cat = get_or_create_default_category(db)
         ticket_data["category_id"] = default_cat.id
+    
+    if not ticket_data.get("status_id"):
+        default_status = get_or_create_default_status(db)
+        ticket_data["status_id"] = default_status.id
+        ticket_data["status"] = default_status.name
+    else:
+        # Sincroniza o nome do status se o ID for passado
+        db_status = db.query(models.Status).filter(models.Status.id == ticket_data["status_id"]).first()
+        if db_status:
+            ticket_data["status"] = db_status.name
         
     db_ticket = models.Ticket(**ticket_data)
     db.add(db_ticket)
@@ -193,7 +234,10 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
         default_cat = get_or_create_default_category(db)
         ticket_data["category_id"] = default_cat.id
     
-    db_ticket = models.Ticket(**ticket_data, client_id=client.id)
+    # Lógica de status padrão
+    default_status = get_or_create_default_status(db)
+    
+    db_ticket = models.Ticket(**ticket_data, client_id=client.id, status_id=default_status.id, status=default_status.name)
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)
@@ -213,6 +257,12 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
     db_ticket = get_ticket(db, ticket_id)
     if db_ticket:
         update_data = ticket_update.dict(exclude_unset=True)
+        # Se atualizar status_id, sincroniza o nome do status
+        if "status_id" in update_data:
+            db_status = db.query(models.Status).filter(models.Status.id == update_data["status_id"]).first()
+            if db_status:
+                update_data["status"] = db_status.name
+
         for key, value in update_data.items():
             setattr(db_ticket, key, value)
         db.commit()

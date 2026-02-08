@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getTickets, updateTicket, deleteTicket, getCategories, Ticket, Category } from '@/lib/api';
-import { Loader2, AlertCircle, CheckCircle, Clock, Trash2, RefreshCw, Pencil, X, Save, ReceiptText, ExternalLink } from 'lucide-react';
+import { getTickets, updateTicket, deleteTicket, getCategories, getStatuses, Ticket, Category, Status } from '@/lib/api';
+import { Loader2, AlertCircle, CheckCircle, Clock, Trash2, RefreshCw, Pencil, X, Save, ReceiptText, ExternalLink, Hash } from 'lucide-react';
 import { useNotification } from '@/components/NotificationProvider';
 import clsx from 'clsx';
 import Link from 'next/link';
@@ -24,56 +24,98 @@ export default function TicketList({
     const [actionId, setActionId] = useState<number | null>(null);
 
     const [categories, setCategories] = useState<Category[]>([]);
+    const [statuses, setStatuses] = useState<Status[]>([]);
 
     useEffect(() => {
-        loadTickets();
-        loadCategories();
+        loadData();
     }, []);
 
-    const loadCategories = async () => {
-        try {
-            const data = await getCategories();
-            setCategories(data);
-        } catch (error) {
-            console.error('Failed to load categories:', error);
-        }
-    };
-
-    const loadTickets = async () => {
+    const loadData = async () => {
         setLoading(true);
         try {
-            const data = await getTickets();
-            setTickets(data);
-        } catch (error) {
-            console.error('Failed to load tickets:', error);
+            const [ticketsData, catsData, statusesData] = await Promise.all([
+                getTickets(),
+                getCategories(),
+                getStatuses()
+            ]);
+            setTickets(ticketsData);
+            setCategories(catsData);
+            setStatuses(statusesData);
+        } catch (error: any) {
+            console.error('Failed to load data:', error);
+            if (error.message === 'Network Error') {
+                showNotification('Erro de conexão. Verifique se o servidor está rodando ou se a URL na tela de Ajustes está correta.', 'error');
+            } else {
+                showNotification('Erro ao carregar dados', 'error');
+            }
         } finally {
             setLoading(false);
         }
     };
 
-    const handleStatusChange = async (id: number, currentStatus: string) => {
-        const statuses = ['open', 'in_progress', 'closed'];
-        const nextStatus = statuses[(statuses.indexOf(currentStatus) + 1) % statuses.length];
+    const handleStatusChange = async (ticketId: number, currentStatusName: string) => {
+        if (statuses.length === 0) return;
+
+        // Encontra o índice do status atual
+        const currentIndex = statuses.findIndex(s => s.name === currentStatusName);
+        // Pega o próximo status (ciclo)
+        const nextIndex = (currentIndex + 1) % statuses.length;
+        const nextStatus = statuses[nextIndex];
 
         try {
-            setActionId(id);
-            await updateTicket(id, { status: nextStatus });
-            setTickets(tickets.map(t => t.id === id ? { ...t, status: nextStatus } : t));
-            showNotification(`Status alterado para ${nextStatus}`, 'info');
+            setActionId(ticketId);
+            // Atualiza enviando tanto o ID quanto o nome para garantir sincronia
+            await updateTicket(ticketId, {
+                status_id: nextStatus.id,
+                status: nextStatus.name
+            });
+
+            // Atualiza localmente
+            setTickets(tickets.map(t => {
+                if (t.id === ticketId) {
+                    return {
+                        ...t,
+                        status: nextStatus.name,
+                        status_id: nextStatus.id,
+                        status_obj: nextStatus
+                    };
+                }
+                return t;
+            }));
+
+            showNotification(`Status alterado para ${nextStatus.name}`, 'info');
         } catch (error) {
+            console.error(error);
             showNotification('Falha ao atualizar o status', 'error');
         } finally {
             setActionId(null);
         }
     };
 
-    const statusIcon = (status: string) => {
-        switch (status) {
-            case 'open': return <AlertCircle className="w-4 h-4 text-red-500" />;
-            case 'in_progress': return <Clock className="w-4 h-4 text-yellow-500" />;
-            case 'closed': return <CheckCircle className="w-4 h-4 text-green-500" />;
-            default: return <AlertCircle className="w-4 h-4 text-gray-500" />;
+    const getStatusStyle = (statusName: string, statusObj?: Status) => {
+        // Se tivermos o objeto de status vindo do ticket, usamos ele direto
+        if (statusObj) {
+            return {
+                color: statusObj.color,
+                bg: `bg-[${statusObj.color}]/10`, // Tailwind arbitrary values might not work dynamically without whitelist, so we use style prop
+                name: statusObj.name
+            };
         }
+
+        // Fallback: tenta encontrar na lista de status carregados
+        const found = statuses.find(s => s.name === statusName);
+        if (found) {
+            return {
+                color: found.color,
+                name: found.name
+            };
+        }
+
+        // Fallback final para status padrão se não encontrado
+        return {
+            color: '#9ca3af', // gray-400
+            name: statusName
+        };
     };
 
     const priorityColor = (priority: string) => {
@@ -90,7 +132,7 @@ export default function TicketList({
         return (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
                 <Loader2 className="w-12 h-12 animate-spin text-accent-theme opacity-20" />
-                <p className="text-gray-500 text-xs font-bold uppercase tracking-widest animate-pulse">Carregando Chamados...</p>
+                <p className="text-gray-500 text-xs font-black uppercase tracking-widest animate-pulse">Carregando Chamados...</p>
             </div>
         );
     }
@@ -132,36 +174,50 @@ export default function TicketList({
                                 const matchCategory = !categoryId || t.category_id === categoryId;
 
                                 return matchSearch && matchStatus && matchPriority && matchCategory;
-                            }).map((ticket) => (
-                                <tr key={ticket.id} className="group hover:bg-background/40 transition-colors cursor-default">
-                                    <td className="px-6 py-4 font-mono text-gray-500 text-[11px]">#{ticket.id}</td>
-                                    <td className="px-6 py-4">
-                                        <Link href={`/tickets/${ticket.id}`} className="block group/link">
-                                            <div className="font-bold text-foreground group-hover:text-accent-theme transition-colors flex items-center gap-2">
-                                                {ticket.title}
-                                                <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-50 transition-opacity" />
-                                            </div>
-                                            <div className="text-[11px] text-gray-400 truncate max-w-xs">{ticket.description}</div>
-                                        </Link>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <button
-                                            onClick={() => handleStatusChange(ticket.id, ticket.status)}
-                                            disabled={actionId === ticket.id}
-                                            className="flex items-center gap-2 hover:bg-background p-1.5 rounded-lg transition-all group/status"
-                                            title="Clique para alternar status"
-                                        >
-                                            {actionId === ticket.id ? <Loader2 className="w-4 h-4 animate-spin" /> : statusIcon(ticket.status)}
-                                            <span className="capitalize font-medium">{ticket.status.replace('_', ' ')}</span>
-                                        </button>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={clsx("px-3 py-1 rounded-full text-[10px] font-black uppercase border tracking-widest", priorityColor(ticket.priority))}>
-                                            {ticket.priority}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
+                            }).map((ticket) => {
+                                const style = getStatusStyle(ticket.status, ticket.status_obj);
+
+                                return (
+                                    <tr key={ticket.id} className="group hover:bg-background/40 transition-colors cursor-default">
+                                        <td className="px-6 py-4 font-mono text-gray-500 text-[11px]">#{ticket.id}</td>
+                                        <td className="px-6 py-4">
+                                            <Link href={`/tickets/${ticket.id}`} className="block group/link">
+                                                <div className="font-bold text-foreground group-hover:text-accent-theme transition-colors flex items-center gap-2">
+                                                    {ticket.title}
+                                                    <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-50 transition-opacity" />
+                                                </div>
+                                                <div className="text-[11px] text-gray-400 truncate max-w-xs">{ticket.description}</div>
+                                            </Link>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <button
+                                                onClick={() => handleStatusChange(ticket.id, ticket.status)}
+                                                disabled={actionId === ticket.id}
+                                                className="flex items-center gap-2 hover:bg-background p-1.5 rounded-lg transition-all group/status"
+                                                title="Clique para avançar status"
+                                            >
+                                                {actionId === ticket.id ? <Loader2 className="w-4 h-4 animate-spin text-accent-theme" /> : (
+                                                    <div
+                                                        className="w-3 h-3 rounded-full shadow-sm"
+                                                        style={{ backgroundColor: style.color }}
+                                                    />
+                                                )}
+                                                <span
+                                                    className="capitalize font-medium text-xs"
+                                                    style={{ color: style.color }}
+                                                >
+                                                    {style.name}
+                                                </span>
+                                            </button>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={clsx("px-3 py-1 rounded-full text-[10px] font-black uppercase border tracking-widest", priorityColor(ticket.priority))}>
+                                                {ticket.priority}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>

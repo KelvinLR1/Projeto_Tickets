@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from database import Base
+from .database import Base
 
 class Client(Base):
     __tablename__ = "clients"
@@ -25,6 +25,15 @@ class Category(Base):
     parent = relationship("Category", remote_side=[id], back_populates="subcategories")
     subcategories = relationship("Category", back_populates="parent", cascade="all, delete-orphan")
     tickets = relationship("Ticket", back_populates="category")
+    
+class Status(Base):
+    __tablename__ = "statuses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, unique=True)
+    color = Column(String, default="#3b82f6") # Tailwind color Hex
+    
+    tickets = relationship("Ticket", back_populates="status_obj")
 
 class Ticket(Base):
     __tablename__ = "tickets"
@@ -33,14 +42,16 @@ class Ticket(Base):
     client_id = Column(Integer, ForeignKey("clients.id"))
     title = Column(String, index=True)
     description = Column(Text)
-    status = Column(String, default="open") # open, in_progress, closed
-    priority = Column(String, default="medium") # low, medium, high, critical
+    status = Column(String, default="Aberto") # Mantido como string para compatibilidade, mas status_id é preferido
+    status_id = Column(Integer, ForeignKey("statuses.id"), nullable=True)
+    priority = Column(String, default="Média") # Baixa, Média, Alta, Crítica
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     client = relationship("Client", back_populates="tickets")
     category = relationship("Category", back_populates="tickets")
+    status_obj = relationship("Status", back_populates="tickets")
     messages = relationship("TicketMessage", back_populates="ticket")
 
 class TicketMessage(Base):

@@ -22,7 +22,12 @@ app = FastAPI(title="Sistema de Tickets Offline")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Em produção, troque por ["http://localhost:3000"]
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -153,6 +158,22 @@ def delete_category(cat_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Category not found")
     return {"message": "Category deleted"}
 
+# --- Status Endpoints ---
+@app.get("/statuses/", response_model=List[schemas.Status])
+def read_statuses(db: Session = Depends(get_db)):
+    return crud.get_statuses(db)
+
+@app.post("/statuses/", response_model=schemas.Status)
+def create_status(status: schemas.StatusCreate, db: Session = Depends(get_db)):
+    return crud.create_status(db=db, status=status)
+
+@app.delete("/statuses/{status_id}")
+def delete_status(status_id: int, db: Session = Depends(get_db)):
+    success = crud.delete_status(db=db, status_id=status_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Status not found")
+    return {"message": "Status deleted"}
+
 # --- Tickets Endpoints ---
 @app.post("/tickets/", response_model=schemas.Ticket)
 def create_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db)):
@@ -163,8 +184,8 @@ def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depen
     return crud.create_ticket_simple(db=db, ticket=ticket)
 
 @app.get("/tickets/", response_model=List[schemas.Ticket])
-def read_tickets(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    tickets = crud.get_tickets(db, skip=skip, limit=limit)
+def read_tickets(skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, db: Session = Depends(get_db)):
+    tickets = crud.get_tickets(db, skip=skip, limit=limit, status=status, client_id=client_id)
     return tickets
 
 @app.get("/dashboard/stats")

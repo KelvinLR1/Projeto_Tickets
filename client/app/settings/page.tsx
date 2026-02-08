@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, RotateCcw, Globe, Cpu, Palette, CheckCircle2, ChevronDown, Loader2 } from 'lucide-react';
 import { getOllamaModels } from '@/lib/ollama';
 import { useTheme } from '@/components/ThemeProvider';
-import { getCategories, createCategory, deleteCategory, Category } from '@/lib/api';
+import { getCategories, createCategory, deleteCategory, Category, getStatuses, createStatus, deleteStatus, Status } from '@/lib/api';
 import { FolderPlus, Tag, Trash2, PlusCircle } from 'lucide-react';
 import { useNotification } from '@/components/NotificationProvider';
 import clsx from 'clsx';
@@ -39,6 +39,12 @@ export default function SettingsPage() {
     const [parentCategory, setParentCategory] = useState<string>('');
     const [loadingCats, setLoadingCats] = useState(false);
 
+    // Estado Status
+    const [statuses, setStatuses] = useState<Status[]>([]);
+    const [newStatusName, setNewStatusName] = useState('');
+    const [newStatusColor, setNewStatusColor] = useState('#3b82f6');
+    const [loadingStatuses, setLoadingStatuses] = useState(false);
+
     useEffect(() => {
         const localConfig = localStorage.getItem('system_config');
         if (localConfig) {
@@ -46,7 +52,20 @@ export default function SettingsPage() {
         }
         loadModels();
         fetchCategories();
+        fetchStatuses();
     }, []);
+
+    const fetchStatuses = async () => {
+        setLoadingStatuses(true);
+        try {
+            const data = await getStatuses();
+            setStatuses(data);
+        } catch (error) {
+            console.error('Failed to statuses:', error);
+        } finally {
+            setLoadingStatuses(false);
+        }
+    };
 
     const fetchCategories = async () => {
         setLoadingCats(true);
@@ -91,6 +110,40 @@ export default function SettingsPage() {
                 showNotification('Categoria removida', 'success');
             } catch (error) {
                 showNotification('Erro ao excluir categoria', 'error');
+            }
+        }
+    };
+
+    const handleCreateStatus = async () => {
+        if (!newStatusName.trim()) return;
+        try {
+            await createStatus({
+                name: newStatusName,
+                color: newStatusColor
+            });
+            setNewStatusName('');
+            fetchStatuses();
+            showNotification('Status criado!', 'success');
+        } catch (error) {
+            showNotification('Erro ao criar status', 'error');
+        }
+    };
+
+    const handleDeleteStatus = async (id: number) => {
+        const confirmed = await askConfirm({
+            title: 'Excluir Status',
+            message: 'Deseja excluir este status? Tickets associados manterão o nome do status mas perderão o vínculo de cor.',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (confirmed) {
+            try {
+                await deleteStatus(id);
+                fetchStatuses();
+                showNotification('Status removido', 'success');
+            } catch (error) {
+                showNotification('Erro ao excluir status', 'error');
             }
         }
     };
@@ -291,87 +344,73 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
-                {/* Gestão de Categorias */}
+                {/* Gestão de Status */}
                 <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden group transition-all">
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <Tag className="w-24 h-24" />
+                        <CheckCircle2 className="w-24 h-24" />
                     </div>
-                    <div className="flex items-center gap-3 text-emerald-500">
-                        <div className="p-2.5 bg-emerald-500/10 rounded-xl">
-                            <Tag className="w-6 h-6" />
+                    <div className="flex items-center gap-3 text-blue-500">
+                        <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                            <CheckCircle2 className="w-6 h-6" />
                         </div>
-                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Taxonomia e Categorias</h2>
+                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Fluxo e Status de Chamado</h2>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                         {/* Formulário */}
                         <div className="space-y-6">
-                            <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">Estruturar Nova</h3>
+                            <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Novo Estado</h3>
                             <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
                                 <div>
-                                    <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Descrição Curta</label>
+                                    <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Status</label>
                                     <input
-                                        className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-emerald-500/30 outline-none transition-all shadow-sm"
-                                        placeholder="Ex: Hardware, Software..."
-                                        value={newCategoryName}
-                                        onChange={e => setNewCategoryName(e.target.value)}
+                                        className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-blue-500/30 outline-none transition-all shadow-sm"
+                                        placeholder="Ex: Em Teste, Aguardando Cliente..."
+                                        value={newStatusName}
+                                        onChange={e => setNewStatusName(e.target.value)}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Relacionar ao Pai (Opcional)</label>
-                                    <div className="relative">
-                                        <select
-                                            className="w-full appearance-none bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm outline-none cursor-pointer pr-10"
-                                            value={parentCategory}
-                                            onChange={e => setParentCategory(e.target.value)}
-                                        >
-                                            <option value="">Categoria Principal</option>
-                                            {categories.map(cat => (
-                                                <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Representação Visual (Cor)</label>
+                                    <div className="flex items-center gap-4">
+                                        <input
+                                            type="color"
+                                            className="w-12 h-12 rounded-lg bg-transparent cursor-pointer border-none p-0 overflow-hidden"
+                                            value={newStatusColor}
+                                            onChange={e => setNewStatusColor(e.target.value)}
+                                        />
+                                        <input
+                                            className="flex-1 bg-[var(--color-input)] border border-border-theme rounded-xl p-3 text-xs font-mono outline-none"
+                                            value={newStatusColor}
+                                            onChange={e => setNewStatusColor(e.target.value)}
+                                        />
                                     </div>
                                 </div>
                                 <button
-                                    onClick={handleCreateCategory}
-                                    className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/20 active:scale-95"
+                                    onClick={handleCreateStatus}
+                                    className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-500/20 active:scale-95"
                                 >
                                     <PlusCircle className="w-4 h-4" />
-                                    Confirmar Identidade
+                                    Adicionar ao Fluxo
                                 </button>
                             </div>
                         </div>
 
-                        {/* Listagem Hieárquica */}
+                        {/* Listagem */}
                         <div className="space-y-6">
-                            <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">Estrutura de Dados</h3>
+                            <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Lista de Estados Ativos</h3>
                             <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
-                                {loadingCats ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-500" /></div> :
-                                    categories.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum registro mapeado.</div> :
-                                        categories.map(cat => (
-                                            <div key={cat.id} className="space-y-2">
-                                                <div className="flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                                                        <span className="text-sm font-bold tracking-tight">{cat.name}</span>
-                                                    </div>
-                                                    <button onClick={() => handleDeleteCategory(cat.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover/item:opacity-100 transition-all">
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
+                                {loadingStatuses ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></div> :
+                                    statuses.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum status customizado.</div> :
+                                        statuses.map(st => (
+                                            <div key={st.id} className="flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-4 h-4 rounded-full border border-white/10 shadow-sm" style={{ backgroundColor: st.color }} />
+                                                    <span className="text-sm font-bold tracking-tight">{st.name}</span>
                                                 </div>
-                                                {/* Subcategorias */}
-                                                {cat.subcategories?.map(sub => (
-                                                    <div key={sub.id} className="flex items-center justify-between p-3 ml-8 bg-background/30 rounded-2xl border border-border-theme/40 group/sub hover:bg-background/50 transition-all">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/20" />
-                                                            <span className="text-xs text-[var(--color-text-muted)] font-medium">{sub.name}</span>
-                                                        </div>
-                                                        <button onClick={() => handleDeleteCategory(sub.id)} className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg opacity-0 group-hover/sub:opacity-100 transition-all">
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
-                                                ))}
+                                                <button onClick={() => handleDeleteStatus(st.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover/item:opacity-100 transition-all">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
                                             </div>
                                         ))}
                             </div>
@@ -458,6 +497,6 @@ export default function SettingsPage() {
                     </button>
                 </div>
             </div>
-        </main>
+        </main >
     );
 }

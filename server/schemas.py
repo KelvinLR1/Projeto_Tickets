@@ -22,6 +22,20 @@ class CategoryWithSub(Category):
 # Necessário para recursive schemas
 CategoryWithSub.update_forward_refs()
 
+# --- Status Schemas ---
+class StatusBase(BaseModel):
+    name: str
+    color: str = "#3b82f6"
+
+class StatusCreate(StatusBase):
+    pass
+
+class Status(StatusBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
 # --- Client Schemas ---
 class ClientBase(BaseModel):
     name: str
@@ -60,11 +74,12 @@ class TicketMessage(TicketMessageBase):
 class TicketBase(BaseModel):
     title: str
     description: str
-    priority: str = "medium" # low, medium, high, critical
+    priority: str = "Média"
 
 class TicketCreate(TicketBase):
     client_id: int
     category_id: Optional[int] = None
+    status_id: Optional[int] = None
 
 class TicketCreateSimple(TicketBase):
     client_name: str
@@ -82,7 +97,9 @@ class Ticket(TicketBase):
     id: int
     client_id: int
     category_id: Optional[int] = None
+    status_id: Optional[int] = None
     status: str
+    status_obj: Optional[Status] = None
     created_at: datetime
     updated_at: datetime
     client: Optional[Client] = None

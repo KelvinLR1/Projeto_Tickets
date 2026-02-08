@@ -9,16 +9,42 @@ const api = axios.create({
 });
 
 // Interceptor para usar URL dinâmica das configurações
+// Interceptor para usar URL dinâmica das configurações
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const localConfig = localStorage.getItem('system_config');
     if (localConfig) {
-      const { apiUrl } = JSON.parse(localConfig);
-      if (apiUrl) config.baseURL = apiUrl;
+      try {
+        const { apiUrl } = JSON.parse(localConfig);
+        if (apiUrl) {
+          // Remove trailing slash if present to avoid double slashes
+          config.baseURL = apiUrl.replace(/\/$/, "");
+        }
+      } catch (e) {
+        console.error("Erro ao ler configurações locais:", e);
+      }
     }
   }
+  console.log(`[API] Requesting: ${config.baseURL}${config.url}`, config);
   return config;
 });
+
+api.interceptors.response.use(
+  response => response,
+  error => {
+    const errorDetails = error.toJSON ? error.toJSON() : { message: error.message, stack: error.stack };
+    console.error('[API Error Detailed]', {
+      ...errorDetails,
+      config: {
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+        method: error.config?.method,
+        headers: error.config?.headers
+      }
+    });
+    return Promise.reject(error);
+  }
+);
 
 export interface Ticket {
   id: number;
@@ -29,6 +55,8 @@ export interface Ticket {
   client_id: number;
   category_id?: number;
   category?: Category;
+  status_id?: number;
+  status_obj?: Status;
   created_at: string;
 }
 
@@ -46,6 +74,12 @@ export interface Client {
   cpf_cnpj?: string;
   phone?: string;
   created_at?: string;
+}
+
+export interface Status {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export interface DashboardStats {
@@ -80,8 +114,10 @@ export const getClients = async () => {
   return response.data;
 };
 
-export const getTickets = async () => {
-  const response = await api.get<Ticket[]>('/tickets/');
+export const getTickets = async (clientId?: number) => {
+  const response = await api.get<Ticket[]>('/tickets/', {
+    params: { client_id: clientId }
+  });
   return response.data;
 };
 
@@ -180,6 +216,21 @@ export const createCategory = async (cat: Omit<Category, 'id' | 'subcategories'>
 
 export const deleteCategory = async (id: number) => {
   const response = await api.delete(`/categories/${id}`);
+  return response.data;
+};
+
+export const getStatuses = async () => {
+  const response = await api.get<Status[]>('/statuses/');
+  return response.data;
+};
+
+export const createStatus = async (status: Omit<Status, 'id'>) => {
+  const response = await api.post<Status>('/statuses/', status);
+  return response.data;
+};
+
+export const deleteStatus = async (id: number) => {
+  const response = await api.delete(`/statuses/${id}`);
   return response.data;
 };
 

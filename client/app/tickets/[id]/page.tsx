@@ -2,19 +2,29 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getTicket, Ticket, getCategories, Category, getClients, Client } from '@/lib/api';
-import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare } from 'lucide-react';
+import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket } from '@/lib/api';
+import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
 import clsx from 'clsx';
+import { useNotification } from '@/components/NotificationProvider';
 
 export default function TicketDetailsPage() {
     const params = useParams();
     const router = useRouter();
+    const { showNotification, confirm: askConfirm } = useNotification();
+
     const [ticket, setTicket] = useState<Ticket | null>(null);
     const [loading, setLoading] = useState(true);
     const [client, setClient] = useState<Client | null>(null);
     const [category, setCategory] = useState<Category | null>(null);
+    const [statuses, setStatuses] = useState<Status[]>([]);
+
+    const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+    const [isClosingClientModal, setIsClosingClientModal] = useState(false);
+    const [clientTickets, setClientTickets] = useState<Ticket[]>([]);
+    const [loadingClientTickets, setLoadingClientTickets] = useState(false);
+    const [updatingStatus, setUpdatingStatus] = useState(false);
 
     useEffect(() => {
         if (params.id) {
@@ -26,18 +36,16 @@ export default function TicketDetailsPage() {
         setLoading(true);
         try {
             const ticketId = parseInt(params.id as string);
-            const ticketData = await getTicket(ticketId);
-            setTicket(ticketData);
 
-            // Carregar cliente e categoria em paralelo se necessário
-            // Nota: Se o ticket já trouxer categoria e cliente via join no backend, 
-            // podemos usar direto. Mas como o Ticket interface no api.ts sugere client_id,
-            // vamos buscar para garantir detalhes completos.
-
-            const [clientsData, catsData] = await Promise.all([
+            const [ticketData, clientsData, catsData, statusesData] = await Promise.all([
+                getTicket(ticketId),
                 getClients(),
-                getCategories()
+                getCategories(),
+                getStatuses()
             ]);
+
+            setTicket(ticketData);
+            setStatuses(statusesData);
 
             const foundClient = clientsData.find(c => c.id === ticketData.client_id);
             setClient(foundClient || null);
@@ -60,19 +68,105 @@ export default function TicketDetailsPage() {
 
         } catch (error) {
             console.error('Failed to load ticket details:', error);
+            showNotification('Erro ao carregar detalhes', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    const statusConfig = (status: string) => {
-        switch (status) {
-            case 'open': return { label: 'Aberto', icon: AlertCircle, color: 'text-red-500', bg: 'bg-red-500/10 border-red-500/20' };
-            case 'in_progress': return { label: 'Em Progresso', icon: Clock, color: 'text-yellow-500', bg: 'bg-yellow-500/10 border-yellow-500/20' };
-            case 'closed': return { label: 'Concluído', icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10 border-green-500/20' };
-            default: return { label: status, icon: AlertCircle, color: 'text-gray-500', bg: 'bg-gray-500/10 border-gray-500/20' };
+    const loadClientTickets = async (clientId: number) => {
+        setLoadingClientTickets(true);
+        try {
+            const tickets = await getTickets(clientId);
+            // Ordena por data e pega os últimos 5 (exceto o atual)
+            const filtered = tickets
+                .filter((t: Ticket) => t.id !== ticket?.id)
+                .sort((a: Ticket, b: Ticket) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .slice(0, 5);
+            setClientTickets(filtered);
+        } catch (error) {
+            console.error('Failed to load client tickets:', error);
+        } finally {
+            setLoadingClientTickets(false);
         }
     };
+
+    const handleClientClick = () => {
+        if (client) {
+            setIsClientModalOpen(true);
+            setIsClosingClientModal(false);
+            loadClientTickets(client.id);
+        }
+    };
+
+    const closeClientModal = () => {
+        setIsClosingClientModal(true);
+    };
+
+    const handleStatusChange = async (newStatusId: string) => {
+        if (!ticket) return;
+
+        const statusId = parseInt(newStatusId);
+        const selectedStatus = statuses.find(s => s.id === statusId);
+
+        if (!selectedStatus) return;
+
+        setUpdatingStatus(true);
+        try {
+            await updateTicket(ticket.id, {
+                status_id: selectedStatus.id,
+                status: selectedStatus.name
+            });
+
+            setTicket({
+                ...ticket,
+                status: selectedStatus.name,
+                status_id: selectedStatus.id,
+                status_obj: selectedStatus
+            });
+
+            showNotification(`Status atualizado para ${selectedStatus.name}`, 'success');
+        } catch (error) {
+            console.error(error);
+            showNotification('Erro ao atualizar status', 'error');
+        } finally {
+            setUpdatingStatus(false);
+        }
+    };
+
+    const handleCloseTicket = async () => {
+        if (!ticket) return;
+
+        const confirmed = await askConfirm({
+            title: 'Encerrar Ticket',
+            message: 'Deseja marcar este ticket como concluído?',
+            type: 'info'
+        });
+
+        if (!confirmed) return;
+
+        // Tenta encontrar um status que pareça "Concluído"
+        const closedStatus = statuses.find(s =>
+            ['concluído', 'concluido', 'fechado', 'closed', 'finalizado', 'resolvido'].includes(s.name.toLowerCase())
+        ) || statuses[statuses.length - 1]; // Fallback: último status da lista (geralmente o final do fluxo)
+
+        if (closedStatus) {
+            handleStatusChange(closedStatus.id.toString());
+        } else {
+            showNotification('Nenhum status de conclusão encontrado.', 'warning');
+        }
+    };
+
+    const getStatusStyle = (statusObj?: Status, statusName?: string) => {
+        if (statusObj) return { color: statusObj.color };
+
+        const found = statuses.find(s => s.name === statusName);
+        if (found) return { color: found.color };
+
+        return { color: '#9ca3af' }; // gray-400 fallback
+    };
+
+    const currentStatusStyle = getStatusStyle(ticket?.status_obj, ticket?.status);
 
     const priorityColor = (priority: string) => {
         switch (priority) {
@@ -107,8 +201,6 @@ export default function TicketDetailsPage() {
         );
     }
 
-    const { label, icon: StatusIcon, color, bg } = statusConfig(ticket.status);
-
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
             <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -124,10 +216,32 @@ export default function TicketDetailsPage() {
                     </button>
 
                     <div className="flex items-center gap-4">
-                        <span className={clsx("px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border", bg, color)}>
-                            <StatusIcon className="w-3 h-3 inline-block mr-2 -mt-0.5" />
-                            {label}
-                        </span>
+                        <div className="relative group/status">
+                            <div
+                                className="flex items-center gap-2 px-4 py-2 rounded-full border transition-all cursor-pointer hover:brightness-110"
+                                style={{
+                                    backgroundColor: `${currentStatusStyle.color}15`, // 10% opacity hex
+                                    borderColor: `${currentStatusStyle.color}30`,
+                                    color: currentStatusStyle.color
+                                }}
+                            >
+                                {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-2 h-2 rounded-full" style={{ backgroundColor: currentStatusStyle.color }} />}
+                                <select
+                                    className="appearance-none bg-transparent border-none text-[10px] font-black uppercase tracking-[0.2em] outline-none cursor-pointer pr-4"
+                                    value={ticket.status_id || ''}
+                                    onChange={(e) => handleStatusChange(e.target.value)}
+                                    style={{ color: currentStatusStyle.color }}
+                                >
+                                    {statuses.map(s => (
+                                        <option key={s.id} value={s.id} className="bg-zinc-900 text-gray-300">
+                                            {s.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="w-3 h-3 absolute right-3 pointer-events-none opacity-50 block" />
+                            </div>
+                        </div>
+
                         <span className={clsx("px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em]", priorityColor(ticket.priority))}>
                             {ticket.priority}
                         </span>
@@ -154,25 +268,33 @@ export default function TicketDetailsPage() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                            <div className="flex items-center gap-5 p-5 rounded-3xl bg-background/40 border border-border-theme/30">
-                                <div className="w-14 h-14 rounded-2xl premium-gradient flex items-center justify-center text-white shadow-xl">
+                            <button
+                                onClick={handleClientClick}
+                                className="flex items-center gap-5 p-5 rounded-3xl bg-background/40 border border-border-theme/30 hover:bg-white/5 hover:border-accent-theme/30 transition-all text-left group/client"
+                            >
+                                <div className="w-14 h-14 rounded-2xl premium-gradient flex items-center justify-center text-white shadow-xl group-hover/client:scale-110 transition-transform">
                                     <User className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Solicitante</p>
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 group-hover/client:text-accent-theme transition-colors">Solicitante</p>
                                     <p className="font-bold text-lg">{client?.name || 'Cliente Desconhecido'}</p>
                                     <p className="text-xs text-gray-500">{client?.email || 'Sem e-mail'}</p>
                                 </div>
-                            </div>
+                            </button>
 
                             <div className="flex items-center gap-5 p-5 rounded-3xl bg-background/40 border border-border-theme/30">
                                 <div className="w-14 h-14 rounded-2xl bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme shadow-xl">
-                                    <Tag className="w-6 h-6" />
+                                    <ShieldCheck className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Área / Categoria</p>
-                                    <p className="font-bold text-lg">{category?.name || 'Sem Categoria'}</p>
-                                    <p className="text-xs text-accent-theme font-medium uppercase tracking-[0.1em]">Técnico</p>
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Técnico Responsável</p>
+                                    <p className="font-bold text-lg">Sistema / Antigravity</p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: currentStatusStyle.color }} />
+                                        <p className="text-xs font-black uppercase tracking-[0.1em]" style={{ color: currentStatusStyle.color }}>
+                                            {ticket?.status || 'Aberto'}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -209,7 +331,10 @@ export default function TicketDetailsPage() {
                                 <button className="w-full py-4 rounded-2xl bg-background border border-border-theme text-foreground font-bold text-[10px] uppercase tracking-widest hover:bg-white/5 transition-all">
                                     Anexar Arquivos
                                 </button>
-                                <button className="w-full py-4 rounded-2xl border border-red-500/20 text-red-500 font-bold text-[10px] uppercase tracking-widest hover:bg-red-500/10 transition-all">
+                                <button
+                                    onClick={handleCloseTicket}
+                                    className="w-full py-4 rounded-2xl border border-red-500/20 text-red-500 font-bold text-[10px] uppercase tracking-widest hover:bg-red-500/10 transition-all"
+                                >
                                     Encerrar Ticket
                                 </button>
                             </div>
@@ -236,6 +361,137 @@ export default function TicketDetailsPage() {
                 </div>
 
             </div>
+
+            {/* Modal de Detalhes do Cliente */}
+            {(isClientModalOpen || isClosingClientModal) && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className={clsx(
+                            "absolute inset-0 bg-background/80 backdrop-blur-sm",
+                            isClosingClientModal ? "animate-fade-out" : "animate-fade-in"
+                        )}
+                        onClick={closeClientModal}
+                    />
+
+                    <div
+                        className={clsx(
+                            "relative w-full max-w-2xl glass-card rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden",
+                            isClosingClientModal ? "animate-modal-out" : "animate-modal-in"
+                        )}
+                        onAnimationEnd={(e) => {
+                            if (e.animationName === 'modal-out') {
+                                setIsClosingClientModal(false);
+                                setIsClientModalOpen(false);
+                            }
+                        }}
+                    >
+                        {/* Header do Modal */}
+                        <div className="premium-gradient p-8 text-white relative">
+                            <button
+                                onClick={closeClientModal}
+                                className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+                            >
+                                <ArrowLeft className="w-5 h-5 rotate-90" />
+                            </button>
+                            <div className="flex items-center gap-6">
+                                <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center">
+                                    <User className="w-10 h-10" />
+                                </div>
+                                <div>
+                                    <h2 className="text-3xl font-black uppercase italic tracking-tight">{client?.name}</h2>
+                                    <p className="text-white/60 text-xs font-bold uppercase tracking-widest mt-1">Perfil do Cliente</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            {/* Informações Cadastrais */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">E-mail</p>
+                                    <p className="text-sm font-medium">{client?.email || 'N/A'}</p>
+                                </div>
+                                <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">CPF / CNPJ</p>
+                                    <p className="text-sm font-medium">{client?.cpf_cnpj || 'N/A'}</p>
+                                </div>
+                                <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Telefone</p>
+                                    <p className="text-sm font-medium">{client?.phone || 'N/A'}</p>
+                                </div>
+                                <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Desde</p>
+                                    <p className="text-sm font-medium">{client?.created_at ? new Date(client.created_at).toLocaleDateString() : 'N/A'}</p>
+                                </div>
+                            </div>
+
+                            {/* Histórico de Chamados */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme flex items-center gap-2">
+                                        <Clock className="w-3 h-3" />
+                                        Últimos Chamados
+                                    </h3>
+                                    {loadingClientTickets && <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />}
+                                </div>
+
+                                <div className="space-y-3">
+                                    {clientTickets.length > 0 ? (
+                                        clientTickets.map(t => {
+                                            // Lógica simplificada de estilo para histórico (usando cores padrão para não precisar buscar statuses aqui)
+                                            // Ou pode passar a prop statuses se quiser perfeição, mas aqui vou usar um fallback limpo
+                                            const statusColor = t.status_obj?.color || '#9ca3af';
+                                            return (
+                                                <button
+                                                    key={t.id}
+                                                    onClick={() => {
+                                                        closeClientModal();
+                                                        setTimeout(() => {
+                                                            router.push(`/tickets/${t.id}`);
+                                                        }, 400); // Aguarda a animação sair
+                                                    }}
+                                                    className="w-full p-4 rounded-2xl bg-background border border-border-theme hover:bg-white/5 transition-all flex items-center justify-between text-left group"
+                                                >
+                                                    <div className="space-y-1">
+                                                        <p className="text-xs font-bold group-hover:text-accent-theme transition-colors line-clamp-1">{t.title}</p>
+                                                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                                                            <span>#{t.id}</span>
+                                                            <span className="w-1 h-1 rounded-full bg-border-theme" />
+                                                            <span>{new Date(t.created_at).toLocaleDateString()}</span>
+                                                        </div>
+                                                    </div>
+                                                    <span
+                                                        className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shrink-0 ml-4"
+                                                        style={{
+                                                            color: statusColor,
+                                                            borderColor: `${statusColor}30`,
+                                                            backgroundColor: `${statusColor}10`
+                                                        }}
+                                                    >
+                                                        {t.status}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })
+                                    ) : !loadingClientTickets && (
+                                        <p className="text-center py-8 text-gray-500 text-xs italic">Nenhum outro chamado encontrado.</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-6 border-t border-border-theme flex justify-end">
+                            <button
+                                onClick={closeClientModal}
+                                className="px-8 py-3 rounded-xl bg-background border border-border-theme text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
