@@ -21,13 +21,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (typeof window === 'undefined') return;
         const root = document.documentElement;
 
-        console.log(`[ThemeProvider] Sincronizando classes. Removendo antigos, adicionando: ${newTheme}`);
+        console.log(`[ThemeProvider] Troca de tema iniciada: ${newTheme}`);
+        console.log(`[ThemeProvider] Classes antes: ${root.className}`);
 
         // Remove todos os temas possíveis
         THEMES.forEach(t => root.classList.remove(`theme-${t}`));
 
-        // Adiciona o novo tema (inclusive dark se quisermos especificidade)
+        // Adiciona o novo tema
         root.classList.add(`theme-${newTheme}`);
+
+        console.log(`[ThemeProvider] Classes depois: ${root.className}`);
 
         setThemeState(newTheme);
     };

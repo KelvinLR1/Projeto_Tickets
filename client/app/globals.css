@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@config "../tailwind.config.js";
+
 
 :root {
   /* Default / Dark Theme Refined */
@@ -15,149 +15,161 @@
   --prose-class: invert;
 }
 
-@layer base {
-  .theme-light {
-    --color-background: #f1f5f9;
-    --color-foreground: #0f172a;
-    --color-card: rgba(255, 255, 255, 0.8);
-    --color-card-hover: rgba(255, 255, 255, 0.95);
-    --color-primary-theme: #2563eb;
-    --color-border-theme: rgba(0, 0, 0, 0.1);
-    --color-accent-theme: #3b82f6;
-    --color-text-muted: #64748b;
-    --color-input: #ffffff;
-    --prose-class: normal;
-  }
+/* Fallback dark theme explícito */
+.theme-dark {
+  --color-background: #0f172a;
+  --color-foreground: #f8fafc;
+  --color-card: rgba(30, 41, 59, 0.7);
+  --color-card-hover: rgba(51, 65, 85, 0.8);
+  --color-primary-theme: #3b82f6;
+  --color-border-theme: rgba(255, 255, 255, 0.1);
+  --color-accent-theme: #60a5fa;
+  --color-text-muted: #94a3b8;
+  --color-input: rgba(15, 23, 42, 0.5);
+  --prose-class: invert;
+}
 
-  .theme-cyberpunk {
-    --color-background: #0d0221;
-    --color-foreground: #00ffc8;
-    --color-card: rgba(25, 14, 47, 0.7);
-    --color-card-hover: rgba(45, 20, 80, 0.8);
-    --color-primary-theme: #ff007f;
-    --color-border-theme: rgba(45, 235, 255, 0.2);
-    --color-accent-theme: #e100ff;
-    --color-text-muted: #b000ff;
-    --color-input: rgba(13, 2, 33, 0.8);
-    --prose-class: invert;
-  }
+.theme-light {
+  --color-background: #f1f5f9;
+  --color-foreground: #0f172a;
+  --color-card: rgba(255, 255, 255, 0.8);
+  --color-card-hover: rgba(255, 255, 255, 0.95);
+  --color-primary-theme: #2563eb;
+  --color-border-theme: rgba(0, 0, 0, 0.1);
+  --color-accent-theme: #3b82f6;
+  --color-text-muted: #64748b;
+  --color-input: #ffffff;
+  --prose-class: normal;
+}
 
-  .theme-matrix {
-    --color-background: #000000;
-    --color-foreground: #00ff41;
-    --color-card: rgba(5, 5, 5, 0.8);
-    --color-card-hover: rgba(10, 20, 10, 0.9);
-    --color-primary-theme: #008f11;
-    --color-border-theme: rgba(0, 255, 65, 0.2);
-    --color-accent-theme: #00ff41;
-    --color-text-muted: #008f11;
-    --color-input: #000000;
-    --prose-class: invert;
-  }
+.theme-cyberpunk {
+  --color-background: #0d0221;
+  --color-foreground: #00ffc8;
+  --color-card: rgba(25, 14, 47, 0.7);
+  --color-card-hover: rgba(45, 20, 80, 0.8);
+  --color-primary-theme: #ff007f;
+  --color-border-theme: rgba(45, 235, 255, 0.2);
+  --color-accent-theme: #e100ff;
+  --color-text-muted: #b000ff;
+  --color-input: rgba(13, 2, 33, 0.8);
+  --prose-class: invert;
+}
 
-  .theme-antigravity {
-    --color-background: #ffffff;
-    --color-foreground: #111827;
-    --color-card: #f9fafb;
-    --color-card-hover: #f3f4f6;
-    --color-primary-theme: #f59e0b;
-    --color-border-theme: #e5e7eb;
-    --color-accent-theme: #fbbf24;
-    --color-text-muted: #6b7280;
-    --color-input: #f9fafb;
-    --prose-class: normal;
-  }
+.theme-matrix {
+  --color-background: #000000;
+  --color-foreground: #00ff41;
+  --color-card: rgba(5, 5, 5, 0.8);
+  --color-card-hover: rgba(10, 20, 10, 0.9);
+  --color-primary-theme: #008f11;
+  --color-border-theme: rgba(0, 255, 65, 0.2);
+  --color-accent-theme: #00ff41;
+  --color-text-muted: #008f11;
+  --color-input: #000000;
+  --prose-class: invert;
+}
 
-  .theme-sunset {
-    --color-background: #1a0b2e;
-    --color-foreground: #ff9e7d;
-    --color-card: rgba(45, 20, 70, 0.6);
-    --color-card-hover: rgba(60, 25, 90, 0.7);
-    --color-primary-theme: #8a2be2;
-    --color-border-theme: rgba(240, 98, 146, 0.2);
-    --color-accent-theme: #f06292;
-    --color-text-muted: #b388ff;
-    --color-input: rgba(26, 11, 46, 0.8);
-    --prose-class: invert;
-  }
+.theme-antigravity {
+  --color-background: #ffffff;
+  --color-foreground: #111827;
+  --color-card: #f9fafb;
+  --color-card-hover: #f3f4f6;
+  --color-primary-theme: #f59e0b;
+  --color-border-theme: #e5e7eb;
+  --color-accent-theme: #fbbf24;
+  --color-text-muted: #6b7280;
+  --color-input: #f9fafb;
+  --prose-class: normal;
+}
 
-  .theme-nordic {
-    --color-background: #242933;
-    --color-foreground: #eceff4;
-    --color-card: rgba(46, 52, 64, 0.7);
-    --color-card-hover: rgba(59, 66, 82, 0.8);
-    --color-primary-theme: #88c0d0;
-    --color-border-theme: rgba(136, 192, 208, 0.2);
-    --color-accent-theme: #81a1c1;
-    --color-text-muted: #d8dee9;
-    --color-input: rgba(36, 41, 51, 0.8);
-    --prose-class: invert;
-  }
+.theme-sunset {
+  --color-background: #1a0b2e;
+  --color-foreground: #ff9e7d;
+  --color-card: rgba(45, 20, 70, 0.6);
+  --color-card-hover: rgba(60, 25, 90, 0.7);
+  --color-primary-theme: #8a2be2;
+  --color-border-theme: rgba(240, 98, 146, 0.2);
+  --color-accent-theme: #f06292;
+  --color-text-muted: #b388ff;
+  --color-input: rgba(26, 11, 46, 0.8);
+  --prose-class: invert;
+}
 
-  .theme-gold {
-    --color-background: #050505;
-    --color-foreground: #d4af37;
-    --color-card: rgba(20, 20, 20, 0.8);
-    --color-card-hover: rgba(30, 30, 30, 0.9);
-    --color-primary-theme: #c5a028;
-    --color-border-theme: rgba(212, 175, 55, 0.3);
-    --color-accent-theme: #ffd700;
-    --color-text-muted: #aa8822;
-    --color-input: #000000;
-    --prose-class: invert;
-  }
+.theme-nordic {
+  --color-background: #242933;
+  --color-foreground: #eceff4;
+  --color-card: rgba(46, 52, 64, 0.7);
+  --color-card-hover: rgba(59, 66, 82, 0.8);
+  --color-primary-theme: #88c0d0;
+  --color-border-theme: rgba(136, 192, 208, 0.2);
+  --color-accent-theme: #81a1c1;
+  --color-text-muted: #d8dee9;
+  --color-input: rgba(36, 41, 51, 0.8);
+  --prose-class: invert;
+}
 
-  .theme-carbon-red {
-    --color-background: #1c1917;
-    --color-foreground: #f5f5f4;
-    --color-card: rgba(41, 37, 36, 0.7);
-    --color-card-hover: rgba(68, 64, 60, 0.8);
-    --color-primary-theme: #ef4444;
-    --color-border-theme: rgba(239, 68, 68, 0.15);
-    --color-accent-theme: #f87171;
-    --color-text-muted: #a8a29e;
-    --color-input: rgba(28, 25, 23, 0.5);
-    --prose-class: invert;
-  }
+.theme-gold {
+  --color-background: #050505;
+  --color-foreground: #d4af37;
+  --color-card: rgba(20, 20, 20, 0.8);
+  --color-card-hover: rgba(30, 30, 30, 0.9);
+  --color-primary-theme: #c5a028;
+  --color-border-theme: rgba(212, 175, 55, 0.3);
+  --color-accent-theme: #ffd700;
+  --color-text-muted: #aa8822;
+  --color-input: #000000;
+  --prose-class: invert;
+}
 
-  .theme-obsidian-red {
-    --color-background: #000000;
-    --color-foreground: #ffffff;
-    --color-card: rgba(20, 20, 20, 0.8);
-    --color-card-hover: rgba(30, 30, 30, 0.95);
-    --color-primary-theme: #991b1b;
-    --color-border-theme: rgba(153, 27, 27, 0.3);
-    --color-accent-theme: #dc2626;
-    --color-text-muted: #737373;
-    --color-input: #000000;
-    --prose-class: invert;
-  }
+.theme-carbon-red {
+  --color-background: #1c1917;
+  --color-foreground: #f5f5f4;
+  --color-card: rgba(41, 37, 36, 0.7);
+  --color-card-hover: rgba(68, 64, 60, 0.8);
+  --color-primary-theme: #ef4444;
+  --color-border-theme: rgba(239, 68, 68, 0.15);
+  --color-accent-theme: #f87171;
+  --color-text-muted: #a8a29e;
+  --color-input: rgba(28, 25, 23, 0.5);
+  --prose-class: invert;
+}
 
-  .theme-office-red {
-    --color-background: #f8fafc;
-    --color-foreground: #0f172a;
-    --color-card: rgba(255, 255, 255, 0.85);
-    --color-card-hover: rgba(255, 255, 255, 0.98);
-    --color-primary-theme: #e11d48;
-    --color-border-theme: rgba(225, 29, 72, 0.1);
-    --color-accent-theme: #fb7185;
-    --color-text-muted: #64748b;
-    --color-input: #ffffff;
-    --prose-class: normal;
-  }
+.theme-obsidian-red {
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+  --color-card: rgba(20, 20, 20, 0.8);
+  --color-card-hover: rgba(30, 30, 30, 0.95);
+  --color-primary-theme: #991b1b;
+  --color-border-theme: rgba(153, 27, 27, 0.3);
+  --color-accent-theme: #dc2626;
+  --color-text-muted: #737373;
+  --color-input: #000000;
+  --prose-class: invert;
+}
 
-  .theme-ash-red {
-    --color-background: #e2e8f0;
-    --color-foreground: #1e293b;
-    --color-card: rgba(241, 245, 249, 0.9);
-    --color-card-hover: rgba(255, 255, 255, 1);
-    --color-primary-theme: #dc2626;
-    --color-border-theme: rgba(220, 38, 38, 0.15);
-    --color-accent-theme: #ef4444;
-    --color-text-muted: #475569;
-    --color-input: #f8fafc;
-    --prose-class: normal;
-  }
+.theme-office-red {
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card: rgba(255, 255, 255, 0.85);
+  --color-card-hover: rgba(255, 255, 255, 0.98);
+  --color-primary-theme: #e11d48;
+  --color-border-theme: rgba(225, 29, 72, 0.1);
+  --color-accent-theme: #fb7185;
+  --color-text-muted: #64748b;
+  --color-input: #ffffff;
+  --prose-class: normal;
+}
+
+.theme-ash-red {
+  --color-background: #e2e8f0;
+  --color-foreground: #1e293b;
+  --color-card: rgba(241, 245, 249, 0.9);
+  --color-card-hover: rgba(255, 255, 255, 1);
+  --color-primary-theme: #dc2626;
+  --color-border-theme: rgba(220, 38, 38, 0.15);
+  --color-accent-theme: #ef4444;
+  --color-text-muted: #475569;
+  --color-input: #f8fafc;
+  --prose-class: normal;
 }
 
 
