@@ -1,7 +1,10 @@
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from sqlalchemy import func
-from . import models, schemas
+try:
+    from . import models, schemas
+except ImportError:
+    import models, schemas
 
 def get_detailed_report_stats(db: Session):
     # Tickets por Cliente (Top 10)
@@ -214,6 +217,17 @@ def create_ticket(db: Session, ticket: schemas.TicketCreate):
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)
+    
+    # Treinar a IA com o novo ticket em tempo real
+    try:
+        rag.add_document(
+            doc_id=f"ticket_{db_ticket.id}",
+            text=f"TICKET #{db_ticket.id} - {db_ticket.title}\nDESCRIÇÃO: {db_ticket.description}",
+            meta={"source": "ticket", "title": db_ticket.title, "status": db_ticket.status}
+        )
+    except Exception as e:
+        print(f"Erro ao indexar ticket no RAG: {e}")
+
     return db_ticket
 
 def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
@@ -333,6 +347,20 @@ def update_knowledge_document(db: Session, doc_id: int, doc_update: schemas.Know
         db.commit()
         db.refresh(db_doc)
     return db_doc
+
+def search_tickets(db: Session, query: str, limit: int = 3):
+    # Busca similaridade básica em títulos e descrições de tickets
+    words = [w.lower() for w in query.split() if len(w) > 3]
+    if not words:
+        return []
+        
+    from sqlalchemy import or_
+    filters = []
+    for word in words:
+        filters.append(models.Ticket.title.ilike(f"%{word}%"))
+        filters.append(models.Ticket.description.ilike(f"%{word}%"))
+    
+    return db.query(models.Ticket).filter(or_(*filters)).order_by(models.Ticket.created_at.desc()).limit(limit).all()
 
 def delete_knowledge_document(db: Session, doc_id: int):
     db_doc = get_knowledge_document(db, doc_id)

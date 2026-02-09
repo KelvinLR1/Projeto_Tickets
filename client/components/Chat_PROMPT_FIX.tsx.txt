@@ -1,0 +1,27 @@
+// SUBSTITUIR LINHAS 99-116 do Chat.tsx com este código:
+
+setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
+// PROMPT ANTI-CONHECIMENTO EXTERNO
+let systemContent = '';
+let userPromptWithContext = userMessage.content;
+
+if (isGreeting) {
+    systemContent = `Responda EXATAMENTE: "Olá. Como posso ajudar?"`;
+} else if (knowledgeContext) {
+    // Contexto disponível: FORÇAR uso exclusivo
+    systemContent = `Você é um assistente que responde APENAS com base em documentos fornecidos.
+PROIBIDO: Usar conhecimento pré-treinado, inventar, supor ou mencionar datas como "2021" ou "2023".
+Responda em Português do Brasil. Máximo 2 frases curtas.`;
+    
+    userPromptWithContext = `DOCUMENTOS DA BASE:
+${knowledgeContext}
+
+PERGUNTA: ${userMessage.content}
+
+INSTRUÇÃO: Responda usando SOMENTE o texto acima. Se a resposta não estiver nos documentos, diga: "Não encontrei essa informação nos documentos disponíveis."`;
+} else {
+    // Sem contexto: admitir ignorância
+    systemContent = `Você não tem acesso a documentos técnicos.`;
+    userPromptWithContext = `${userMessage.content}\n\nResponda APENAS: "Não encontrei informações na base de conhecimento."`;
+}

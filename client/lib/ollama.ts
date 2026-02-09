@@ -18,7 +18,8 @@ const getSystemConfig = () => {
 export const chatWithOllama = async (
     model: string,
     messages: { role: string; content: string; images?: string[] }[],
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    signal?: AbortSignal
 ) => {
     try {
         // Ollama espera apenas a string base64, sem o prefixo "data:image/..."
@@ -37,12 +38,16 @@ export const chatWithOllama = async (
                 model,
                 messages: cleanMessages,
                 options: {
-                    num_ctx: 1024, // Limita contexto para economizar RAM/CPU (Padrão é 2048 ou 4096)
-                    temperature: 0.3, // Mais focado, menos alucinações
-                    num_thread: 4, // Tenta forçar uso de threads (pode variar por CPU)
+                    num_ctx: 512, // Reduzido de 1024 - menos contexto = mais rápido
+                    temperature: 0.2, // Aumentado de 0.1 - mais rápido com boa qualidade
+                    num_predict: 80, // Reduzido de 150 - respostas curtas são suficientes
+                    top_k: 20, // Aumentado para mais variedade
+                    top_p: 0.5, // Aumentado para respostas mais naturais
                 },
+                keep_alive: "1h", // Mantém o modelo na memória por 1 hora (evita delay de carregamento)
                 stream: true,
             }),
+            signal,
         });
 
         if (!response.body) throw new Error('No response body');

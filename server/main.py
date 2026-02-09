@@ -260,24 +260,62 @@ def delete_knowledge(doc_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found")
     return {"message": "Document deleted successfully"}
 
+from concurrent.futures import ThreadPoolExecutor
+
 @app.get("/knowledge/search/")
-def search_knowledge(query: str, limit: int = 3, db: Session = Depends(get_db)):
-    # 1. Tenta busca vetorial (RAG)
-    results = rag.query_documents(query, n_results=limit)
+def search_knowledge(query: str, limit: int = 3):
+    # OTIMIZAÇÃO: Busca sequencial simples (mais rápida para bases pequenas)
+    # Apenas RAG vetorial (ChromaDB) - mais inteligente e suficiente
+    rag_results = rag.query_documents(query, n_results=limit)
     
-    # 2. Se falhar ou retornar zero resultados, tenta o fallback SQL inteligente
-    has_results = results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > 0
-    is_unavailable = results.get("error") == "ChromaDB not available"
+    # Fallback SQL apenas se RAG falhar completamente
+    sql_kb_docs = []
+    sql_tickets = []
     
-    if is_unavailable or not has_results:
-        sql_docs = crud.search_knowledge_documents(db, query=query, limit=limit)
-        return {
-            "documents": [[doc.content for doc in sql_docs]],
-            "metadatas": [[{"title": doc.title, "category": doc.category} for doc in sql_docs]],
-            "ids": [[str(doc.id) for doc in sql_docs]],
-            "source": "sql_fallback"
-        }
-    return results
+    if not rag_results.get("documents") or len(rag_results.get("documents", [[]])[0]) == 0:
+        with database.SessionLocal() as session:
+            sql_kb_docs = crud.search_knowledge_documents(session, query=query, limit=limit)
+            sql_tickets = crud.search_tickets(session, query=query, limit=limit)
+
+    unified_results = {
+        "documents": [[], []], # 0: KB, 1: Tickets
+        "metadatas": [[], []],
+        "ids": [[], []],
+        "source": "parallel_hybrid_search"
+    }
+
+    # 1. Processa RAG (Vetorial - Mais inteligente)
+    if rag_results.get("documents") and len(rag_results["documents"][0]) > 0:
+        for i in range(len(rag_results["documents"][0])):
+            doc = rag_results["documents"][0][i]
+            meta = rag_results["metadatas"][0][i]
+            id_ = rag_results["ids"][0][i]
+            
+            if meta.get("source") == "ticket":
+                unified_results["documents"][1].append(doc)
+                unified_results["metadatas"][1].append({"title": f"HISTÓRICO #{id_.replace('ticket_', '')}: {meta.get('title')}", "category": "Ticket (RAG)"})
+                unified_results["ids"][1].append(id_)
+            else:
+                unified_results["documents"][0].append(doc)
+                unified_results["metadatas"][0].append({"title": meta.get("title", "Manual"), "category": "Manual (RAG)"})
+                unified_results["ids"][0].append(id_)
+
+    # 2. Complementa com SQL se houver espaço ou se o RAG falhou
+    if len(unified_results["documents"][0]) < limit:
+        for doc in sql_kb_docs:
+            if doc.content not in unified_results["documents"][0]:
+                unified_results["documents"][0].append(doc.content)
+                unified_results["metadatas"][0].append({"title": doc.title, "category": "Manual (SQL)"})
+                unified_results["ids"][0].append(f"kb_sql_{doc.id}")
+
+    if len(unified_results["documents"][1]) < limit:
+        for t in sql_tickets:
+            if t.description not in unified_results["documents"][1]:
+                unified_results["documents"][1].append(t.description)
+                unified_results["metadatas"][1].append({"title": f"HISTÓRICO #{t.id}: {t.title}", "category": "Ticket (SQL)"})
+                unified_results["ids"][1].append(f"ticket_sql_{t.id}")
+
+    return unified_results
 
 # --- Upload Endpoints ---
 @app.post("/upload/")

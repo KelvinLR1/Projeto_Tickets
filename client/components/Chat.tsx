@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Loader2, ArrowLeft } from 'lucide-react';
+import { Send, Image as ImageIcon, Loader2, ArrowLeft, Square, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { chatWithOllama } from '@/lib/ollama';
 import { searchKnowledge } from '@/lib/api';
@@ -21,6 +21,7 @@ export default function Chat() {
     const [config, setConfig] = useState({ textModel: 'phi3', visionModel: 'moondream' });
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -35,8 +36,28 @@ export default function Chat() {
         }
     }, []);
 
+    const stopGeneration = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+            setLoading(false);
+        }
+    };
+
+    const clearChat = () => {
+        setMessages([]);
+        setInput('');
+        setSelectedImage(null);
+    };
+
     const handleSend = async () => {
         if (!input.trim() && !selectedImage) return;
+
+        // Cancelar requisição anterior se houver
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
 
         let finalContent = input;
         if (selectedImage) {
@@ -56,29 +77,75 @@ export default function Chat() {
         setLoading(true);
 
         let responseBuffer = "";
-        let lastRenderTime = 0;
-        const RENDER_INTERVAL = 50;
+        let displayedContent = "";
+        let isStreaming = true;
 
         try {
             let knowledgeContext = "";
-            try {
-                const queryForSearch = userMessage.originalContent || input;
-                const searchResults = await searchKnowledge(queryForSearch);
+            const userInput = userMessage.originalContent || input;
+            const isGreeting = userInput.trim().toLowerCase().length <= 3 ||
+                ['ola', 'olá', 'oi', 'bom dia', 'boa tarde', 'boa noite'].includes(userInput.trim().toLowerCase());
 
-                if (searchResults && searchResults.documents && searchResults.documents[0]?.length > 0) {
-                    knowledgeContext = searchResults.documents[0].map((doc: string, i: number) => {
-                        const title = searchResults.metadatas?.[0]?.[i]?.title || "Documento";
-                        return `[ARQUIVO: ${title}]\nCONTEÚDO: ${doc}`;
-                    }).join("\n\n---\n\n");
+            // OTIMIZAÇÃO: Pula busca no banco de dados para saudações
+            if (!isGreeting && userInput.trim().length > 3) {
+                try {
+                    const searchResults = await searchKnowledge(userInput);
+                    if (searchResults && searchResults.documents) {
+                        const kbDocs = searchResults.documents[0] || [];
+                        const ticketDocs = searchResults.documents[1] || [];
+
+                        // Adiciona metadados de contagem
+                        const kbCount = kbDocs.length;
+                        const ticketCount = ticketDocs.length;
+                        const totalCount = kbCount + ticketCount;
+
+                        let contextHeader = `METADADOS: Total de ${totalCount} documento(s) encontrado(s) - ${kbCount} manual(is) técnico(s) e ${ticketCount} ticket(s) de histórico.\n\n`;
+
+                        const kbContent = kbDocs.map((doc: string, i: number) => `[MANUAL: ${searchResults.metadatas?.[0]?.[i]?.title}]\n${doc}`).join("\n\n");
+                        const ticketContent = ticketDocs.map((doc: string, i: number) => `[TICKET: ${searchResults.metadatas?.[1]?.[i]?.title}]\n${doc}`).join("\n\n");
+                        knowledgeContext = contextHeader + `${kbContent}\n\n${ticketContent}`.trim();
+                    }
+                } catch (e) {
+                    console.warn("Busca na base de conhecimento falhou.");
                 }
-            } catch (e) {
-                console.warn("Busca na base de conhecimento falhou.");
             }
+
+
 
             setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
-            const systemContent = 'Você é um assistente técnico direto. Responda em pt-BR. Seja extremamente conciso. NÃO use saudações. Vá direto ao ponto.';
+            // PROMPT ANTI-CONHECIMENTO EXTERNO
+            let systemContent = '';
+            let userPromptWithContext = userMessage.content;
 
+            if (isGreeting) {
+                systemContent = `Você DEVE responder EXATAMENTE estas palavras, nada mais: "Olá. Como posso ajudar?"`;
+                userPromptWithContext = 'oi'; // Simplifica para evitar confusão
+            } else if (knowledgeContext) {
+                // Contexto disponível: FORÇAR uso exclusivo
+                systemContent = `Você é um assistente técnico EXTREMAMENTE DIRETO.
+REGRAS ABSOLUTAS:
+1. Responda APENAS com base nos documentos fornecidos
+2. PROIBIDO: Usar conhecimento externo, inventar informações, ou adicionar explicações desnecessárias
+3. Vá DIRETO à solução - NÃO diga "os documentos indicam", "de acordo com", "isso geralmente", ou qualquer preâmbulo
+4. Cite documentos APENAS se perguntado explicitamente "onde?" ou "qual documento?"
+5. MÁXIMO 1-2 frases. PARE IMEDIATAMENTE após responder. NÃO adicione contexto extra ou explicações genéricas
+6. Se a resposta completa couber em 1 frase, use APENAS 1 frase e PARE`;
+
+                userPromptWithContext = `DOCUMENTOS DISPONÍVEIS:
+${knowledgeContext}
+
+PERGUNTA: ${userMessage.content}
+
+INSTRUÇÃO: Responda a pergunta diretamente com a solução. Não mencione os documentos a menos que seja perguntado. Se não souber, diga: "Não encontrei essa informação."`;
+            } else {
+                // Sem contexto: admitir ignorância
+                systemContent = `Você não tem acesso a documentos técnicos.`;
+                userPromptWithContext = `${userMessage.content}\n\nResponda APENAS: "Não encontrei informações na base de conhecimento."`;
+            }
+
+
+            // Histórico da sessão atual (últimas 4 mensagens = 2 pares de perguntas/respostas)
             const history = messages.slice(-4).map(m => ({
                 role: m.role,
                 content: m.content,
@@ -91,15 +158,7 @@ export default function Chat() {
                 images: undefined
             });
 
-            let userPromptWithContext = userMessage.content;
-            if (knowledgeContext) {
-                userPromptWithContext = `CONTEXTO:\n${knowledgeContext}\n\nPERGUNTA: ${userMessage.content}\n\nResponda de forma curta e técnica usando o contexto acima.`;
-            } else {
-                userPromptWithContext = `${userMessage.content}\n\n(Responda de forma curta e direta)`;
-            }
-
             const hasImage = !!userMessage.images;
-
             history.push({
                 role: userMessage.role,
                 content: userPromptWithContext,
@@ -108,30 +167,49 @@ export default function Chat() {
 
             const targetModel = hasImage ? config.visionModel : config.textModel;
 
-            await chatWithOllama(targetModel, history, (chunk) => {
-                responseBuffer += chunk;
-                const now = Date.now();
-                if (now - lastRenderTime > RENDER_INTERVAL) {
+            // Efeito de Typewriter Fluido
+            const typingInterval = setInterval(() => {
+                if (displayedContent.length < responseBuffer.length) {
+                    // Pega um pequeno pedaço para parecer que está digitando
+                    const charsToAdd = Math.ceil((responseBuffer.length - displayedContent.length) / 3) || 1;
+                    displayedContent += responseBuffer.substring(displayedContent.length, displayedContent.length + charsToAdd);
+
                     setMessages((prev) => {
                         const newMsgs = [...prev];
-                        newMsgs[newMsgs.length - 1].content = responseBuffer;
+                        newMsgs[newMsgs.length - 1].content = displayedContent;
                         return newMsgs;
                     });
-                    lastRenderTime = now;
+                } else if (!isStreaming) {
+                    clearInterval(typingInterval);
                 }
-            });
+            }, 30); // 30ms para um scroll suave
 
-            setMessages((prev) => {
-                const newMsgs = [...prev];
-                newMsgs[newMsgs.length - 1].content = responseBuffer;
-                return newMsgs;
-            });
+            await chatWithOllama(targetModel, history, (chunk) => {
+                responseBuffer += chunk;
+            }, abortControllerRef.current.signal);
 
-        } catch (error) {
-            console.error(error);
-            setMessages((prev) => [...prev, { role: 'assistant', content: 'Erro ao conectar com a IA local.' }]);
+            isStreaming = false;
+
+        } catch (error: any) {
+            isStreaming = false;
+            if (error.name === 'AbortError') {
+                console.log('IA Generation cancelled by user');
+                setMessages((prev) => {
+                    const newMsgs = [...prev];
+                    if (newMsgs[newMsgs.length - 1].content === '') {
+                        newMsgs[newMsgs.length - 1].content = '_Geração interrompida pelo usuário._';
+                    } else {
+                        newMsgs[newMsgs.length - 1].content += ' [INTERROMPIDO]';
+                    }
+                    return newMsgs;
+                });
+            } else {
+                console.error(error);
+                setMessages((prev) => [...prev, { role: 'assistant', content: 'Erro ao conectar com a IA local.' }]);
+            }
         } finally {
             setLoading(false);
+            abortControllerRef.current = null;
         }
     };
 
@@ -148,6 +226,19 @@ export default function Chat() {
         <div className="w-full space-y-8 animate-in fade-in duration-700">
             {/* Chat Container */}
             <div className="flex flex-col h-[700px] glass-card rounded-[2.5rem] overflow-hidden shadow-2xl transition-all border-border-theme relative">
+                {/* Header com botão Nova Conversa */}
+                {messages.length > 0 && (
+                    <div className="px-8 pt-6 pb-4 border-b border-white/5 bg-background/30 backdrop-blur-xl flex justify-between items-center">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-accent-theme">Conversa Atual</h3>
+                        <button
+                            onClick={clearChat}
+                            className="flex items-center gap-2 px-4 py-2 bg-accent-theme/10 hover:bg-accent-theme/20 text-accent-theme rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-accent-theme/20 active:scale-95"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Nova Conversa
+                        </button>
+                    </div>
+                )}
                 <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar" ref={scrollRef}>
                     {messages.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-center opacity-50 space-y-6">
@@ -186,6 +277,13 @@ export default function Chat() {
                                     <div className="absolute inset-0 animate-ping bg-accent-theme/20 rounded-full" />
                                 </div>
                                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme animate-pulse">Cruzando Dados Técnicos...</span>
+                                <button
+                                    onClick={stopGeneration}
+                                    className="ml-4 flex items-center gap-2 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border border-red-500/20"
+                                >
+                                    <Square className="w-2.5 h-2.5 fill-current" />
+                                    CANCELAR
+                                </button>
                             </div>
                         </div>
                     )}
@@ -225,13 +323,22 @@ export default function Chat() {
                                     }
                                 }}
                             />
-                            <button
-                                onClick={handleSend}
-                                disabled={loading || (!input.trim() && !selectedImage)}
-                                className="absolute right-4 bottom-4 p-3.5 bg-accent-theme text-white rounded-xl hover:brightness-110 disabled:opacity-30 transition-all shadow-xl shadow-accent-theme/20 active:scale-90 premium-gradient group"
-                            >
-                                <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                            </button>
+                            {loading ? (
+                                <button
+                                    onClick={stopGeneration}
+                                    className="absolute right-4 bottom-4 p-3.5 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all shadow-xl shadow-red-500/20 active:scale-90 group"
+                                >
+                                    <Square className="w-5 h-5 fill-current" />
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handleSend}
+                                    disabled={!input.trim() && !selectedImage}
+                                    className="absolute right-4 bottom-4 p-3.5 bg-accent-theme text-white rounded-xl hover:brightness-110 disabled:opacity-30 transition-all shadow-xl shadow-accent-theme/20 active:scale-90 premium-gradient group"
+                                >
+                                    <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

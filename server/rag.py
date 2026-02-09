@@ -61,6 +61,12 @@ def query_documents(query_text: str, n_results: int = 3):
             query_texts=[query_text],
             n_results=n_results
         )
+        
+        # OTIMIZAÇÃO: Trunca documentos longos para acelerar processamento
+        if results.get("documents"):
+            for i, doc_list in enumerate(results["documents"]):
+                results["documents"][i] = [doc[:800] + "..." if len(doc) > 800 else doc for doc in doc_list]
+        
         return results
     except Exception as e:
         logging.error(f"Erro ao buscar no ChromaDB: {e}")

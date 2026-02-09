@@ -1,7 +1,10 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from .database import Base
+try:
+    from .database import Base
+except ImportError:
+    from database import Base
 
 class Client(Base):
     __tablename__ = "clients"
