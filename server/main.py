@@ -77,6 +77,26 @@ async def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
 
+@app.get("/users/attendants")
+async def read_attendants(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    users = crud.get_users_short(db)
+    return [{"id": u[0], "name": u[1] or u[2]} for u in users]
+
+# --- Sectors Endpoints ---
+@app.get("/sectors/", response_model=List[schemas.Sector])
+async def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_sectors(db, skip=skip, limit=limit)
+
+@app.post("/sectors/", response_model=schemas.Sector)
+async def create_sector(sector: schemas.SectorCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    return crud.create_sector(db=db, sector=sector)
+
+@app.delete("/sectors/{sector_id}")
+async def delete_sector(sector_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    if not crud.delete_sector(db, sector_id):
+        raise HTTPException(status_code=404, detail="Sector not found")
+    return {"status": "ok"}
+
 @app.post("/users/", response_model=schemas.User)
 async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_user = crud.get_user_by_username(db, username=user.username)
@@ -294,11 +314,15 @@ def create_message(ticket_id: int, message: schemas.TicketMessageCreate, db: Ses
     return crud.create_ticket_message(db=db, message=message, ticket_id=ticket_id)
 
 @app.put("/tickets/{ticket_id}", response_model=schemas.Ticket)
-def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = Depends(get_db)):
-    db_ticket = crud.update_ticket(db=db, ticket_id=ticket_id, ticket_update=ticket)
+def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    db_ticket = crud.update_ticket(db=db, ticket_id=ticket_id, ticket_update=ticket, user_id=current_user.id)
     if db_ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return db_ticket
+
+@app.get("/tickets/{ticket_id}/history", response_model=List[schemas.TicketHistory])
+def read_ticket_history(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_ticket_history_list(db, ticket_id=ticket_id)
 
 @app.delete("/tickets/{ticket_id}")
 def delete_ticket(ticket_id: int, db: Session = Depends(get_db)):
@@ -567,3 +591,52 @@ async def restore_system(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na restauração: {str(e)}")
+
+# --- Notification Endpoints ---
+@app.get("/notifications", response_model=List[schemas.Notification])
+def read_notifications(
+    skip: int = 0, 
+    limit: int = 50, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    return crud.get_notifications(db, user_id=current_user.id, skip=skip, limit=limit)
+
+@app.get("/notifications/unread-count")
+def read_unread_notification_count(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    count = crud.get_unread_notification_count(db, user_id=current_user.id)
+    return {"count": count}
+
+@app.post("/notifications/{notification_id}/read", response_model=schemas.Notification)
+def mark_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    notification = crud.mark_notification_as_read(db, notification_id=notification_id, user_id=current_user.id)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notificação não encontrada")
+    return notification
+
+@app.post("/notifications/read-all")
+def mark_all_notifications_read(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    crud.mark_all_notifications_as_read(db, user_id=current_user.id)
+    return {"message": "Todas as notificações marcadas como lidas"}
+
+@app.post("/notifications/send", response_model=schemas.Notification)
+def send_notification(
+    notification_data: schemas.NotificationSend,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """Send a notification from current user to another user"""
+    notification = crud.send_user_notification(db, sender_id=current_user.id, data=notification_data)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Usuário destinatário não encontrado")
+    return notification

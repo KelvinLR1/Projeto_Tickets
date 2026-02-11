@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, JSON
 from sqlalchemy.orm import relationship
+from typing import Optional
 from datetime import datetime
 try:
     from .database import Base
@@ -17,6 +18,16 @@ class Client(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     tickets = relationship("Ticket", back_populates="client")
+
+class Sector(Base):
+    __tablename__ = "sectors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, unique=True)
+    description = Column(String, nullable=True)
+
+    tickets = relationship("Ticket", back_populates="sector")
+    users = relationship("User", secondary="user_sectors", back_populates="sectors")
 
 class Category(Base):
     __tablename__ = "categories"
@@ -49,12 +60,16 @@ class Ticket(Base):
     status_id = Column(Integer, ForeignKey("statuses.id"), nullable=True)
     priority = Column(String, default="Média") # Baixa, Média, Alta, Crítica
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    sector_id = Column(Integer, ForeignKey("sectors.id"), nullable=True)
+    assigned_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     client = relationship("Client", back_populates="tickets")
     category = relationship("Category", back_populates="tickets")
+    sector = relationship("Sector", back_populates="tickets")
     status_obj = relationship("Status", back_populates="tickets")
+    assigned_user = relationship("User")
     messages = relationship("TicketMessage", back_populates="ticket")
     time_logs = relationship("TicketTimeLog", back_populates="ticket")
 
@@ -104,6 +119,14 @@ class Profile(Base):
     
     users = relationship("User", back_populates="profile")
 
+from sqlalchemy import Table
+user_sectors = Table(
+    "user_sectors",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+    Column("sector_id", Integer, ForeignKey("sectors.id"), primary_key=True)
+)
+
 class User(Base):
     __tablename__ = "users"
 
@@ -118,6 +141,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     profile = relationship("Profile", back_populates="users")
+    sectors = relationship("Sector", secondary="user_sectors", back_populates="users")
     time_logs = relationship("TicketTimeLog", back_populates="user")
 
 class TicketTimeLog(Base):
@@ -133,3 +157,35 @@ class TicketTimeLog(Base):
 
     ticket = relationship("Ticket", back_populates="time_logs")
     user = relationship("User", back_populates="time_logs")
+
+class TicketHistory(Base):
+    __tablename__ = "ticket_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True) # null if system/ai
+    event_type = Column(String) # "status_change", "priority_change", "assignment", "sector_transfer", etc.
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    ticket = relationship("Ticket")
+    user = relationship("User")
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))  # Recipient
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Creator (null for system notifications)
+    title = Column(String)
+    message = Column(String)
+    type = Column(String, default="info") # info, warning, success, error
+    read = Column(Boolean, default=False)
+    link = Column(String, nullable=True) # Optional link to resource
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id], back_populates="notifications")
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+# Update User relationship
+User.notifications = relationship("Notification", foreign_keys="Notification.user_id", back_populates="user", order_by="desc(Notification.created_at)")

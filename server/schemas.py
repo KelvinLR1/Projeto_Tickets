@@ -36,6 +36,20 @@ class Status(StatusBase):
     class Config:
         from_attributes = True
 
+# --- Sector Schemas ---
+class SectorBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class SectorCreate(SectorBase):
+    pass
+
+class Sector(SectorBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
 # --- Client Schemas ---
 class ClientBase(BaseModel):
     name: str
@@ -80,6 +94,7 @@ class TicketCreate(TicketBase):
     client_id: int
     category_id: Optional[int] = None
     status_id: Optional[int] = None
+    assigned_user_id: Optional[int] = None
 
 class TicketCreateSimple(TicketBase):
     client_name: str
@@ -92,6 +107,8 @@ class TicketUpdate(BaseModel):
     status: Optional[str] = None # open, in_progress, closed
     priority: Optional[str] = None
     category_id: Optional[int] = None
+    sector_id: Optional[int] = None
+    assigned_user_id: Optional[int] = None
     cpf_cnpj: Optional[str] = None
 
 class Ticket(TicketBase):
@@ -99,12 +116,16 @@ class Ticket(TicketBase):
     client_id: int
     category_id: Optional[int] = None
     status_id: Optional[int] = None
+    assigned_user_id: Optional[int] = None
     status: str
     status_obj: Optional[Status] = None
+    assigned_user: Optional['User'] = None
     created_at: datetime
     updated_at: datetime
     client: Optional[Client] = None
     category: Optional[Category] = None
+    sector_id: Optional[int] = None
+    sector: Optional[Sector] = None
     messages: List[TicketMessage] = []
     total_duration: int = 0
     active_timer: Optional['TimeLog'] = None
@@ -195,6 +216,7 @@ class User(UserBase):
     is_active: bool
     created_at: datetime
     profile: Optional[Profile] = None
+    sectors: List[Sector] = []
 
     class Config:
         from_attributes = True
@@ -232,6 +254,24 @@ class TicketTimerStatus(BaseModel):
     start_time: datetime
     elapsed_seconds: int
 
+# --- Ticket History Schemas ---
+class TicketHistoryBase(BaseModel):
+    ticket_id: int
+    event_type: str
+    description: str
+
+class TicketHistoryCreate(TicketHistoryBase):
+    user_id: Optional[int] = None
+
+class TicketHistory(TicketHistoryBase):
+    id: int
+    user_id: Optional[int] = None
+    created_at: datetime
+    user: Optional['User'] = None
+
+    class Config:
+        from_attributes = True
+
 # --- System Schemas ---
 class SystemReset(BaseModel):
     confirmation: str
@@ -240,3 +280,34 @@ class SystemReset(BaseModel):
 # Update Ticket schema to include time info if needed
 # (Will be populated via crud or computed property)
 Ticket.update_forward_refs()
+TicketHistory.update_forward_refs()
+
+# --- Notification Schemas ---
+class NotificationBase(BaseModel):
+    title: str
+    message: str
+    type: str = "info"
+    link: Optional[str] = None
+
+class NotificationCreate(NotificationBase):
+    user_id: int
+    created_by_user_id: Optional[int] = None
+
+class NotificationSend(BaseModel):
+    """Schema for users sending notifications to each other"""
+    recipient_user_id: int
+    title: str
+    message: str
+    type: str = "info"
+    ticket_id: Optional[int] = None  # Optional ticket to link
+
+class Notification(NotificationBase):
+    id: int
+    user_id: int
+    created_by_user_id: Optional[int] = None
+    created_by_username: Optional[str] = None
+    read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy import func
 from datetime import datetime
 try:
@@ -269,11 +269,90 @@ def create_ticket_message(db: Session, message: schemas.TicketMessageCreate, tic
     db.refresh(db_message)
     return db_message
 
-def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpdate):
+def create_ticket_history(db: Session, history: schemas.TicketHistoryCreate):
+    db_history = models.TicketHistory(**history.dict())
+    db.add(db_history)
+    db.commit()
+    db.refresh(db_history)
+    return db_history
+
+def get_ticket_history(db: Session, ticket_id: int):
+    return db.query(models.TicketHistory).filter(models.TicketHistory.ticket_id == ticket_id).order_by(models.TicketHistory.created_at.desc()).all()
+
+# Note: Using a fixed name for the query as per schema or generic list
+def get_ticket_history_list(db: Session, ticket_id: int):
+    return db.query(models.TicketHistory).filter(models.TicketHistory.ticket_id == ticket_id).order_by(models.TicketHistory.created_at.desc()).all()
+
+def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpdate, user_id: Optional[int] = None):
     db_ticket = get_ticket(db, ticket_id)
     if db_ticket:
         update_data = ticket_update.dict(exclude_unset=True)
-        # Se atualizar status_id, sincroniza o nome do status
+        
+        # Log de Histórico
+        for field, new_value in update_data.items():
+            old_value = getattr(db_ticket, field)
+            if old_value != new_value:
+                event_type = f"{field}_change"
+                desc = f"Alterou {field} de '{old_value}' para '{new_value}'"
+                
+                # Nomes amigáveis para campos específicos
+                if field == "status_id":
+                    new_status = db.query(models.Status).filter(models.Status.id == new_value).first()
+                    new_label = new_status.name if new_status else str(new_value)
+                    desc = f"Alterou Status para '{new_label}'"
+                elif field == "assigned_user_id":
+                    new_user = db.query(models.User).filter(models.User.id == new_value).first()
+                    new_label = new_user.full_name or new_user.username if new_user else "Ninguém"
+                    desc = f"Atribuiu o ticket para '{new_label}'"
+                    
+                    # Notify new assignee
+                    if new_value and new_value != user_id:
+                        create_notification(db, schemas.NotificationCreate(
+                            user_id=new_value,
+                            title=f"Ticket Atribuído: #{ticket_id}",
+                            message=f"Você foi definido como responsável pelo ticket '{db_ticket.title}'.",
+                            type="info",
+                            link=f"/tickets/{ticket_id}"
+                        ))
+
+                elif field == "sector_id":
+                    new_sector = db.query(models.Sector).filter(models.Sector.id == new_value).first()
+                    new_label = new_sector.name if new_sector else "Nenhum"
+                    desc = f"Transferiu para o setor '{new_label}'"
+                elif field == "priority":
+                    priority_map = {
+                        "low": "Baixa",
+                        "medium": "Média",
+                        "high": "Alta",
+                        "critical": "Crítica"
+                    }
+                    # Tenta traduzir valor novo e antigo para um log amigável
+                    old_label = priority_map.get(str(old_value).lower(), old_value)
+                    new_label = priority_map.get(str(new_value).lower(), new_value)
+                    desc = f"Alterou prioridade de '{old_label}' para '{new_label}'"
+                elif field == "category_id":
+                    new_cat = db.query(models.Category).filter(models.Category.id == new_value).first()
+                    new_label = new_cat.name if new_cat else "Sem Categoria"
+                    desc = f"Alterou categoria para '{new_label}'"
+
+                create_ticket_history(db, schemas.TicketHistoryCreate(
+                    ticket_id=ticket_id,
+                    user_id=user_id,
+                    event_type=event_type,
+                    description=desc
+                ))
+            
+            # Notify assignee if status or priority changes (and auth user is not the assignee)
+            if field in ["status_id", "priority"] and db_ticket.assigned_user_id and db_ticket.assigned_user_id != user_id:
+                 create_notification(db, schemas.NotificationCreate(
+                    user_id=db_ticket.assigned_user_id,
+                    title=f"Ticket Atualizado: #{ticket_id}",
+                    message=f"O ticket '{db_ticket.title}' teve atualizações em {field}.",
+                    type="info",
+                    link=f"/tickets/{ticket_id}"
+                ))
+
+        # Se atualizar status_id, sincroniza o nome do status (legado)
         if "status_id" in update_data:
             db_status = db.query(models.Status).filter(models.Status.id == update_data["status_id"]).first()
             if db_status:
@@ -284,6 +363,38 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
         db.commit()
         db.refresh(db_ticket)
     return db_ticket
+
+# --- Sector CRUD ---
+def get_sector(db: Session, sector_id: int):
+    return db.query(models.Sector).filter(models.Sector.id == sector_id).first()
+
+def get_sectors(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Sector).offset(skip).limit(limit).all()
+
+def create_sector(db: Session, sector: schemas.SectorCreate):
+    db_sector = models.Sector(**sector.dict())
+    db.add(db_sector)
+    db.commit()
+    db.refresh(db_sector)
+    return db_sector
+
+def delete_sector(db: Session, sector_id: int):
+    db_sector = get_sector(db, sector_id)
+    if db_sector:
+        db.delete(db_sector)
+        db.commit()
+        return True
+    return False
+
+def add_user_to_sector(db: Session, user_id: int, sector_id: int):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    sector = db.query(models.Sector).filter(models.Sector.id == sector_id).first()
+    if user and sector:
+        if sector not in user.sectors:
+            user.sectors.append(sector)
+            db.commit()
+            return True
+    return False
 
 def delete_ticket(db: Session, ticket_id: int):
     db_ticket = get_ticket(db, ticket_id)
@@ -417,6 +528,10 @@ def get_user(db: Session, user_id: int):
 
 def get_user_by_username(db: Session, username: str):
     return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.username == username).first()
+
+def get_users_short(db: Session):
+    # Retorna uma lista de tuplas (id, full_name, username)
+    return db.query(models.User.id, models.User.full_name, models.User.username).filter(models.User.is_active == True).all()
 
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.email == email).first()
@@ -556,3 +671,83 @@ def get_ticket_total_duration(db: Session, ticket_id: int):
         models.TicketTimeLog.ticket_id == ticket_id
     ).scalar()
     return results or 0
+
+# --- Notification CRUD ---
+def create_notification(db: Session, notification: schemas.NotificationCreate):
+    db_notification = models.Notification(**notification.dict())
+    db.add(db_notification)
+    db.commit()
+    db.refresh(db_notification)
+    return db_notification
+
+def get_notifications(db: Session, user_id: int, skip: int = 0, limit: int = 50):
+    """Get notifications for a user with creator username"""
+    notifications = db.query(models.Notification).filter(
+        models.Notification.user_id == user_id
+    ).order_by(models.Notification.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # Add created_by_username to each notification
+    result = []
+    for notif in notifications:
+        notif_dict = {
+            "id": notif.id,
+            "user_id": notif.user_id,
+            "created_by_user_id": notif.created_by_user_id,
+            "created_by_username": notif.created_by.username if notif.created_by else None,
+            "title": notif.title,
+            "message": notif.message,
+            "type": notif.type,
+            "read": notif.read,
+            "link": notif.link,
+            "created_at": notif.created_at
+        }
+        result.append(notif_dict)
+    
+    return result
+
+def get_unread_notification_count(db: Session, user_id: int):
+    return db.query(models.Notification).filter(models.Notification.user_id == user_id, models.Notification.read == False).count()
+
+def mark_notification_as_read(db: Session, notification_id: int, user_id: int):
+    notification = db.query(models.Notification).filter(models.Notification.id == notification_id, models.Notification.user_id == user_id).first()
+    if notification:
+        notification.read = True
+        db.commit()
+        db.refresh(notification)
+    return notification
+
+def mark_all_notifications_as_read(db: Session, user_id: int):
+    db.query(models.Notification).filter(models.Notification.user_id == user_id, models.Notification.read == False).update({models.Notification.read: True}, synchronize_session=False)
+    db.commit()
+    return True
+
+def send_user_notification(db: Session, sender_id: int, data: schemas.NotificationSend):
+    """Send a notification from one user to another"""
+    # Validate recipient exists
+    recipient = db.query(models.User).filter(models.User.id == data.recipient_user_id).first()
+    if not recipient:
+        return None
+    
+    # Build link if ticket_id provided
+    link = None
+    if data.ticket_id:
+        ticket = db.query(models.Ticket).filter(models.Ticket.id == data.ticket_id).first()
+        if ticket:
+            link = f"/tickets/{data.ticket_id}"
+    
+    # Create notification
+    db_notification = models.Notification(
+        user_id=data.recipient_user_id,
+        created_by_user_id=sender_id,
+        title=data.title,
+        message=data.message,
+        type=data.type,
+        link=link,
+        read=False
+    )
+    
+    db.add(db_notification)
+    db.commit()
+    db.refresh(db_notification)
+    
+    return db_notification
