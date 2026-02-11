@@ -307,6 +307,22 @@ def delete_ticket(ticket_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Ticket not found")
     return {"message": "Ticket deleted successfully"}
 
+# --- Timer Endpoints ---
+@app.post("/tickets/{ticket_id}/timer/start", response_model=schemas.TimeLog)
+def start_timer(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.start_ticket_timer(db=db, ticket_id=ticket_id, user_id=current_user.id)
+
+@app.post("/tickets/{ticket_id}/timer/stop", response_model=schemas.TimeLog)
+def stop_timer(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    db_log = crud.stop_ticket_timer(db=db, ticket_id=ticket_id, user_id=current_user.id)
+    if not db_log:
+        raise HTTPException(status_code=400, detail="No active timer found for this ticket/user")
+    return db_log
+
+@app.get("/tickets/timers/active", response_model=List[schemas.TimeLog])
+def get_active_timers(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_active_timers(db=db, user_id=current_user.id)
+
 # --- Knowledge Base Endpoints ---
 @app.get("/knowledge/", response_model=List[schemas.KnowledgeDocument])
 def read_knowledge(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):

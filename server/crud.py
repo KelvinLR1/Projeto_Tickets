@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any
 from sqlalchemy import func
+from datetime import datetime
 try:
     from . import models, schemas
 except ImportError:
@@ -242,6 +243,7 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
     # Cria o ticket
     ticket_data = ticket.dict()
     ticket_data.pop("client_name")
+    ticket_data.pop("category", None) # Remove campo que não existe no modelo Ticket
     
     # Lógica de categoria para o simple
     if not ticket_data.get("category_id"):
@@ -498,3 +500,59 @@ def reset_entities(db: Session, entities: List[str], current_user_id: int):
 
     db.commit()
     return results
+
+# --- Timer CRUD ---
+def get_active_timers(db: Session, user_id: int):
+    return db.query(models.TicketTimeLog).options(
+        joinedload(models.TicketTimeLog.ticket).joinedload(models.Ticket.client)
+    ).filter(
+        models.TicketTimeLog.user_id == user_id,
+        models.TicketTimeLog.is_active == True
+    ).all()
+
+def start_ticket_timer(db: Session, ticket_id: int, user_id: int):
+    # Primeiro, pausa qualquer timer ativo deste usuário (opcional, para evitar duplicatas no mesmo user)
+    active_timers = get_active_timers(db, user_id)
+    for timer in active_timers:
+        stop_ticket_timer(db, timer.ticket_id, user_id)
+
+    db_log = models.TicketTimeLog(
+        ticket_id=ticket_id,
+        user_id=user_id,
+        start_time=datetime.utcnow(),
+        is_active=True
+    )
+    db.add(db_log)
+    db.commit()
+    # Recarrega com as relações para o frontend
+    return db.query(models.TicketTimeLog).options(
+        joinedload(models.TicketTimeLog.ticket).joinedload(models.Ticket.client)
+    ).filter(models.TicketTimeLog.id == db_log.id).first()
+
+def stop_ticket_timer(db: Session, ticket_id: int, user_id: int):
+    db_log = db.query(models.TicketTimeLog).filter(
+        models.TicketTimeLog.ticket_id == ticket_id,
+        models.TicketTimeLog.user_id == user_id,
+        models.TicketTimeLog.is_active == True
+    ).first()
+    
+    if db_log:
+        db_log.end_time = datetime.utcnow()
+        db_log.is_active = False
+        # Cálculo da duração em segundos
+        delta = db_log.end_time - db_log.start_time
+        db_log.duration = int(delta.total_seconds())
+        db.commit()
+        db.refresh(db_log)
+        
+        # Recarrega com as relações para o frontend
+        return db.query(models.TicketTimeLog).options(
+            joinedload(models.TicketTimeLog.ticket).joinedload(models.Ticket.client)
+        ).filter(models.TicketTimeLog.id == db_log.id).first()
+    return None
+
+def get_ticket_total_duration(db: Session, ticket_id: int):
+    results = db.query(func.sum(models.TicketTimeLog.duration)).filter(
+        models.TicketTimeLog.ticket_id == ticket_id
+    ).scalar()
+    return results or 0

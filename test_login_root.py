@@ -1,0 +1,15 @@
+import requests
+
+url = "http://127.0.0.1:8000/token"
+data = {
+    "username": "root",
+    "password": "admin"
+}
+
+try:
+    print(f"Testing login for ROOT at {url}...")
+    response = requests.post(url, data=data, timeout=10)
+    print(f"Status Code: {response.status_code}")
+    print(f"Response Body: {response.text}")
+except Exception as e:
+    print(f"Request failed: {e}")

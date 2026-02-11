@@ -84,6 +84,7 @@ class TicketCreate(TicketBase):
 class TicketCreateSimple(TicketBase):
     client_name: str
     category: Optional[str] = "Suporte"
+    category_id: Optional[int] = None
 
 class TicketUpdate(BaseModel):
     title: Optional[str] = None
@@ -105,6 +106,17 @@ class Ticket(TicketBase):
     client: Optional[Client] = None
     category: Optional[Category] = None
     messages: List[TicketMessage] = []
+    total_duration: int = 0
+    active_timer: Optional['TimeLog'] = None
+
+    class Config:
+        from_attributes = True
+
+class TicketShort(TicketBase):
+    id: int
+    status: str
+    client: Optional[Client] = None
+    total_duration: int = 0
 
     class Config:
         from_attributes = True
@@ -194,6 +206,37 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
+# --- Time Track Schemas ---
+class TimeLogBase(BaseModel):
+    ticket_id: int
+
+class TimeLogCreate(TimeLogBase):
+    pass
+
+class TimeLog(TimeLogBase):
+    id: int
+    user_id: int
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration: int
+    is_active: bool
+    ticket: Optional[TicketShort] = None
+
+    class Config:
+        from_attributes = True
+
+class TicketTimerStatus(BaseModel):
+    ticket_id: int
+    ticket_title: str
+    is_active: bool
+    start_time: datetime
+    elapsed_seconds: int
+
+# --- System Schemas ---
 class SystemReset(BaseModel):
-    entities: List[str] # tickets, clients, knowledge, settings, users
-    confirmation: str # Must be 'DELETAR'
+    confirmation: str
+    entities: List[str]
+
+# Update Ticket schema to include time info if needed
+# (Will be populated via crud or computed property)
+Ticket.update_forward_refs()

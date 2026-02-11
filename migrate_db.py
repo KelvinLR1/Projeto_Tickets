@@ -30,5 +30,20 @@ with engine.connect() as conn:
         else:
             print(f"Error adding cpf_cnpj: {e}")
 
+    try:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS ticket_time_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id INTEGER REFERENCES tickets(id),
+                user_id INTEGER REFERENCES users(id),
+                start_time DATETIME,
+                end_time DATETIME,
+                duration INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1
+            )
+        """))
+        print("Table 'ticket_time_logs' created successfully.")
+    except Exception as e:
+        print(f"Error creating ticket_time_logs: {e}")
+
     conn.commit()
-    print("Migration complete.")

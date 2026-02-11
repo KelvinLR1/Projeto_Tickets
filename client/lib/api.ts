@@ -54,11 +54,12 @@ api.interceptors.response.use(
       }
     }
 
-    const errorDetails = error.toJSON ? error.toJSON() : { message: error.message };
+    const errorDetails = error.response?.data || error.toJSON?.() || { message: error.message };
     console.error('[API Error]', {
       url: error.config?.url,
       status: error.response?.status,
-      message: errorDetails.message
+      data: error.response?.data,
+      message: error.message
     });
 
     return Promise.reject(error);
@@ -77,6 +78,9 @@ export interface Ticket {
   status_id?: number;
   status_obj?: Status;
   created_at: string;
+  total_duration?: number;
+  active_timer?: TimeLog;
+  client?: Client;
 }
 
 export interface Category {
@@ -363,6 +367,33 @@ export const restoreSystem = async (file: File) => {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return response.data;
+};
+
+export interface TimeLog {
+  id: number;
+  ticket_id: number;
+  user_id: number;
+  start_time: string;
+  end_time?: string;
+  duration: number;
+  is_active: boolean;
+  ticket?: Ticket;
+}
+
+// --- Timer API ---
+export const startTimer = async (ticketId: number) => {
+  const response = await api.post<TimeLog>(`/tickets/${ticketId}/timer/start`);
+  return response.data;
+};
+
+export const stopTimer = async (ticketId: number) => {
+  const response = await api.post<TimeLog>(`/tickets/${ticketId}/timer/stop`);
+  return response.data;
+};
+
+export const getActiveTimers = async () => {
+  const response = await api.get<TimeLog[]>('/tickets/timers/active');
   return response.data;
 };
 

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from "@/components/AuthProvider";
 import { usePathname } from "next/navigation";
 import { canAccessMenu, getFirstAllowedPath, canPerformAction } from '@/lib/permissions';
+import { useTimer } from './TimerProvider';
 import {
     LayoutDashboard,
     BookOpen,
@@ -19,13 +20,15 @@ import {
     Search,
     PlusCircle,
     User,
-    LogOut
+    LogOut,
+    Clock
 } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function Sidebar() {
     const pathname = usePathname();
     const { user, logout } = useAuth();
+    const { activeTimers, openPiP } = useTimer();
 
     const navItems = [
         { id: 'dashboard', name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -81,14 +84,33 @@ export default function Sidebar() {
             </nav>
 
             {/* Quick Action */}
-            {canPerformAction(user, 'create_ticket') && (
-                <div className="p-6">
+            <div className="p-6 space-y-3">
+                {canPerformAction(user, 'create_ticket') && (
                     <Link href="/tickets/new" className="w-full premium-gradient text-white p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 group">
                         <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform" />
                         NOVO TICKET
                     </Link>
-                </div>
-            )}
+                )}
+
+                <button
+                    onClick={openPiP}
+                    className={clsx(
+                        "w-full p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 group relative overflow-hidden",
+                        activeTimers.length > 0
+                            ? "bg-accent-theme/10 text-accent-theme border border-accent-theme/20 hover:bg-accent-theme/20"
+                            : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+                    )}
+                >
+                    <Clock className={clsx("w-4 h-4", activeTimers.length > 0 && "animate-pulse")} />
+                    MODO WIDGET
+                    {activeTimers.length > 0 && (
+                        <span className="absolute top-2 right-2 flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-theme opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-theme"></span>
+                        </span>
+                    )}
+                </button>
+            </div>
 
             {/* Footer / Profile */}
             <div className="p-6 mt-auto border-t border-border-theme bg-card/10 backdrop-blur-md">

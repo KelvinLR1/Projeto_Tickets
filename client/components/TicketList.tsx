@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { getTickets, updateTicket, deleteTicket, getCategories, getStatuses, Ticket, Category, Status } from '@/lib/api';
-import { Loader2, AlertCircle, CheckCircle, Clock, Trash2, RefreshCw, Pencil, X, Save, ReceiptText, ExternalLink, Hash } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Clock, Trash2, RefreshCw, Pencil, X, Save, ReceiptText, ExternalLink, Hash, Play } from 'lucide-react';
 import { useNotification } from '@/components/NotificationProvider';
+import { useTimer } from './TimerProvider';
+import { useAuth } from './AuthProvider';
 import clsx from 'clsx';
 import Link from 'next/link';
 
@@ -19,6 +21,8 @@ export default function TicketList({
     categoryId?: number;
 }) {
     const { showNotification, confirm: askConfirm } = useNotification();
+    const { user } = useAuth();
+    const { activeTimers, handleStartTimer, handleStopTimer } = useTimer();
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionId, setActionId] = useState<number | null>(null);
@@ -181,9 +185,41 @@ export default function TicketList({
                                 return (
                                     <tr key={ticket.id} className="group hover:bg-white/[0.03] transition-all duration-300 border-b border-border-theme/20 last:border-0">
                                         <td className="px-8 py-6 align-top">
-                                            <div className="flex items-center gap-2">
-                                                <Hash className="w-3 h-3 text-accent-theme/40" />
-                                                <span className="font-mono text-[11px] font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
+                                            <div className="flex items-center gap-4">
+                                                <div className="flex flex-col items-center gap-1">
+                                                    <Hash className="w-3 h-3 text-accent-theme/40" />
+                                                    <span className="font-mono text-[11px] font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
+                                                </div>
+
+                                                {/* Timer Controls */}
+                                                <div className="flex items-center">
+                                                    {activeTimers.find(t => t.ticket_id === ticket.id) ? (
+                                                        <button
+                                                            onClick={() => handleStopTimer(ticket.id)}
+                                                            className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all shadow-lg shadow-red-500/10"
+                                                            title="Parar Cronômetro (Pausar)"
+                                                        >
+                                                            <div className="w-3 h-3 bg-red-500 rounded-sm animate-pulse" />
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => {
+                                                                if (ticket.status === 'Finalizado') return;
+                                                                handleStartTimer(ticket.id);
+                                                            }}
+                                                            disabled={ticket.status === 'Finalizado'}
+                                                            className={clsx(
+                                                                "p-2 rounded-lg transition-all",
+                                                                ticket.status === 'Finalizado'
+                                                                    ? "bg-gray-500/5 text-gray-500 cursor-not-allowed opacity-20"
+                                                                    : "bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 opacity-0 group-hover:opacity-100"
+                                                            )}
+                                                            title={ticket.status === 'Finalizado' ? "Chamado Finalizado" : "Iniciar Cronômetro"}
+                                                        >
+                                                            <Play className="w-3 h-3 fill-current" />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="px-8 py-6 max-w-md">

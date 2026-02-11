@@ -56,6 +56,20 @@ class Ticket(Base):
     category = relationship("Category", back_populates="tickets")
     status_obj = relationship("Status", back_populates="tickets")
     messages = relationship("TicketMessage", back_populates="ticket")
+    time_logs = relationship("TicketTimeLog", back_populates="ticket")
+
+    @property
+    def total_duration(self) -> int:
+        """Soma total de todos os logs de tempo finalizados deste ticket."""
+        return sum(log.duration for log in self.time_logs if not log.is_active)
+
+    @property
+    def active_timer(self):
+        """Retorna o log de tempo ativo se houver."""
+        for log in self.time_logs:
+            if log.is_active:
+                return log
+        return None
 
 class TicketMessage(Base):
     __tablename__ = "ticket_messages"
@@ -104,3 +118,18 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     profile = relationship("Profile", back_populates="users")
+    time_logs = relationship("TicketTimeLog", back_populates="user")
+
+class TicketTimeLog(Base):
+    __tablename__ = "ticket_time_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    start_time = Column(DateTime, default=datetime.utcnow)
+    end_time = Column(DateTime, nullable=True)
+    duration = Column(Integer, default=0) # Duração em segundos
+    is_active = Column(Boolean, default=True)
+
+    ticket = relationship("Ticket", back_populates="time_logs")
+    user = relationship("User", back_populates="time_logs")

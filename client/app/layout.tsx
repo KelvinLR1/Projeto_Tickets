@@ -26,6 +26,7 @@ import Sidebar from "@/components/Sidebar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { NotificationProvider } from "@/components/NotificationProvider";
 import { AuthProvider } from "@/components/AuthProvider";
+import { TimerProvider } from "@/components/TimerProvider";
 import AppLayout from "@/components/AppLayout";
 
 export default function RootLayout({
@@ -41,9 +42,11 @@ export default function RootLayout({
         <ThemeProvider>
           <NotificationProvider>
             <AuthProvider>
-              <AppLayout>
-                {children}
-              </AppLayout>
+              <TimerProvider>
+                <AppLayout>
+                  {children}
+                </AppLayout>
+              </TimerProvider>
             </AuthProvider>
           </NotificationProvider>
         </ThemeProvider>
