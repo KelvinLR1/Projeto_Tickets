@@ -2,11 +2,12 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Send, Loader2, Sparkles, Image as ImageIcon, CheckCircle2, User, Mail, Phone, ChevronDown, Tag, Eye, Edit2, Paperclip } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Sparkles, Image as ImageIcon, CheckCircle2, User, Mail, Phone, ChevronDown, Tag, Eye, Edit2, Paperclip, Circle, Clock, AlertOctagon } from 'lucide-react';
 import Link from 'next/link';
 import { createTicket, getCategories, getClients, Category, Client } from '@/lib/api';
 import { chatWithOllama } from '@/lib/ollama';
 import { useNotification } from '@/components/NotificationProvider';
+import CustomSelect from '@/components/CustomSelect';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
@@ -26,7 +27,6 @@ export default function NewTicket() {
     const [isClosingModal, setIsClosingModal] = useState(false);
     const [showClientResults, setShowClientResults] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [openDropdown, setOpenDropdown] = useState<'priority' | 'category' | null>(null);
     const [isDescriptionPreview, setIsDescriptionPreview] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const descriptionRef = React.useRef<HTMLTextAreaElement>(null);
@@ -413,119 +413,33 @@ Note: Be concise in the title and detailed in the description.`;
                                 />
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
-                                {/* Custom Select: Prioridade */}
-                                <div className="space-y-3 relative">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Prioridade</label>
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            onClick={() => setOpenDropdown(openDropdown === 'priority' ? null : 'priority')}
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm font-bold flex items-center justify-between hover:bg-white/5 transition-all outline-none focus:ring-4 focus:ring-accent-theme/10"
-                                        >
-                                            <span className={clsx(
-                                                formData.priority === 'Crítica' && "text-red-500",
-                                                formData.priority === 'Alta' && "text-orange-500",
-                                                formData.priority === 'Média' && "text-accent-theme",
-                                                formData.priority === 'Baixa' && "text-emerald-500"
-                                            )}>{formData.priority}</span>
-                                            <ChevronDown className={clsx("w-4 h-4 transition-transform duration-300", openDropdown === 'priority' && "rotate-180")} />
-                                        </button>
+                            <CustomSelect
+                                label="Prioridade"
+                                value={formData.priority}
+                                onChange={val => setFormData({ ...formData, priority: val })}
+                                options={[
+                                    { value: 'Baixa', label: 'Baixa', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
+                                    { value: 'Média', label: 'Média', icon: <Circle className="w-4 h-4 text-accent-theme" /> },
+                                    { value: 'Alta', label: 'Alta', icon: <Circle className="w-4 h-4 text-orange-500" /> },
+                                    { value: 'Crítica', label: 'Crítica', icon: <AlertOctagon className="w-4 h-4 text-red-500" /> },
+                                ]}
+                            />
 
-                                        {openDropdown === 'priority' && (
-                                            <div className="absolute top-full left-0 w-full mt-2 bg-card/95 backdrop-blur-xl border border-border-theme rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                                <div className="p-2 space-y-1">
-                                                    {['Baixa', 'Média', 'Alta', 'Crítica'].map((p) => (
-                                                        <button
-                                                            key={p}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setFormData({ ...formData, priority: p });
-                                                                setOpenDropdown(null);
-                                                            }}
-                                                            className="w-full text-left p-4 hover:bg-accent-theme/10 rounded-xl text-xs font-bold transition-all flex items-center justify-between group"
-                                                        >
-                                                            <span className={clsx(
-                                                                p === 'Crítica' && "text-red-500",
-                                                                p === 'Alta' && "text-orange-500",
-                                                                p === 'Média' && "text-accent-theme",
-                                                                p === 'Baixa' && "text-emerald-500"
-                                                            )}>{p}</span>
-                                                            {formData.priority === p && <CheckCircle2 className="w-3 h-3 text-accent-theme" />}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Custom Select: Categoria */}
-                                <div className="space-y-3 relative">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Categoria Técnica</label>
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            onClick={() => setOpenDropdown(openDropdown === 'category' ? null : 'category')}
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm font-bold flex items-center justify-between hover:bg-white/5 transition-all outline-none focus:ring-4 focus:ring-accent-theme/10"
-                                        >
-                                            <span className="truncate pr-4">
-                                                {categories.find(c => c.id === formData.category_id)?.name ||
-                                                    categories.flatMap(c => c.subcategories || []).find(s => s.id === formData.category_id)?.name ||
-                                                    'Selecione categoria...'}
-                                            </span>
-                                            <ChevronDown className={clsx("w-4 h-4 transition-transform duration-300", openDropdown === 'category' && "rotate-180")} />
-                                        </button>
-
-                                        {openDropdown === 'category' && (
-                                            <div className="absolute top-full left-0 w-full mt-2 bg-card/95 backdrop-blur-xl border border-border-theme rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                                <div className="max-h-[300px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                                                    {categories.map(cat => (
-                                                        <React.Fragment key={cat.id}>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setFormData({ ...formData, category_id: cat.id });
-                                                                    setOpenDropdown(null);
-                                                                }}
-                                                                className="w-full text-left p-4 hover:bg-accent-theme/10 rounded-xl text-xs font-bold transition-all flex items-center justify-between group"
-                                                            >
-                                                                <span className="flex items-center gap-2">
-                                                                    <Tag className="w-3 h-3 opacity-50" />
-                                                                    {cat.name}
-                                                                </span>
-                                                                {formData.category_id === cat.id && <CheckCircle2 className="w-3 h-3 text-accent-theme" />}
-                                                            </button>
-                                                            {cat.subcategories?.map(sub => (
-                                                                <button
-                                                                    key={sub.id}
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setFormData({ ...formData, category_id: sub.id });
-                                                                        setOpenDropdown(null);
-                                                                    }}
-                                                                    className="w-full text-left p-3 pl-8 hover:bg-accent-theme/5 rounded-xl text-[11px] font-medium transition-all flex items-center justify-between group opacity-70 hover:opacity-100"
-                                                                >
-                                                                    <span className="flex items-center gap-2">
-                                                                        <span className="w-1.5 h-1.5 rounded-full bg-accent-theme/30" />
-                                                                        {sub.name}
-                                                                    </span>
-                                                                    {formData.category_id === sub.id && <CheckCircle2 className="w-3 h-3 text-accent-theme" />}
-                                                                </button>
-                                                            ))}
-                                                        </React.Fragment>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Click Away Listener for Dropdowns */}
-                                {openDropdown && (
-                                    <div className="fixed inset-0 z-40" onClick={() => setOpenDropdown(null)} />
-                                )}
-                            </div>
+                            <CustomSelect
+                                label="Categoria Técnica"
+                                value={formData.category_id || ''}
+                                onChange={val => setFormData({ ...formData, category_id: val ? parseInt(val) : undefined })}
+                                placeholder="Selecione categoria..."
+                                options={categories.flatMap(cat => [
+                                    { value: cat.id, label: cat.name, icon: <Tag className="w-4 h-4" /> },
+                                    ...(cat.subcategories?.map(sub => ({
+                                        value: sub.id,
+                                        label: sub.name,
+                                        icon: <Tag className="w-3 h-3 ml-2" />,
+                                        className: "pl-8 opacity-80"
+                                    })) || [])
+                                ])}
+                            />
 
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between ml-1">

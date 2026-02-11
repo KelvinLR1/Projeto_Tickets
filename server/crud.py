@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any
 from sqlalchemy import func
 try:
@@ -368,4 +368,133 @@ def delete_knowledge_document(db: Session, doc_id: int):
         db.delete(db_doc)
         db.commit()
         return True
+    if db_doc:
+        db.delete(db_doc)
+        db.commit()
+        return True
     return False
+
+# --- Profile CRUD ---
+def get_profiles(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Profile).offset(skip).limit(limit).all()
+
+def get_profile(db: Session, profile_id: int):
+    return db.query(models.Profile).filter(models.Profile.id == profile_id).first()
+
+def create_profile(db: Session, profile: schemas.ProfileCreate):
+    db_profile = models.Profile(**profile.dict())
+    db.add(db_profile)
+    db.commit()
+    db.refresh(db_profile)
+    return db_profile
+
+def update_profile(db: Session, profile_id: int, profile_update: schemas.ProfileCreate):
+    db_profile = get_profile(db, profile_id)
+    if db_profile:
+        db_profile.name = profile_update.name
+        db_profile.description = profile_update.description
+        db_profile.permissions = profile_update.permissions
+        db.commit()
+        db.refresh(db_profile)
+    return db_profile
+
+def delete_profile(db: Session, profile_id: int):
+    db_profile = get_profile(db, profile_id)
+    if db_profile:
+        # Verifica se há usuários vinculados antes de deletar
+        if db_profile.users:
+            return False # Não pode deletar perfil em uso
+        db.delete(db_profile)
+        db.commit()
+        return True
+    return False
+
+# --- User CRUD ---
+def get_user(db: Session, user_id: int):
+    return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.id == user_id).first()
+
+def get_user_by_username(db: Session, username: str):
+    return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.username == username).first()
+
+def get_user_by_email(db: Session, email: str):
+    return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.email == email).first()
+
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.User).options(joinedload(models.User.profile)).offset(skip).limit(limit).all()
+
+def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
+    db_user = models.User(
+        username=user.username,
+        email=user.email,
+        full_name=user.full_name,
+        hashed_password=hashed_password,
+        role=user.role,
+        profile_id=user.profile_id
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate, hashed_password: str = None):
+    db_user = get_user(db, user_id)
+    if db_user:
+        update_data = user_update.dict(exclude_unset=True)
+        if hashed_password:
+            db_user.hashed_password = hashed_password
+            update_data.pop("password", None)
+        
+        for key, value in update_data.items():
+            if key != "password":
+                setattr(db_user, key, value)
+        
+        db.commit()
+        db.refresh(db_user)
+    return db_user
+
+def delete_user(db: Session, user_id: int):
+    db_user = get_user(db, user_id)
+    if db_user:
+        db.delete(db_user)
+        db.commit()
+        return True
+    return False
+def reset_entities(db: Session, entities: List[str], current_user_id: int):
+    results = {"total": 0, "deleted": []}
+    
+    # Ordem de deleção é importante por causa de FKs
+    if "tickets" in entities:
+        # Mensagens de tickets dependem de tickets
+        num_msgs = db.query(models.TicketMessage).delete(synchronize_session=False)
+        num_tickets = db.query(models.Ticket).delete(synchronize_session=False)
+        results["deleted"].append("tickets")
+        results["total"] += (num_msgs + num_tickets)
+
+    if "clients" in entities:
+        num_clients = db.query(models.Client).delete(synchronize_session=False)
+        results["deleted"].append("clients")
+        results["total"] += num_clients
+
+    if "knowledge" in entities:
+        num_kb = db.query(models.KnowledgeDocument).delete(synchronize_session=False)
+        results["deleted"].append("knowledge")
+        results["total"] += num_kb
+        # Nota: O ChromaDB (RAG) deve ser limpo pelo chamador (main.py)
+
+    if "settings" in entities:
+        num_cats = db.query(models.Category).delete(synchronize_session=False)
+        num_status = db.query(models.Status).delete(synchronize_session=False)
+        results["deleted"].append("settings")
+        results["total"] += (num_cats + num_status)
+
+    if "users" in entities:
+        # Protege o usuário logado e o ROOT para evitar lockout total
+        num_users = db.query(models.User).filter(
+            models.User.id != current_user_id,
+            models.User.role != "ROOT"
+        ).delete(synchronize_session=False)
+        results["deleted"].append("users")
+        results["total"] += num_users
+
+    db.commit()
+    return results

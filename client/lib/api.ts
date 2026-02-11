@@ -1,47 +1,66 @@
 import axios from 'axios';
 
+// Determina a BaseURL inicial dinamicamente para suportar acesso remoto
+const getDefaultBaseURL = () => {
+  if (typeof window !== 'undefined') {
+    return `http://${window.location.hostname}:8000`;
+  }
+  return 'http://127.0.0.1:8000';
+};
+
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000',
+  baseURL: getDefaultBaseURL(),
   timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Interceptor para usar URL dinâmica das configurações
-// Interceptor para usar URL dinâmica das configurações
+// Interceptor para usar URL dinâmica e anexar Token
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
+    // 1. Configurar BaseURL das configurações locais
     const localConfig = localStorage.getItem('system_config');
     if (localConfig) {
       try {
         const { apiUrl } = JSON.parse(localConfig);
         if (apiUrl) {
-          // Remove trailing slash if present to avoid double slashes
           config.baseURL = apiUrl.replace(/\/$/, "");
         }
       } catch (e) {
-        console.error("Erro ao ler configurações locais:", e);
+        console.error("[API] Erro ao ler configurações locais:", e);
       }
     }
+
+    // 2. Anexar Token de Autenticação com AxiosHeaders (v1.x layout)
+    const token = localStorage.getItem('auth_token');
+    if (token && token !== 'undefined' && token !== 'null') {
+      config.headers.set('Authorization', `Bearer ${token}`);
+    }
   }
-  console.log(`[API] Requesting: ${config.baseURL}${config.url}`, config);
+
   return config;
 });
 
 api.interceptors.response.use(
   response => response,
   error => {
-    const errorDetails = error.toJSON ? error.toJSON() : { message: error.message, stack: error.stack };
-    console.error('[API Error Detailed]', {
-      ...errorDetails,
-      config: {
-        url: error.config?.url,
-        baseURL: error.config?.baseURL,
-        method: error.config?.method,
-        headers: error.config?.headers
+    // Se for 401 (Unauthorized), limpa o token local apenas se não for na página de login
+    if (error.response?.status === 401) {
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        localStorage.removeItem('auth_token');
+        // Opcional: window.location.href = '/login'; 
+        // Mas o AuthProvider já cuida do redirecionamento
       }
+    }
+
+    const errorDetails = error.toJSON ? error.toJSON() : { message: error.message };
+    console.error('[API Error]', {
+      url: error.config?.url,
+      status: error.response?.status,
+      message: errorDetails.message
     });
+
     return Promise.reject(error);
   }
 );
@@ -231,6 +250,119 @@ export const createStatus = async (status: Omit<Status, 'id'>) => {
 
 export const deleteStatus = async (id: number) => {
   const response = await api.delete(`/statuses/${id}`);
+  return response.data;
+};
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  full_name?: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+  profile_id?: number;
+  profile?: Profile;
+}
+
+export interface Profile {
+  id: number;
+  name: string;
+  description?: string;
+  permissions?: {
+    menus: string[];
+    actions: string[];
+  };
+  created_at: string;
+}
+
+export const getProfiles = async () => {
+  const response = await api.get<Profile[]>('/profiles/');
+  return response.data;
+};
+
+export const createProfile = async (profile: Omit<Profile, 'id' | 'created_at'>) => {
+  const response = await api.post<Profile>('/profiles/', profile);
+  return response.data;
+};
+
+export const updateProfile = async (id: number, profile: Omit<Profile, 'id' | 'created_at'>) => {
+  const response = await api.put<Profile>(`/profiles/${id}`, profile);
+  return response.data;
+};
+
+export const deleteProfile = async (id: number) => {
+  const response = await api.delete(`/profiles/${id}`);
+  return response.data;
+};
+
+export const login = async (username: string, password: string) => {
+  const formData = new URLSearchParams();
+  formData.append('username', username);
+  formData.append('password', password);
+
+  const response = await api.post<{ access_token: string; token_type: string }>('/token', formData, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  });
+  return response.data;
+};
+
+export const getCurrentUser = async () => {
+  const response = await api.get<User>('/users/me');
+  return response.data;
+};
+
+export const getUsers = async () => {
+  const response = await api.get<User[]>('/users/');
+  return response.data;
+};
+
+export const createUser = async (user: any) => {
+  const response = await api.post<User>('/users/', user);
+  return response.data;
+};
+
+export const updateUser = async (id: number, user: any) => {
+  const response = await api.put<User>(`/users/${id}`, user);
+  return response.data;
+};
+
+export const deleteUser = async (id: number) => {
+  const response = await api.delete(`/users/${id}`);
+  return response.data;
+};
+
+export const resetDatabase = async (entities: string[], confirmation: string) => {
+  const response = await api.post('/system/reset', { entities, confirmation });
+  return response.data;
+};
+
+export const downloadBackup = async () => {
+  const response = await api.get('/system/backup', { responseType: 'blob' });
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+
+  // Formatar data para nome do arquivo
+  const date = new Date();
+  const formattedDate = date.toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+  link.setAttribute('download', `backup_ticketflow_${formattedDate}.zip`);
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
+export const restoreSystem = async (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post('/system/restore', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
   return response.data;
 };
 

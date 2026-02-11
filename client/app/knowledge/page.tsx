@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { getKnowledge, createKnowledge, updateKnowledge, deleteKnowledge, KnowledgeDocument } from '@/lib/api';
-import { BookOpen, Plus, Loader2, ArrowLeft, Save, X, Edit2, Trash2 } from 'lucide-react';
+import { BookOpen, Plus, Loader2, ArrowLeft, Save, X, Edit2, Trash2, Search, Filter, Calendar, Hash, Tag as TagIcon, ChevronDown, Book, FileText, Layout, HardDrive, Cpu } from 'lucide-react';
+import CustomSelect from '@/components/CustomSelect';
 import Link from 'next/link';
+import clsx from 'clsx';
 
 export default function KnowledgePage() {
     const [docs, setDocs] = useState<KnowledgeDocument[]>([]);
@@ -12,6 +14,12 @@ export default function KnowledgePage() {
     const [editingDocId, setEditingDocId] = useState<number | null>(null);
     const [newDoc, setNewDoc] = useState({ title: '', content: '', category: 'Manual' });
     const [saving, setSaving] = useState(false);
+
+    // Estados de Filtro
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterCategory, setFilterCategory] = useState('Todos');
+    const [filterDate, setFilterDate] = useState('Todos');
+    const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
         fetchDocs();
@@ -27,6 +35,33 @@ export default function KnowledgePage() {
             setLoading(false);
         }
     };
+
+    // Lógica de Filtragem Orgânica
+    const filteredDocs = docs.filter(doc => {
+        const matchesSearch =
+            doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            doc.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            doc.id.toString() === searchTerm;
+
+        const matchesCategory = filterCategory === 'Todos' || doc.category === filterCategory;
+
+        let matchesDate = true;
+        if (filterDate !== 'Todos') {
+            const docDate = new Date(doc.created_at);
+            const now = new Date();
+            if (filterDate === 'Hoje') {
+                matchesDate = docDate.toDateString() === now.toDateString();
+            } else if (filterDate === 'Semana') {
+                const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                matchesDate = docDate >= lastWeek;
+            } else if (filterDate === 'Mes') {
+                const lastMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                matchesDate = docDate >= lastMonth;
+            }
+        }
+
+        return matchesSearch && matchesCategory && matchesDate;
+    });
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -94,6 +129,83 @@ export default function KnowledgePage() {
                     </button>
                 </div>
 
+                {/* Search and Filters Bar */}
+                {!showForm && (
+                    <div className="space-y-6">
+                        <div className="flex flex-col md:flex-row gap-4">
+                            <div className="flex-1 relative group">
+                                <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--color-text-muted)] group-focus-within:text-accent-theme transition-colors" />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar por título, conteúdo ou ID (#123)..."
+                                    className="w-full bg-card/50 border border-border-theme rounded-[2rem] pl-16 pr-6 py-6 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all shadow-xl placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <button
+                                onClick={() => setShowFilters(!showFilters)}
+                                className={clsx(
+                                    "flex items-center gap-3 px-8 py-6 rounded-[2rem] border transition-all font-black text-[10px] uppercase tracking-widest",
+                                    showFilters ? "bg-accent-theme text-white border-accent-theme" : "bg-card/50 border-border-theme text-[var(--color-text-muted)] hover:bg-card hover:text-foreground"
+                                )}
+                            >
+                                <Filter className="w-4 h-4" />
+                                {showFilters ? 'FECHAR FILTROS' : 'MAIS FILTROS'}
+                            </button>
+                        </div>
+
+                        {showFilters && (
+                            <div className="glass-card p-8 rounded-[2.5rem] border border-border-theme grid grid-cols-1 md:grid-cols-3 gap-8 animate-in slide-in-from-top-4 duration-300">
+                                <div className="space-y-6">
+                                    <CustomSelect
+                                        label="Categoria"
+                                        value={filterCategory}
+                                        onChange={setFilterCategory}
+                                        icon={<TagIcon className="w-3 h-3" />}
+                                        options={[
+                                            { value: 'Todos', label: 'Todas as Categorias', icon: <Layout className="w-4 h-4" /> },
+                                            { value: 'Manual', label: 'Manuais Técnicos', icon: <Book className="w-4 h-4" /> },
+                                            { value: 'FAQ', label: 'FAQs / Perguntas', icon: <FileText className="w-4 h-4" /> },
+                                            { value: 'Tutorial', label: 'Tutorial Passo-a-Passo', icon: <Layout className="w-4 h-4" /> },
+                                            { value: 'Hardware', label: 'Hardware / Equipamentos', icon: <Cpu className="w-4 h-4" /> },
+                                            { value: 'Software', label: 'Software / Sistemas', icon: <Layout className="w-4 h-4" /> },
+                                        ]}
+                                    />
+                                </div>
+
+                                <div className="space-y-6">
+                                    <CustomSelect
+                                        label="Período"
+                                        value={filterDate}
+                                        onChange={setFilterDate}
+                                        icon={<Calendar className="w-3 h-3" />}
+                                        options={[
+                                            { value: 'Todos', label: 'Todo o Tempo' },
+                                            { value: 'Hoje', label: 'Hoje' },
+                                            { value: 'Semana', label: 'Últimos 7 dias' },
+                                            { value: 'Mes', label: 'Últimos 30 dias' },
+                                        ]}
+                                    />
+                                </div>
+
+                                <div className="flex items-end pb-1">
+                                    <button
+                                        onClick={() => {
+                                            setSearchTerm('');
+                                            setFilterCategory('Todos');
+                                            setFilterDate('Todos');
+                                        }}
+                                        className="w-full flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest text-red-500 hover:text-red-400 p-4 transition-colors"
+                                    >
+                                        Limpar Filtros
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Form to Add/Edit Document */}
                 {showForm && (
                     <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-2xl animate-in slide-in-from-top-6 duration-500 space-y-8 relative overflow-hidden group">
@@ -119,18 +231,18 @@ export default function KnowledgePage() {
                                     />
                                 </div>
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Categoria Técnica</label>
-                                    <select
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm focus:outline-none font-bold appearance-none cursor-pointer hover:bg-white/5 transition-all"
+                                    <CustomSelect
+                                        label="Categoria Técnica"
                                         value={newDoc.category}
-                                        onChange={e => setNewDoc({ ...newDoc, category: e.target.value })}
-                                    >
-                                        <option value="Manual">Manual Técnico</option>
-                                        <option value="FAQ">FAQ / Perguntas</option>
-                                        <option value="Tutorial">Tutorial Passo-a-Passo</option>
-                                        <option value="Hardware">Hardware / Equipamentos</option>
-                                        <option value="Software">Software / Sistemas</option>
-                                    </select>
+                                        onChange={val => setNewDoc({ ...newDoc, category: val })}
+                                        options={[
+                                            { value: 'Manual', label: 'Manual Técnico', icon: <Book className="w-4 h-4" /> },
+                                            { value: 'FAQ', label: 'FAQ / Perguntas', icon: <FileText className="w-4 h-4" /> },
+                                            { value: 'Tutorial', label: 'Tutorial Passo-a-Passo', icon: <Layout className="w-4 h-4" /> },
+                                            { value: 'Hardware', label: 'Hardware / Equipamentos', icon: <Cpu className="w-4 h-4" /> },
+                                            { value: 'Software', label: 'Software / Sistemas', icon: <Layout className="w-4 h-4" /> },
+                                        ]}
+                                    />
                                 </div>
                             </div>
 
@@ -154,7 +266,7 @@ export default function KnowledgePage() {
                                             setEditingDocId(null);
                                             setNewDoc({ title: '', content: '', category: 'Manual' });
                                         }}
-                                        className="px-8 py-4 rounded-2xl border border-border-theme text-[10px] font-black uppercase tracking-widest hover:bg-card transition-all active:scale-95"
+                                        className="px-8 py-4 rounded-2xl border border-border-theme text-[10px] font-black uppercase tracking-widest hover:bg-card transition-all active:scale-95 shadow-sm"
                                     >
                                         Cancelar
                                     </button>
@@ -180,13 +292,19 @@ export default function KnowledgePage() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {docs.length === 0 ? (
+                        {filteredDocs.length === 0 ? (
                             <div className="col-span-2 glass-card p-24 text-center rounded-[2.5rem] border border-border-theme border-dashed">
                                 <BookOpen className="w-12 h-12 mx-auto text-[var(--color-text-muted)] opacity-20 mb-4" />
-                                <p className="text-[var(--color-text-muted)] text-sm font-medium">Nenhum documento cadastrado na base de conhecimento.</p>
+                                <p className="text-[var(--color-text-muted)] text-sm font-medium">Nenhum documento encontrado para estes critérios.</p>
+                                <button
+                                    onClick={() => { setSearchTerm(''); setFilterCategory('Todos'); setFilterDate('Todos'); }}
+                                    className="mt-6 text-accent-theme text-[10px] font-black uppercase tracking-widest hover:underline"
+                                >
+                                    Limpar todos os filtros
+                                </button>
                             </div>
                         ) : (
-                            docs.map(doc => (
+                            filteredDocs.map(doc => (
                                 <div key={doc.id} className="glass-card p-8 rounded-[2rem] border border-border-theme hover:border-accent-theme/50 transition-all duration-500 group relative overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1">
                                     <div className="absolute top-0 right-0 p-6 opacity-0 group-hover:opacity-10 transition-opacity">
                                         <BookOpen className="w-12 h-12 text-accent-theme" />
@@ -215,19 +333,24 @@ export default function KnowledgePage() {
                                     </div>
 
                                     <div className="space-y-3">
-                                        <span className="text-[9px] font-black px-3 py-1.5 rounded-full bg-accent-theme/5 text-accent-theme border border-accent-theme/10 uppercase tracking-widest">
-                                            {doc.category}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[9px] font-black px-3 py-1.5 rounded-full bg-accent-theme/5 text-accent-theme border border-accent-theme/10 uppercase tracking-widest">
+                                                {doc.category}
+                                            </span>
+                                            <span className="text-[9px] font-black px-3 py-1.5 rounded-full bg-blue-500/5 text-blue-500 border border-blue-500/10 uppercase tracking-widest">
+                                                ID: #{doc.id}
+                                            </span>
+                                        </div>
                                         <h3 className="text-xl font-black font-display uppercase tracking-tight italic group-hover:text-accent-theme transition-colors">{doc.title}</h3>
                                         <p className="text-[var(--color-text-muted)] text-sm leading-relaxed line-clamp-3 font-medium">{doc.content}</p>
                                     </div>
 
                                     <div className="mt-8 pt-6 border-t border-border-theme/30 flex items-center justify-between">
-                                        <div className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase tracking-widest">
-                                            ID: #{doc.id}
+                                        <div className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase tracking-widest flex items-center gap-1.5">
+                                            <Hash className="w-3 h-3" /> ref_knw_{doc.id}
                                         </div>
-                                        <div className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase tracking-widest">
-                                            {new Date(doc.created_at).toLocaleDateString()}
+                                        <div className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase tracking-widest flex items-center gap-1.5">
+                                            <Calendar className="w-3 h-3" /> {new Date(doc.created_at).toLocaleDateString()}
                                         </div>
                                     </div>
                                 </div>

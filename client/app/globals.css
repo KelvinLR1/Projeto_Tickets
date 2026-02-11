@@ -188,6 +188,58 @@
   --animate-modal-out: modal-out 0.4s ease-in forwards;
   --animate-fade-in: fade-in 0.5s ease-out;
   --animate-fade-out: fade-out 0.4s ease-in forwards;
+  --animate-slide-in-top: slide-in-top 0.4s cubic-bezier(0, 0, 0.2, 1);
+  --animate-slide-in-right: slide-in-right 0.5s cubic-bezier(0, 0, 0.2, 1);
+  --animate-zoom-in: zoom-in 0.3s ease-out;
+  --animate-accordion-down: accordion-down 0.3s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+
+    to {
+      height: auto;
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes zoom-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes slide-in-top {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
   @keyframes modal-in {
     from {
@@ -232,6 +284,18 @@
       opacity: 0;
     }
   }
+
+  @keyframes loading-bar {
+    0% {
+      transform: translateX(-100%);
+    }
+
+    100% {
+      transform: translateX(300%);
+    }
+  }
+
+  --animate-loading-bar: loading-bar 2s infinite ease-in-out;
 }
 
 body {

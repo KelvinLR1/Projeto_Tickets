@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Loader2, ArrowLeft, Square, RefreshCw } from 'lucide-react';
+import { Send, Image as ImageIcon, Loader2, ArrowLeft, Square, RefreshCw, BookOpen } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { chatWithOllama } from '@/lib/ollama';
 import { searchKnowledge } from '@/lib/api';
@@ -347,5 +347,3 @@ INSTRUÇÃO: Responda a pergunta diretamente com a solução. Não mencione os d
     );
 }
 
-// Add some styles for lucide icons that I missed in imports
-import { BookOpen } from 'lucide-react';

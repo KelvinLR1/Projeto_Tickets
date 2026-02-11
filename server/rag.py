@@ -71,3 +71,18 @@ def query_documents(query_text: str, n_results: int = 3):
     except Exception as e:
         logging.error(f"Erro ao buscar no ChromaDB: {e}")
         return {"results": [], "error": str(e)}
+def clear_knowledge_base():
+    coll = get_collection()
+    if coll is None:
+        return False
+    try:
+        # ChromaDB delete with empty filter/ids depends on version, 
+        # but usually deleting by IDs or recreating the collection works.
+        # Here we get all IDs and delete them.
+        all_ids = coll.get()["ids"]
+        if all_ids:
+            coll.delete(ids=all_ids)
+        return True
+    except Exception as e:
+        logging.error(f"Erro ao limpar ChromaDB: {e}")
+        return False

@@ -145,9 +145,10 @@ export default function TicketList({
                         <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
                             <tr>
                                 <th className="px-8 py-6">ID</th>
-                                <th className="px-8 py-6">Assunto / Descrição</th>
-                                <th className="px-8 py-6">Situação</th>
+                                <th className="px-8 py-6">Ticket / Problema</th>
+                                <th className="px-8 py-6">Status / Fluxo</th>
                                 <th className="px-8 py-6">Prioridade</th>
+                                <th className="px-8 py-6 text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border-theme/30">
@@ -178,42 +179,71 @@ export default function TicketList({
                                 const style = getStatusStyle(ticket.status, ticket.status_obj);
 
                                 return (
-                                    <tr key={ticket.id} className="group hover:bg-background/40 transition-colors cursor-default">
-                                        <td className="px-6 py-4 font-mono text-gray-500 text-[11px]">#{ticket.id}</td>
-                                        <td className="px-6 py-4">
-                                            <Link href={`/tickets/${ticket.id}`} className="block group/link">
-                                                <div className="font-bold text-foreground group-hover:text-accent-theme transition-colors flex items-center gap-2">
+                                    <tr key={ticket.id} className="group hover:bg-white/[0.03] transition-all duration-300 border-b border-border-theme/20 last:border-0">
+                                        <td className="px-8 py-6 align-top">
+                                            <div className="flex items-center gap-2">
+                                                <Hash className="w-3 h-3 text-accent-theme/40" />
+                                                <span className="font-mono text-[11px] font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-8 py-6 max-w-md">
+                                            <Link href={`/tickets/${ticket.id}`} className="block space-y-1.5 group/link">
+                                                <div className="font-black text-foreground group-hover/link:text-accent-theme transition-all flex items-center gap-2 uppercase tracking-tight italic">
                                                     {ticket.title}
-                                                    <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-50 transition-opacity" />
+                                                    <ExternalLink className="w-3.5 h-3.5 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all text-accent-theme" />
                                                 </div>
-                                                <div className="text-[11px] text-gray-400 truncate max-w-xs">{ticket.description}</div>
+                                                <div className="text-[11px] text-[var(--color-text-muted)] group-hover/link:text-foreground/60 transition-colors line-clamp-2 leading-relaxed">
+                                                    {ticket.description}
+                                                </div>
                                             </Link>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-8 py-6">
                                             <button
                                                 onClick={() => handleStatusChange(ticket.id, ticket.status)}
                                                 disabled={actionId === ticket.id}
-                                                className="flex items-center gap-2 hover:bg-background p-1.5 rounded-lg transition-all group/status"
+                                                className="flex flex-col gap-2 p-3 bg-background/40 hover:bg-background/80 rounded-2xl border border-border-theme/50 transition-all group/status active:scale-95 disabled:opacity-50 min-w-[140px]"
                                                 title="Clique para avançar status"
                                             >
-                                                {actionId === ticket.id ? <Loader2 className="w-4 h-4 animate-spin text-accent-theme" /> : (
+                                                <div className="flex items-center gap-2.5">
+                                                    {actionId === ticket.id ? <Loader2 className="w-3 h-3 animate-spin text-accent-theme" /> : (
+                                                        <div
+                                                            className="w-2.5 h-2.5 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.1)]"
+                                                            style={{ backgroundColor: style.color, boxShadow: `0 0 12px ${style.color}40` }}
+                                                        />
+                                                    )}
+                                                    <span
+                                                        className="text-[10px] font-black uppercase tracking-[0.15em]"
+                                                        style={{ color: style.color }}
+                                                    >
+                                                        {style.name}
+                                                    </span>
+                                                </div>
+                                                <div className="w-full bg-border-theme/20 h-1 rounded-full overflow-hidden">
                                                     <div
-                                                        className="w-3 h-3 rounded-full shadow-sm"
-                                                        style={{ backgroundColor: style.color }}
+                                                        className="h-full transition-all duration-500 rounded-full"
+                                                        style={{
+                                                            backgroundColor: style.color,
+                                                            width: `${((statuses.findIndex(s => s.name === style.name) + 1) / statuses.length) * 100}%`
+                                                        }}
                                                     />
-                                                )}
-                                                <span
-                                                    className="capitalize font-medium text-xs"
-                                                    style={{ color: style.color }}
-                                                >
-                                                    {style.name}
-                                                </span>
+                                                </div>
                                             </button>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <span className={clsx("px-3 py-1 rounded-full text-[10px] font-black uppercase border tracking-widest", priorityColor(ticket.priority))}>
+                                        <td className="px-8 py-6">
+                                            <span className={clsx(
+                                                "px-4 py-1.5 rounded-xl text-[9px] font-black uppercase border tracking-widest shadow-sm",
+                                                priorityColor(ticket.priority)
+                                            )}>
                                                 {ticket.priority}
                                             </span>
+                                        </td>
+                                        <td className="px-8 py-6 text-right">
+                                            <button
+                                                onClick={() => { }} // TODO: Add more actions or menu
+                                                className="p-3 text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                            >
+                                                <RefreshCw className="w-4 h-4" />
+                                            </button>
                                         </td>
                                     </tr>
                                 )

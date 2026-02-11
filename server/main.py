@@ -1,20 +1,25 @@
-from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 import shutil
 import uuid
+import zipfile
+import io
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 
 # Importando módulos locais (sem ponto inicial se rodar como script, 
 # mas mantendo estrutura de pacote se rodar com uvicorn main:app)
 try:
-    from . import models, database, schemas, crud, rag
-    from .database import engine
+    from . import models, database, schemas, crud, rag, auth
+    from .database import engine, get_db
 except ImportError:
-    import models, database, schemas, crud, rag
-    from database import engine
+    import models, database, schemas, crud, rag, auth
+    from database import engine, get_db
+
+from fastapi.security import OAuth2PasswordRequestForm
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -22,12 +27,7 @@ app = FastAPI(title="Sistema de Tickets Offline")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,6 +52,89 @@ def get_db():
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Sistema de Tickets Offline Rodando"}
+
+# --- Auth Endpoints ---
+@app.post("/token", response_model=schemas.Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Na verdade, precisamos buscar o usuário primeiro
+    db_user = crud.get_user_by_username(db, username=form_data.username)
+    if not db_user or not auth.verify_password(form_data.password, db_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = auth.create_access_token(data={"sub": db_user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# --- Users Endpoints ---
+@app.get("/users/me", response_model=schemas.User)
+async def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
+    return current_user
+
+@app.get("/users/", response_model=List[schemas.User])
+async def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    users = crud.get_users(db, skip=skip, limit=limit)
+    return users
+
+@app.post("/users/", response_model=schemas.User)
+async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    db_user = crud.get_user_by_username(db, username=user.username)
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    db_email = crud.get_user_by_email(db, email=user.email)
+    if db_email:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = auth.get_password_hash(user.password)
+    return crud.create_user(db=db, user=user, hashed_password=hashed_password)
+
+@app.put("/users/{user_id}", response_model=schemas.User)
+async def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    # Apenas ROOT pode editar outros ADMINs ou mudar roles para ROOT
+    if user.role == "ROOT" and current_user.role != "ROOT":
+         raise HTTPException(status_code=403, detail="Only ROOT can create other ROOT users")
+    
+    hashed_password = None
+    if user.password:
+        hashed_password = auth.get_password_hash(user.password)
+    
+    db_user = crud.update_user(db=db, user_id=user_id, user_update=user, hashed_password=hashed_password)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+@app.delete("/users/{user_id}")
+async def delete_user_endpoint(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+    success = crud.delete_user(db=db, user_id=user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User deleted successfully"}
+
+# --- Profile Endpoints ---
+@app.get("/profiles/", response_model=List[schemas.Profile])
+def read_profiles(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    return crud.get_profiles(db, skip=skip, limit=limit)
+
+@app.post("/profiles/", response_model=schemas.Profile)
+def create_profile(profile: schemas.ProfileCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+    return crud.create_profile(db=db, profile=profile)
+
+@app.put("/profiles/{profile_id}", response_model=schemas.Profile)
+def update_profile(profile_id: int, profile: schemas.ProfileCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+    db_profile = crud.update_profile(db=db, profile_id=profile_id, profile_update=profile)
+    if not db_profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return db_profile
+
+@app.delete("/profiles/{profile_id}")
+def delete_profile(profile_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+    success = crud.delete_profile(db=db, profile_id=profile_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Profile not found or currently in use by users")
+    return {"message": "Profile deleted successfully"}
 
 # --- Clients Endpoints ---
 @app.post("/clients/", response_model=schemas.Client)
@@ -144,15 +227,15 @@ def import_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(get
 
 # --- Categories Endpoints ---
 @app.get("/categories/", response_model=List[schemas.CategoryWithSub])
-def read_categories(db: Session = Depends(get_db)):
+def read_categories(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_categories(db)
 
 @app.post("/categories/", response_model=schemas.Category)
-def create_category(cat: schemas.CategoryCreate, db: Session = Depends(get_db)):
+def create_category(cat: schemas.CategoryCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_category(db=db, cat=cat)
 
 @app.delete("/categories/{cat_id}")
-def delete_category(cat_id: int, db: Session = Depends(get_db)):
+def delete_category(cat_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success = crud.delete_category(db=db, cat_id=cat_id)
     if not success:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -160,15 +243,15 @@ def delete_category(cat_id: int, db: Session = Depends(get_db)):
 
 # --- Status Endpoints ---
 @app.get("/statuses/", response_model=List[schemas.Status])
-def read_statuses(db: Session = Depends(get_db)):
+def read_statuses(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_statuses(db)
 
 @app.post("/statuses/", response_model=schemas.Status)
-def create_status(status: schemas.StatusCreate, db: Session = Depends(get_db)):
+def create_status(status: schemas.StatusCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_status(db=db, status=status)
 
 @app.delete("/statuses/{status_id}")
-def delete_status(status_id: int, db: Session = Depends(get_db)):
+def delete_status(status_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success = crud.delete_status(db=db, status_id=status_id)
     if not success:
         raise HTTPException(status_code=404, detail="Status not found")
@@ -355,3 +438,116 @@ async def upload_file(file: UploadFile = File(...)):
 #         return {"results": []} 
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/system/reset")
+async def reset_database(
+    params: schemas.SystemReset, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth.get_current_active_root)
+):
+    if params.confirmation != "DELETAR":
+        raise HTTPException(status_code=400, detail="Confirmação de segurança inválida")
+    
+    # Executa limpeza SQL via CRUD
+    stats = crud.reset_entities(db, entities=params.entities, current_user_id=current_user.id)
+    
+    # Se knowledge estiver incluso, limpa o ChromaDB também
+    if "knowledge" in params.entities:
+        rag_cleared = rag.clear_knowledge_base()
+        stats["rag_cleared"] = rag_cleared
+        
+    return {
+        "message": "Operação de limpeza concluída com sucesso",
+        "details": stats
+    }
+
+@app.get("/system/backup")
+def backup_system(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_root)
+):
+    # Buffer em memória para o ZIP
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        # 1. Banco de Dados SQL
+        if os.path.exists("./tickets_system.db"):
+            zip_file.write("./tickets_system.db", arcname="tickets_system.db")
+            
+        # 2. Uploads
+        if os.path.exists(UPLOAD_DIR):
+            for root, dirs, files in os.walk(UPLOAD_DIR):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, os.path.dirname(UPLOAD_DIR))
+                    zip_file.write(file_path, arcname=arcname)
+                    
+        # 3. ChromaDB (Banco Vetorial)
+        CHROMA_DIR = "./chroma_db"
+        if os.path.exists(CHROMA_DIR):
+            for root, dirs, files in os.walk(CHROMA_DIR):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, os.path.dirname(CHROMA_DIR))
+                    zip_file.write(file_path, arcname=arcname)
+
+    zip_buffer.seek(0)
+    
+    # Nome do arquivo com data/hora seria ideal, mas frontend pode gerenciar nome
+    return StreamingResponse(
+        zip_buffer, 
+        media_type="application/zip", 
+        headers={"Content-Disposition": "attachment; filename=backup_ticketflow.zip"}
+    )
+
+@app.post("/system/restore")
+async def restore_system(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_active_root)
+):
+    # Verificar extensão
+    if not file.filename.endswith('.zip'):
+        raise HTTPException(status_code=400, detail="Arquivo deve ser um ZIP")
+
+    try:
+        # Ler conteúdo para memória
+        content = await file.read()
+        zip_buffer = io.BytesIO(content)
+        
+        # Validar ZIP
+        if not zipfile.is_zipfile(zip_buffer):
+            raise HTTPException(status_code=400, detail="Arquivo ZIP inválido")
+            
+        # Tentar fechar conexões com banco para liberar arquivo (Windows Lock)
+        engine.dispose()
+        
+        # Extrair
+        with zipfile.ZipFile(zip_buffer, 'r') as zip_ref:
+            # Lista de arquivos no zip para validação básica
+            file_names = zip_ref.namelist()
+            
+            # Resetar diretórios alvo
+            if os.path.exists(UPLOAD_DIR):
+                shutil.rmtree(UPLOAD_DIR)
+            os.makedirs(UPLOAD_DIR)
+            
+            CHROMA_DIR = "./chroma_db"
+            if os.path.exists(CHROMA_DIR):
+                shutil.rmtree(CHROMA_DIR)
+            os.makedirs(CHROMA_DIR)
+            
+            # Remover DB atual se existir (pode falhar no Windows se ainda tiver lock)
+            if os.path.exists("./tickets_system.db"):
+                try:
+                    os.remove("./tickets_system.db")
+                except PermissionError:
+                    # Fallback: Se não conseguir deletar, tenta truncar/sobrescrever na extração
+                    pass
+
+            # Extrair tudo
+            zip_ref.extractall(".")
+            
+        return {"message": "Sistema restaurado com sucesso. Reinicie o servidor se necessário."}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro na restauração: {str(e)}")

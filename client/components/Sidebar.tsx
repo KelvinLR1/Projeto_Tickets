@@ -2,7 +2,9 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useAuth } from "@/components/AuthProvider";
+import { usePathname } from "next/navigation";
+import { canAccessMenu, getFirstAllowedPath, canPerformAction } from '@/lib/permissions';
 import {
     LayoutDashboard,
     BookOpen,
@@ -16,28 +18,30 @@ import {
     ChevronRight,
     Search,
     PlusCircle,
-    User
+    User,
+    LogOut
 } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function Sidebar() {
     const pathname = usePathname();
+    const { user, logout } = useAuth();
 
     const navItems = [
-        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-        { name: 'Relatórios', href: '/reports', icon: BarChart3 },
-        { name: 'Chamados', href: '/tickets', icon: ListFilter },
-        { name: 'Clientes', href: '/clients', icon: Users },
-        { name: 'Base IA', href: '/knowledge', icon: BookOpen },
-        { name: 'Soluções IA', href: '/chat', icon: Sparkles },
-        { name: 'Ajustes', href: '/settings', icon: Settings },
-    ];
+        { id: 'dashboard', name: 'Dashboard', href: '/', icon: LayoutDashboard },
+        { id: 'reports', name: 'Relatórios', href: '/reports', icon: BarChart3 },
+        { id: 'tickets', name: 'Chamados', href: '/tickets', icon: ListFilter },
+        { id: 'clients', name: 'Clientes', href: '/clients', icon: Users },
+        { id: 'knowledge', name: 'Base IA', href: '/knowledge', icon: BookOpen },
+        { id: 'chat', name: 'Soluções IA', href: '/chat', icon: Sparkles },
+        { id: 'settings', name: 'Ajustes', href: '/settings', icon: Settings },
+    ].filter(item => canAccessMenu(user, item.id));
 
     return (
         <aside className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border-theme flex flex-col z-50">
             {/* Logo Area */}
             <div className="p-8 pb-10">
-                <Link href="/" className="flex items-center gap-3 group">
+                <Link href={user ? getFirstAllowedPath(user) : "/"} className="flex items-center gap-3 group">
                     <div className="bg-accent-theme p-2 rounded-2xl group-hover:rotate-12 transition-transform shadow-lg shadow-accent-theme/20">
                         <Ticket className="w-6 h-6 text-white" />
                     </div>
@@ -77,23 +81,42 @@ export default function Sidebar() {
             </nav>
 
             {/* Quick Action */}
-            <div className="p-6">
-                <button className="w-full premium-gradient text-white p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 group">
-                    <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform" />
-                    NOVO TICKET
-                </button>
-            </div>
+            {canPerformAction(user, 'create_ticket') && (
+                <div className="p-6">
+                    <Link href="/tickets/new" className="w-full premium-gradient text-white p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 group">
+                        <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+                        NOVO TICKET
+                    </Link>
+                </div>
+            )}
 
-            {/* Footer / Profile Placeholder */}
+            {/* Footer / Profile */}
             <div className="p-6 mt-auto border-t border-border-theme bg-card/10 backdrop-blur-md">
-                <div className="flex items-center gap-4 p-2 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group">
-                    <div className="w-10 h-10 rounded-full bg-accent-theme/20 border border-accent-theme/30 flex items-center justify-center text-accent-theme group-hover:scale-105 transition-transform">
-                        <User className="w-5 h-5" />
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4 p-2 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group flex-1 mr-2">
+                        <div className="w-10 h-10 rounded-full bg-accent-theme/20 border border-accent-theme/30 flex items-center justify-center text-accent-theme group-hover:scale-105 transition-transform overflow-hidden">
+                            {user?.username ? (
+                                <span className="font-bold">{user.username[0].toUpperCase()}</span>
+                            ) : (
+                                <User className="w-5 h-5" />
+                            )}
+                        </div>
+                        <div className="flex flex-col truncate">
+                            <span className="text-xs font-bold text-foreground opacity-90 truncate">
+                                {user?.full_name || user?.username || 'Carregando...'}
+                            </span>
+                            <span className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase">
+                                {user?.role || 'Visitante'}
+                            </span>
+                        </div>
                     </div>
-                    <div className="flex flex-col">
-                        <span className="text-xs font-bold text-foreground opacity-90">Administrador</span>
-                        <span className="text-[10px] text-[var(--color-text-muted)] font-mono">v1.2.0-exec</span>
-                    </div>
+                    <button
+                        onClick={logout}
+                        className="p-2 text-[var(--color-text-muted)] hover:text-red-500 transition-colors"
+                        title="Sair"
+                    >
+                        <LogOut className="w-5 h-5" />
+                    </button>
                 </div>
             </div>
         </aside>

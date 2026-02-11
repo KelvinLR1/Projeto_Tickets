@@ -25,6 +25,8 @@ export const metadata: Metadata = {
 import Sidebar from "@/components/Sidebar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { NotificationProvider } from "@/components/NotificationProvider";
+import { AuthProvider } from "@/components/AuthProvider";
+import AppLayout from "@/components/AppLayout";
 
 export default function RootLayout({
   children,
@@ -38,12 +40,11 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <NotificationProvider>
-            <div className="flex min-h-screen">
-              <Sidebar />
-              <main className="flex-1 pl-64 transition-all duration-300">
+            <AuthProvider>
+              <AppLayout>
                 {children}
-              </main>
-            </div>
+              </AppLayout>
+            </AuthProvider>
           </NotificationProvider>
         </ThemeProvider>
       </body>

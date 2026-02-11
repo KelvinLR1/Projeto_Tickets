@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import TicketList from '@/components/TicketList';
-import { Search, Plus, SlidersHorizontal, X as CloseIcon } from 'lucide-react';
+import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag } from 'lucide-react';
 import { getCategories, Category } from '@/lib/api';
+import CustomSelect from '@/components/CustomSelect';
 import clsx from 'clsx';
 import Link from 'next/link';
 
@@ -95,52 +96,54 @@ export default function TicketsPage() {
                     {showAdvanced && (
                         <div className="glass-card p-10 rounded-3xl border border-border-theme shadow-2xl animate-in slide-in-from-top-6 duration-500 space-y-10">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Status do Chamado</label>
-                                    <select
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold appearance-none cursor-pointer hover:bg-white/5"
+                                <div className="space-y-6">
+                                    <CustomSelect
+                                        label="Status do Chamado"
                                         value={statusFilter}
-                                        onChange={(e) => setStatusFilter(e.target.value)}
-                                    >
-                                        <option value="">Todos os Status</option>
-                                        <option value="open">Aberto</option>
-                                        <option value="in_progress">Em Progresso</option>
-                                        <option value="closed">Fechado</option>
-                                    </select>
+                                        onChange={setStatusFilter}
+                                        options={[
+                                            { value: '', label: 'Todos os Status', icon: <Circle className="w-4 h-4 opacity-50" /> },
+                                            { value: 'open', label: 'Aberto', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
+                                            { value: 'in_progress', label: 'Em Progresso', icon: <Clock className="w-4 h-4 text-accent-theme" /> },
+                                            { value: 'closed', label: 'Fechado', icon: <CheckCircle2 className="w-4 h-4 text-gray-400" /> },
+                                        ]}
+                                    />
                                 </div>
 
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Nível de Prioridade</label>
-                                    <select
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold appearance-none cursor-pointer hover:bg-white/5"
+                                <div className="space-y-6">
+                                    <CustomSelect
+                                        label="Nível de Prioridade"
                                         value={priorityFilter}
-                                        onChange={(e) => setPriorityFilter(e.target.value)}
-                                    >
-                                        <option value="">Todas as Prioridades</option>
-                                        <option value="low">Baixa</option>
-                                        <option value="medium">Média</option>
-                                        <option value="high">Alta</option>
-                                        <option value="critical">Crítica</option>
-                                    </select>
+                                        onChange={setPriorityFilter}
+                                        options={[
+                                            { value: '', label: 'Todas as Prioridades', icon: <Tag className="w-4 h-4 opacity-50" /> },
+                                            { value: 'Baixa', label: 'Baixa', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
+                                            { value: 'Média', label: 'Média', icon: <Circle className="w-4 h-4 text-accent-theme" /> },
+                                            { value: 'Alta', label: 'Alta', icon: <Circle className="w-4 h-4 text-orange-500" /> },
+                                            { value: 'Crítica', label: 'Crítica', icon: <AlertOctagon className="w-4 h-4 text-red-500" /> },
+                                        ]}
+                                    />
                                 </div>
 
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Categoria do Ticket</label>
-                                    <select
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold appearance-none cursor-pointer hover:bg-white/5"
+                                <div className="space-y-6">
+                                    <CustomSelect
+                                        label="Categoria do Ticket"
                                         value={categoryFilter || ''}
-                                        onChange={(e) => setCategoryFilter(e.target.value ? parseInt(e.target.value) : undefined)}
-                                    >
-                                        <option value="">Todas as Categorias</option>
-                                        {categories.map(cat => (
-                                            <React.Fragment key={cat.id}>
-                                                <option value={cat.id}>{cat.name}</option>
-                                                {cat.subcategories?.map(sub => (
-                                                    <option key={sub.id} value={sub.id}>&nbsp;&nbsp;&nbsp;🏷️ {sub.name}</option>
-                                                ))}
-                                            </React.Fragment>
-                                        ))}
-                                    </select>
+                                        onChange={val => setCategoryFilter(val ? parseInt(val) : undefined)}
+                                        placeholder="Todas as Categorias"
+                                        options={[
+                                            { value: '', label: 'Todas as Categorias', icon: <Tag className="w-4 h-4 opacity-50" /> },
+                                            ...categories.flatMap(cat => [
+                                                { value: cat.id, label: cat.name, icon: <Tag className="w-4 h-4" /> },
+                                                ...(cat.subcategories?.map(sub => ({
+                                                    value: sub.id,
+                                                    label: sub.name,
+                                                    icon: <Tag className="w-3 h-3 ml-2" />,
+                                                    className: "pl-8 opacity-80"
+                                                })) || [])
+                                            ])
+                                        ]}
+                                    />
                                 </div>
                             </div>
 

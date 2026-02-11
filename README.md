@@ -36,6 +36,18 @@ npm run dev
 
 Acesse `http://localhost:3000`.
 
+## Como Desativar / Parar os Serviços
+
+### 1. Parar o Frontend ou Backend
+Em ambos os terminais (Client ou Server), basta pressionar:
+- **`Ctrl + C`**
+
+### 2. Sair do Ambiente Virtual (Backend)
+No terminal do servidor, após parar o processo, você pode desativar o ambiente virtual executando:
+```bash
+deactivate
+```
+
 ## IA Local (Ollama)
 Certifique-se de ter os modelos baixados:
 

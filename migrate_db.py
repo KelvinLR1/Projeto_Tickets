@@ -1,5 +1,9 @@
+import os
 from sqlalchemy import create_engine, text
-from server.database import SQLALCHEMY_DATABASE_URL
+
+# Forçando o caminho correto para o banco de dados
+DB_PATH = os.path.join(os.path.dirname(__file__), "server", "tickets_system.db")
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 

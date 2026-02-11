@@ -14,7 +14,7 @@ class Category(CategoryBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CategoryWithSub(Category):
     subcategories: List['CategoryWithSub'] = []
@@ -34,7 +34,7 @@ class Status(StatusBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Client Schemas ---
 class ClientBase(BaseModel):
@@ -51,7 +51,7 @@ class Client(ClientBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Ticket Message Schemas ---
 class TicketMessageBase(BaseModel):
@@ -68,7 +68,7 @@ class TicketMessage(TicketMessageBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Ticket Schemas ---
 class TicketBase(BaseModel):
@@ -107,7 +107,7 @@ class Ticket(TicketBase):
     messages: List[TicketMessage] = []
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Knowledge Base Schemas ---
 class KnowledgeDocumentBase(BaseModel):
@@ -124,7 +124,7 @@ class KnowledgeDocument(KnowledgeDocumentBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Import Schemas ---
 class DBImportConfigs(BaseModel):
@@ -142,3 +142,58 @@ class ImportResult(BaseModel):
     imported: int
     duplicates: int
     errors: List[str] = []
+
+# --- Profile Schemas ---
+class ProfileBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    permissions: Optional[dict] = {} # {"menus": [], "actions": []}
+
+class ProfileCreate(ProfileBase):
+    pass
+
+class Profile(ProfileBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# --- User & Auth Schemas ---
+class UserBase(BaseModel):
+    username: str
+    email: str
+    full_name: Optional[str] = None
+    role: str = "AGENT"
+    profile_id: Optional[int] = None
+
+class UserCreate(UserBase):
+    password: str
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+    profile_id: Optional[int] = None
+
+class User(UserBase):
+    id: int
+    is_active: bool
+    created_at: datetime
+    profile: Optional[Profile] = None
+
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+class SystemReset(BaseModel):
+    entities: List[str] # tickets, clients, knowledge, settings, users
+    confirmation: str # Must be 'DELETAR'

@@ -6,15 +6,13 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground p-8">
       <div className="max-w-7xl mx-auto space-y-8">
-        <div className="flex items-center justify-between border-b border-border-theme pb-8 transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-accent-theme/10 rounded-2xl">
-              <LayoutDashboard className="w-8 h-8 text-accent-theme" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-black font-display tracking-tight">Dashboard Executivo</h1>
-              <p className="text-[var(--color-text-muted)] italic">Visão geral do sistema e indicadores LAN</p>
-            </div>
+        {/* Header Area */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
+          <div className="space-y-2">
+            <h1 className="text-5xl font-black font-display tracking-tight italic uppercase">
+              Dashboard <span className="text-accent-theme">Executivo</span>
+            </h1>
+            <p className="text-[var(--color-text-muted)] text-sm font-medium mt-1">Visão geral do sistema e indicadores LAN</p>
           </div>
         </div>
 
