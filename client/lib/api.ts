@@ -134,6 +134,7 @@ export interface Status {
   id: number;
   name: string;
   color: string;
+  is_final: boolean;
 }
 
 export interface DashboardStats {
@@ -147,7 +148,7 @@ export interface ReportSummary {
   by_priority: Record<string, number>;
   by_status: Record<string, number>;
   by_date: Record<string, number>;
-  status_priority_matrix: { status: string, priority: string, count: number }[];
+  status_priority_matrix: { status: string, priority: string, count: number, is_final?: boolean }[];
 }
 
 export const getReportSummary = async () => {
@@ -274,7 +275,11 @@ export const createCategory = async (cat: Omit<Category, 'id' | 'subcategories'>
 };
 
 export const deleteCategory = async (id: number) => {
-  const response = await api.delete(`/categories/${id}`);
+  await api.delete(`/categories/${id}`);
+};
+
+export const updateCategory = async (id: number, data: Partial<Category>) => {
+  const response = await api.put<Category>(`/categories/${id}`, data);
   return response.data;
 };
 
@@ -289,7 +294,11 @@ export const createStatus = async (status: Omit<Status, 'id'>) => {
 };
 
 export const deleteStatus = async (id: number) => {
-  const response = await api.delete(`/statuses/${id}`);
+  await api.delete(`/statuses/${id}`);
+};
+
+export const updateStatus = async (id: number, data: Partial<Status>) => {
+  const response = await api.put<Status>(`/statuses/${id}`, data);
   return response.data;
 };
 

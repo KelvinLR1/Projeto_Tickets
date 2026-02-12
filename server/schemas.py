@@ -26,6 +26,7 @@ CategoryWithSub.update_forward_refs()
 class StatusBase(BaseModel):
     name: str
     color: str = "#3b82f6"
+    is_final: bool = False
 
 class StatusCreate(StatusBase):
     pass
@@ -105,6 +106,7 @@ class TicketUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None # open, in_progress, closed
+    status_id: Optional[int] = None
     priority: Optional[str] = None
     category_id: Optional[int] = None
     sector_id: Optional[int] = None

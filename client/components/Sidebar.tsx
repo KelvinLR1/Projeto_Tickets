@@ -37,7 +37,7 @@ export default function Sidebar() {
         { id: 'tickets', name: 'Chamados', href: '/tickets', icon: ListFilter },
         { id: 'notifications', name: 'Notificações', href: '/notifications', icon: Bell },
         { id: 'clients', name: 'Clientes', href: '/clients', icon: Users },
-        { id: 'knowledge', name: 'Base IA', href: '/knowledge', icon: BookOpen },
+        { id: 'knowledge', name: 'CONHECIMENTO', href: '/knowledge', icon: BookOpen },
         { id: 'chat', name: 'Soluções IA', href: '/chat', icon: Sparkles },
         { id: 'settings', name: 'Ajustes', href: '/settings', icon: Settings },
     ].filter(item => canAccessMenu(user, item.id));

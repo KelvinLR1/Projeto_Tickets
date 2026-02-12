@@ -3,8 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import TicketList from '@/components/TicketList';
 import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag } from 'lucide-react';
-import { getCategories, Category } from '@/lib/api';
+import { getCategories, Category, getStatuses, Status } from '@/lib/api';
 import CustomSelect from '@/components/CustomSelect';
+import CategorySelect from '@/components/CategorySelect';
+import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import Link from 'next/link';
 
@@ -17,17 +19,22 @@ export default function TicketsPage() {
     const [priorityFilter, setPriorityFilter] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<number | undefined>(undefined);
     const [categories, setCategories] = useState<Category[]>([]);
+    const [statuses, setStatuses] = useState<Status[]>([]);
 
     useEffect(() => {
-        loadCategories();
+        loadData();
     }, []);
 
-    const loadCategories = async () => {
+    const loadData = async () => {
         try {
-            const data = await getCategories();
-            setCategories(data);
+            const [catsData, statusesData] = await Promise.all([
+                getCategories(),
+                getStatuses()
+            ]);
+            setCategories(catsData);
+            setStatuses(statusesData);
         } catch (error) {
-            console.error('Failed to load categories:', error);
+            console.error('Failed to load filters data:', error);
         }
     };
 
@@ -64,9 +71,6 @@ export default function TicketsPage() {
                 {/* Filters and Search Bar Container */}
                 <div className="flex flex-col gap-6">
                     <div className="glass-card p-6 rounded-3xl border border-border-theme flex flex-col md:flex-row gap-6 shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform">
-                            <Search className="w-12 h-12" />
-                        </div>
                         <div className="relative flex-1">
                             <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-accent-theme" />
                             <input
@@ -93,73 +97,85 @@ export default function TicketsPage() {
                     </div>
 
                     {/* Advanced Filters Panel */}
-                    {showAdvanced && (
-                        <div className="glass-card p-10 rounded-3xl border border-border-theme shadow-2xl animate-in slide-in-from-top-6 duration-500 space-y-10">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                                <div className="space-y-6">
-                                    <CustomSelect
-                                        label="Status do Chamado"
-                                        value={statusFilter}
-                                        onChange={setStatusFilter}
-                                        options={[
-                                            { value: '', label: 'Todos os Status', icon: <Circle className="w-4 h-4 opacity-50" /> },
-                                            { value: 'open', label: 'Aberto', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
-                                            { value: 'in_progress', label: 'Em Progresso', icon: <Clock className="w-4 h-4 text-accent-theme" /> },
-                                            { value: 'closed', label: 'Fechado', icon: <CheckCircle2 className="w-4 h-4 text-gray-400" /> },
-                                        ]}
-                                    />
-                                </div>
+                    <AnimatePresence>
+                        {showAdvanced && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -20, height: 0 }}
+                                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                                exit={{ opacity: 0, y: -20, height: 0 }}
+                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                                className="overflow-hidden"
+                            >
+                                <div className="glass-card p-10 rounded-3xl border border-border-theme shadow-2xl space-y-10 relative z-30">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                                        <div className="space-y-3">
+                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                <Circle className="w-3 h-3 text-accent-theme/50" />
+                                                Status do Chamado
+                                            </label>
+                                            <CustomSelect
+                                                value={statusFilter}
+                                                onChange={setStatusFilter}
+                                                placeholder="TODOS OS STATUS"
+                                                options={[
+                                                    { value: '', label: 'TODOS OS STATUS', icon: <Circle className="w-4 h-4 opacity-50" /> },
+                                                    ...statuses.map(s => ({
+                                                        value: s.name,
+                                                        label: s.name,
+                                                        icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
+                                                    }))
+                                                ]}
+                                            />
+                                        </div>
 
-                                <div className="space-y-6">
-                                    <CustomSelect
-                                        label="Nível de Prioridade"
-                                        value={priorityFilter}
-                                        onChange={setPriorityFilter}
-                                        options={[
-                                            { value: '', label: 'Todas as Prioridades', icon: <Tag className="w-4 h-4 opacity-50" /> },
-                                            { value: 'Baixa', label: 'Baixa', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
-                                            { value: 'Média', label: 'Média', icon: <Circle className="w-4 h-4 text-accent-theme" /> },
-                                            { value: 'Alta', label: 'Alta', icon: <Circle className="w-4 h-4 text-orange-500" /> },
-                                            { value: 'Crítica', label: 'Crítica', icon: <AlertOctagon className="w-4 h-4 text-red-500" /> },
-                                        ]}
-                                    />
-                                </div>
+                                        <div className="space-y-3">
+                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                <Tag className="w-3 h-3 text-accent-theme/50" />
+                                                Nível de Prioridade
+                                            </label>
+                                            <CustomSelect
+                                                value={priorityFilter}
+                                                onChange={setPriorityFilter}
+                                                placeholder="TODAS AS PRIORIDADES"
+                                                options={[
+                                                    { value: '', label: 'TODAS AS PRIORIDADES', icon: <Tag className="w-4 h-4 opacity-50" /> },
+                                                    { value: 'Baixa', label: 'Baixa', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
+                                                    { value: 'Média', label: 'Média', icon: <Circle className="w-4 h-4 text-accent-theme" /> },
+                                                    { value: 'Alta', label: 'Alta', icon: <Circle className="w-4 h-4 text-orange-500" /> },
+                                                    { value: 'Crítica', label: 'Crítica', icon: <AlertOctagon className="w-4 h-4 text-red-500" /> },
+                                                ]}
+                                            />
+                                        </div>
 
-                                <div className="space-y-6">
-                                    <CustomSelect
-                                        label="Categoria do Ticket"
-                                        value={categoryFilter || ''}
-                                        onChange={val => setCategoryFilter(val ? parseInt(val) : undefined)}
-                                        placeholder="Todas as Categorias"
-                                        options={[
-                                            { value: '', label: 'Todas as Categorias', icon: <Tag className="w-4 h-4 opacity-50" /> },
-                                            ...categories.flatMap(cat => [
-                                                { value: cat.id, label: cat.name, icon: <Tag className="w-4 h-4" /> },
-                                                ...(cat.subcategories?.map(sub => ({
-                                                    value: sub.id,
-                                                    label: sub.name,
-                                                    icon: <Tag className="w-3 h-3 ml-2" />,
-                                                    className: "pl-8 opacity-80"
-                                                })) || [])
-                                            ])
-                                        ]}
-                                    />
-                                </div>
-                            </div>
+                                        <div className="space-y-3">
+                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                <Tag className="w-3 h-3 text-accent-theme/50" />
+                                                Categoria do Ticket
+                                            </label>
+                                            <CategorySelect
+                                                value={categoryFilter || ''}
+                                                onChange={val => setCategoryFilter(val || undefined)}
+                                                categories={categories}
+                                                placeholder="TODAS AS CATEGORIAS"
+                                            />
+                                        </div>
+                                    </div>
 
-                            {hasActiveFilters && (
-                                <div className="pt-8 border-t border-border-theme flex justify-end">
-                                    <button
-                                        onClick={clearFilters}
-                                        className="flex items-center gap-3 px-6 py-3 rounded-xl border border-red-500/20 text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-all active:scale-95"
-                                    >
-                                        <CloseIcon className="w-4 h-4" />
-                                        Limpar Filtros ativos
-                                    </button>
+                                    {hasActiveFilters && (
+                                        <div className="pt-8 border-t border-border-theme flex justify-end">
+                                            <button
+                                                onClick={clearFilters}
+                                                className="flex items-center gap-3 px-6 py-3 rounded-xl border border-red-500/20 text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-all active:scale-95"
+                                            >
+                                                <CloseIcon className="w-4 h-4" />
+                                                Limpar Filtros ativos
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    )}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
 
                 {/* Ticket List Component */}

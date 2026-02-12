@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Search, Tag, Check, Folder, FolderOpen } from 'lucide-react';
 import clsx from 'clsx';
 import { Category } from '@/lib/api';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface CategorySelectProps {
     value: number | string;
@@ -123,7 +124,11 @@ export default function CategorySelect({
                                 onClick={(e) => toggleExpand(cat.id, e)}
                                 className="p-1 hover:bg-white/10 rounded-md transition-colors mr-1"
                             >
-                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                {isExpanded ? (
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                ) : (
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                )}
                             </div>
                         ) : (
                             <div className="w-5.5 mr-1 flex justify-center opacity-30">
@@ -145,11 +150,19 @@ export default function CategorySelect({
                     {isSelected && <Check className="w-3.5 h-3.5 ml-auto text-accent-theme" />}
                 </button>
 
-                {hasSubs && (isExpanded || search !== '') && (
-                    <div className="mt-1">
-                        {cat.subcategories!.map(sub => renderCategory(sub, level + 1))}
-                    </div>
-                )}
+                <AnimatePresence initial={false}>
+                    {hasSubs && (isExpanded || search !== '') && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2, ease: "easeInOut" }}
+                            className="overflow-hidden mt-1"
+                        >
+                            {cat.subcategories!.map(sub => renderCategory(sub, level + 1))}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         );
     };
@@ -166,38 +179,69 @@ export default function CategorySelect({
             >
                 <div className="flex items-center gap-3 truncate">
                     {MainIcon ? <span className="text-accent-theme">{MainIcon}</span> : <Tag className="w-4 h-4 text-accent-theme/50" />}
-                    <span className={clsx(!selectedCategory && "text-[var(--color-text-muted)] font-normal")}>
+                    <span>
                         {selectedCategory ? selectedCategory.name : placeholder}
                     </span>
                 </div>
                 <ChevronDown className={clsx("w-4 h-4 text-[var(--color-text-muted)] transition-transform duration-300", isOpen && "rotate-180")} />
             </button>
 
-            {isOpen && (
-                <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-card/95 backdrop-blur-3xl border border-border-theme rounded-2xl shadow-3xl z-[1000] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-3 border-b border-border-theme/50 bg-white/5">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                            <input
-                                autoFocus
-                                type="text"
-                                placeholder="Pesquisar categoria..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="w-full bg-background/50 border border-border-theme/50 rounded-xl py-2.5 pl-10 pr-4 text-xs font-bold focus:outline-none focus:border-accent-theme/50 placeholder:text-gray-600"
-                            />
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        className="absolute top-[calc(100%+8px)] left-0 w-full bg-card/95 backdrop-blur-3xl border border-border-theme rounded-2xl shadow-3xl z-[1000] overflow-hidden"
+                    >
+                        <div className="p-3 border-b border-border-theme/50 bg-white/5">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    placeholder="Pesquisar categoria..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="w-full bg-background/50 border border-border-theme/50 rounded-xl py-2.5 pl-10 pr-4 text-xs font-bold focus:outline-none focus:border-accent-theme/50 placeholder:text-gray-600"
+                                />
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="max-h-[350px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                        {categories.length === 0 ? (
-                            <div className="py-8 text-center opacity-30 italic text-xs">Nenhuma categoria encontrada</div>
-                        ) : (
-                            categories.map(cat => renderCategory(cat))
-                        )}
-                    </div>
-                </div>
-            )}
+                        <div className="max-h-[350px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                            {/* Option for "All Categories" */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onChange(undefined as any);
+                                    setIsOpen(false);
+                                }}
+                                className={clsx(
+                                    "w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-all group",
+                                    !value ? "bg-accent-theme/10 text-accent-theme" : "hover:bg-white/5 text-gray-400 hover:text-foreground"
+                                )}
+                            >
+                                <div className="flex items-center">
+                                    <Tag className={clsx("w-3.5 h-3.5 mr-2", !value ? "text-accent-theme" : "text-gray-600")} />
+                                    <span className="text-xs font-black uppercase tracking-widest">
+                                        TODAS AS CATEGORIAS
+                                    </span>
+                                </div>
+                                {!value && <Check className="w-3.5 h-3.5 ml-auto text-accent-theme" />}
+                            </button>
+
+                            <div className="h-px bg-border-theme/50 my-1 mx-2" />
+
+                            {categories.length === 0 ? (
+                                <div className="py-8 text-center opacity-30 italic text-xs">Nenhuma categoria encontrada</div>
+                            ) : (
+                                categories.map(cat => renderCategory(cat))
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

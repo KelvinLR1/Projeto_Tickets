@@ -26,12 +26,12 @@ def get_detailed_report_stats(db: Session):
         func.count(models.Ticket.id)
     ).group_by(models.Ticket.priority).all()
 
-    # Status por Prioridade (Matriz)
     status_priority_stats = db.query(
         models.Ticket.status,
         models.Ticket.priority,
-        func.count(models.Ticket.id)
-    ).group_by(models.Ticket.status, models.Ticket.priority).all()
+        func.count(models.Ticket.id),
+        models.Status.is_final
+    ).join(models.Status, models.Ticket.status_id == models.Status.id, isouter=True).group_by(models.Ticket.status, models.Ticket.priority, models.Status.is_final).all()
 
     # Distribuição de Status
     status_stats = db.query(
@@ -54,7 +54,7 @@ def get_detailed_report_stats(db: Session):
         "by_status": dict(status_stats),
         "by_date": {str(row[0]): row[1] for row in date_stats},
         "status_priority_matrix": [
-            {"status": row[0], "priority": row[1], "count": row[2]} for row in status_priority_stats
+            {"status": row[0], "priority": row[1], "count": row[2], "is_final": row[3]} for row in status_priority_stats
         ]
     }
 
@@ -148,6 +148,20 @@ def delete_category(db: Session, cat_id: int):
         return True
     return False
 
+def update_category(db: Session, cat_id: int, cat_update: schemas.CategoryCreate):
+    db_cat = db.query(models.Category).filter(models.Category.id == cat_id).first()
+    if not db_cat:
+        return None
+    
+    update_data = cat_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_cat, key, value)
+    
+    db.add(db_cat)
+    db.commit()
+    db.refresh(db_cat)
+    return db_cat
+
     return False
 
 def get_or_create_default_category(db: Session):
@@ -179,11 +193,33 @@ def delete_status(db: Session, status_id: int):
         return True
     return False
 
+def update_status(db: Session, status_id: int, status_update: schemas.StatusBase):
+    db_status = db.query(models.Status).filter(models.Status.id == status_id).first()
+    if not db_status:
+        return None
+    
+    old_name = db_status.name
+    new_name = status_update.name
+    
+    update_data = status_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_status, key, value)
+    
+    db.add(db_status)
+    
+    # Se o nome mudou, atualiza todos os tickets que usam o nome denormalizado
+    if old_name != new_name:
+        db.query(models.Ticket).filter(models.Ticket.status == old_name).update({"status": new_name})
+        
+    db.commit()
+    db.refresh(db_status)
+    return db_status
+
 def get_or_create_default_status(db: Session):
     default_name = "Aberto"
     db_status = db.query(models.Status).filter(models.Status.name == default_name).first()
     if not db_status:
-        db_status = models.Status(name=default_name, color="#3b82f6")
+        db_status = models.Status(name=default_name, color="#3b82f6", is_final=False)
         db.add(db_status)
         db.commit()
         db.refresh(db_status)
@@ -196,7 +232,7 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None
         joinedload(models.Ticket.client),
         joinedload(models.Ticket.assigned_user),
         joinedload(models.Ticket.status_obj)
-    )
+    ).order_by(models.Ticket.created_at.desc())
     if status:
         query = query.filter(models.Ticket.status == status)
     if client_id:

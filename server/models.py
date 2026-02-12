@@ -46,6 +46,7 @@ class Status(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, unique=True)
     color = Column(String, default="#3b82f6") # Tailwind color Hex
+    is_final = Column(Boolean, default=False)
     
     tickets = relationship("Ticket", back_populates="status_obj")
 

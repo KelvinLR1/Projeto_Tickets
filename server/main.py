@@ -308,6 +308,13 @@ def delete_status(status_id: int, db: Session = Depends(get_db), current_user: m
         raise HTTPException(status_code=404, detail="Status not found")
     return {"message": "Status deleted"}
 
+@app.put("/statuses/{status_id}", response_model=schemas.Status)
+def update_status(status_id: int, status: schemas.StatusBase, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    db_status = crud.update_status(db=db, status_id=status_id, status_update=status)
+    if not db_status:
+        raise HTTPException(status_code=404, detail="Status not found")
+    return db_status
+
 # --- Tickets Endpoints ---
 @app.post("/tickets/", response_model=schemas.Ticket)
 def create_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db)):

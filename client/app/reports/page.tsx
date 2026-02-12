@@ -5,6 +5,19 @@ import { getReportSummary, ReportSummary, getTickets, Ticket } from '@/lib/api';
 import { BarChart3, Download, FileText, Users, Tag, AlertCircle, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
+const STATUS_MAP: Record<string, string> = {
+    'open': 'Aberto',
+    'in_progress': 'Em Andamento',
+    'closed': 'Fechado'
+};
+
+const PRIORITY_MAP: Record<string, string> = {
+    'low': 'Baixa',
+    'medium': 'Média',
+    'high': 'Alta',
+    'critical': 'Crítica'
+};
+
 export default function ReportsPage() {
     const [summary, setSummary] = useState<ReportSummary | null>(null);
     const [loading, setLoading] = useState(true);
@@ -153,7 +166,7 @@ export default function ReportsPage() {
                                         <span className="text-xs font-black uppercase tracking-widest">{cat.name}</span>
                                     </div>
                                     <span className="px-4 py-1.5 bg-accent-theme/10 rounded-full border border-accent-theme/20 text-[9px] font-black text-accent-theme">
-                                        {cat.count} ITEMS
+                                        {cat.count} ITENS
                                     </span>
                                 </div>
                             ))}
@@ -168,26 +181,39 @@ export default function ReportsPage() {
                             <thead className="text-[10px] font-black uppercase text-[var(--color-text-muted)] border-b border-border-theme">
                                 <tr>
                                     <th className="py-6 px-4">Situação</th>
-                                    <th className="py-6 px-4">Baixa</th>
-                                    <th className="py-6 px-4">Média</th>
-                                    <th className="py-6 px-4">Alta</th>
-                                    <th className="py-6 px-4 text-red-500">Crítica</th>
+                                    <th className="py-6 px-4 text-center">Baixa</th>
+                                    <th className="py-6 px-4 text-center">Média</th>
+                                    <th className="py-6 px-4 text-center">Alta</th>
+                                    <th className="py-6 px-4 text-center text-red-500">Crítica</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border-theme/50">
-                                {['open', 'in_progress', 'closed'].map(status => (
-                                    <tr key={status} className="group hover:bg-white/5 transition-colors">
-                                        <td className="py-6 px-4 font-black uppercase text-[10px] text-[var(--color-text-muted)] group-hover:text-foreground transition-colors tracking-widest">{status.replace('_', ' ')}</td>
-                                        {['low', 'medium', 'high', 'critical'].map(priority => {
-                                            const cell = summary?.status_priority_matrix.find(m => m.status === status && m.priority === priority);
+                                {Object.keys(STATUS_MAP).map(statusKey => (
+                                    <tr key={statusKey} className="group hover:bg-white/5 transition-colors">
+                                        <td className="py-6 px-4 font-black uppercase text-[10px] text-[var(--color-text-muted)] group-hover:text-foreground transition-colors tracking-widest">
+                                            {STATUS_MAP[statusKey]}
+                                        </td>
+                                        {Object.keys(PRIORITY_MAP).map(priorityKey => {
+                                            const cell = summary?.status_priority_matrix.find(m =>
+                                                (m.status === STATUS_MAP[statusKey] || m.status === statusKey) &&
+                                                (m.priority === PRIORITY_MAP[priorityKey] || m.priority === priorityKey)
+                                            );
                                             return (
-                                                <td key={priority} className="py-6 px-4">
-                                                    <span className={clsx(
-                                                        "text-xs font-mono p-2 rounded-lg",
-                                                        cell?.count ? "font-black text-accent-theme bg-accent-theme/5" : "text-gray-300 opacity-20"
-                                                    )}>
-                                                        {cell?.count || 0}
-                                                    </span>
+                                                <td key={priorityKey} className="py-6 px-4">
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <span className={clsx(
+                                                            "text-xs font-mono p-2 rounded-lg min-w-[32px] text-center",
+                                                            cell?.count ? "font-black text-accent-theme bg-accent-theme/5" : "text-gray-300 opacity-20",
+                                                            cell?.is_final && "opacity-40 grayscale"
+                                                        )}>
+                                                            {cell?.count || 0}
+                                                        </span>
+                                                        {cell?.is_final && cell?.count > 0 && (
+                                                            <span className="text-[8px] font-black uppercase tracking-tighter text-[var(--color-text-muted)] flex items-center gap-0.5">
+                                                                🏁 Finalizado
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             );
                                         })}
@@ -226,8 +252,13 @@ function StatCard({ title, value, subtitle, icon }: { title: string, value: stri
 function ReportSection({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) {
     return (
         <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-2xl space-y-10 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform">
-                {icon}
+            {/* Watermark Icon - Exact match to Settings Page */}
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-all duration-700 pointer-events-none">
+                {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement, {
+                    // @ts-ignore
+                    className: "w-20 h-20",
+                    strokeWidth: 1.5
+                }) : null}
             </div>
             <div className="flex items-center gap-4 relative">
                 <div className="p-3 bg-accent-theme/10 rounded-2xl text-accent-theme shadow-inner border border-accent-theme/20">

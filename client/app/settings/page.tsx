@@ -11,8 +11,8 @@ import { getOllamaModels } from '@/lib/ollama';
 import { useTheme } from '@/components/ThemeProvider';
 import { useAuth } from '@/components/AuthProvider';
 import {
-    getCategories, createCategory, deleteCategory, Category,
-    getStatuses, createStatus, deleteStatus, Status,
+    getCategories, createCategory, updateCategory, deleteCategory, Category,
+    getStatuses, createStatus, updateStatus, deleteStatus, Status,
     getUsers, createUser, updateUser, deleteUser, User,
     resetDatabase, downloadBackup, restoreSystem,
     getProfiles, createProfile, updateProfile, deleteProfile, Profile
@@ -85,12 +85,15 @@ export default function SettingsPage() {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [parentCategory, setParentCategory] = useState<string>('');
     const [loadingCats, setLoadingCats] = useState(false);
+    const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
     // Estado Status
     const [statuses, setStatuses] = useState<Status[]>([]);
     const [newStatusName, setNewStatusName] = useState('');
     const [newStatusColor, setNewStatusColor] = useState('#3b82f6');
+    const [newStatusIsFinal, setNewStatusIsFinal] = useState(false);
     const [loadingStatuses, setLoadingStatuses] = useState(false);
+    const [editingStatus, setEditingStatus] = useState<Status | null>(null);
 
     // Estado da Limpeza de Dados (Danger Zone)
     const [resetEntities, setResetEntities] = useState<string[]>([]);
@@ -290,17 +293,40 @@ export default function SettingsPage() {
     const handleCreateCategory = async () => {
         if (!newCategoryName.trim()) return;
         try {
-            await createCategory({
-                name: newCategoryName,
-                parent_id: parentCategory ? parseInt(parentCategory) : undefined
-            });
+            if (editingCategory) {
+                await updateCategory(editingCategory.id, {
+                    name: newCategoryName,
+                    parent_id: parentCategory ? parseInt(parentCategory) : null
+                } as any);
+                showNotification('Categoria atualizada!', 'success');
+            } else {
+                await createCategory({
+                    name: newCategoryName,
+                    parent_id: parentCategory ? parseInt(parentCategory) : null
+                });
+                showNotification('Categoria criada!', 'success');
+            }
             setNewCategoryName('');
             setParentCategory('');
+            setEditingCategory(null);
             fetchCategories();
-            showNotification('Categoria criada!', 'success');
         } catch (error) {
-            showNotification('Erro ao criar categoria', 'error');
+            showNotification(editingCategory ? 'Erro ao atualizar categoria' : 'Erro ao criar categoria', 'error');
         }
+    };
+
+    const handleEditCategory = (cat: Category) => {
+        setEditingCategory(cat);
+        setNewCategoryName(cat.name);
+        setParentCategory(cat.parent_id?.toString() || '');
+        // Scroll para o formulário
+        window.scrollTo({ top: 300, behavior: 'smooth' });
+    };
+
+    const cancelEditCategory = () => {
+        setEditingCategory(null);
+        setNewCategoryName('');
+        setParentCategory('');
     };
 
     const handleDeleteCategory = async (id: number) => {
@@ -325,16 +351,41 @@ export default function SettingsPage() {
     const handleCreateStatus = async () => {
         if (!newStatusName.trim()) return;
         try {
-            await createStatus({
-                name: newStatusName,
-                color: newStatusColor
-            });
+            if (editingStatus) {
+                await updateStatus(editingStatus.id, {
+                    name: newStatusName,
+                    color: newStatusColor,
+                    is_final: newStatusIsFinal
+                });
+                showNotification('Status atualizado!', 'success');
+            } else {
+                await createStatus({
+                    name: newStatusName,
+                    color: newStatusColor,
+                    is_final: newStatusIsFinal
+                });
+                showNotification('Status criado!', 'success');
+            }
             setNewStatusName('');
+            setNewStatusIsFinal(false);
+            setEditingStatus(null);
             fetchStatuses();
-            showNotification('Status criado!', 'success');
         } catch (error) {
-            showNotification('Erro ao criar status', 'error');
+            showNotification(editingStatus ? 'Erro ao atualizar status' : 'Erro ao criar status', 'error');
         }
+    };
+
+    const handleEditStatus = (status: Status) => {
+        setEditingStatus(status);
+        setNewStatusName(status.name);
+        setNewStatusColor(status.color);
+        setNewStatusIsFinal(status.is_final);
+    };
+
+    const cancelEditStatus = () => {
+        setEditingStatus(null);
+        setNewStatusName('');
+        setNewStatusIsFinal(false);
     };
 
     const handleDeleteStatus = async (id: number) => {
@@ -572,7 +623,14 @@ export default function SettingsPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                         {/* Formulário */}
                                         <div className="space-y-6">
-                                            <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Novo Estado</h3>
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">
+                                                    {editingStatus ? 'Editar Estado' : 'Novo Estado'}
+                                                </h3>
+                                                {editingStatus && (
+                                                    <button onClick={cancelEditStatus} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
+                                                )}
+                                            </div>
                                             <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
                                                 <div>
                                                     <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Status</label>
@@ -599,6 +657,16 @@ export default function SettingsPage() {
                                                         />
                                                     </div>
                                                 </div>
+                                                <div className="flex items-center gap-3 bg-background/40 p-3 rounded-xl border border-border-theme">
+                                                    <input
+                                                        type="checkbox"
+                                                        id="isFinal"
+                                                        checked={newStatusIsFinal}
+                                                        onChange={e => setNewStatusIsFinal(e.target.checked)}
+                                                        className="w-5 h-5 rounded-md border-border-theme bg-[var(--color-input)] text-blue-500 focus:ring-blue-500/30 cursor-pointer"
+                                                    />
+                                                    <label htmlFor="isFinal" className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest cursor-pointer">Status Finalizador (Gera encerramento)</label>
+                                                </div>
                                                 <button
                                                     onClick={handleCreateStatus}
                                                     className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-500/20 active:scale-95"
@@ -620,10 +688,18 @@ export default function SettingsPage() {
                                                                 <div className="flex items-center gap-3">
                                                                     <div className="w-4 h-4 rounded-full border border-white/10 shadow-sm" style={{ backgroundColor: st.color }} />
                                                                     <span className="text-sm font-bold tracking-tight">{st.name}</span>
+                                                                    {st.is_final && (
+                                                                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">Finalizado</span>
+                                                                    )}
                                                                 </div>
-                                                                <button onClick={() => handleDeleteStatus(st.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl opacity-0 group-hover/item:opacity-100 transition-all">
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                </button>
+                                                                <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                                                                    <button onClick={() => handleEditStatus(st)} className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl transition-all">
+                                                                        <Edit2 className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button onClick={() => handleDeleteStatus(st.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         ))}
                                             </div>
@@ -648,7 +724,14 @@ export default function SettingsPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                         {/* Formulário */}
                                         <div className="space-y-6">
-                                            <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">Nova Categoria</h3>
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">
+                                                    {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
+                                                </h3>
+                                                {editingCategory && (
+                                                    <button onClick={cancelEditCategory} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
+                                                )}
+                                            </div>
                                             <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
                                                 <div>
                                                     <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome da Categoria</label>
@@ -676,8 +759,8 @@ export default function SettingsPage() {
                                                     onClick={handleCreateCategory}
                                                     className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
                                                 >
-                                                    <PlusCircle className="w-4 h-4" />
-                                                    Criar Categoria
+                                                    {editingCategory ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
+                                                    {editingCategory ? 'Salvar Alterações' : 'Criar Categoria'}
                                                 </button>
                                             </div>
                                         </div>
@@ -710,10 +793,25 @@ export default function SettingsPage() {
                                                                                     <span className="px-2 py-0.5 bg-accent-theme/10 text-accent-theme rounded-full text-[9px] font-black">
                                                                                         {subcats.length} sub
                                                                                     </span>
-                                                                                    <ChevronDown className={clsx(
-                                                                                        "w-3 h-3 text-[var(--color-text-muted)] transition-transform duration-300",
-                                                                                        isExpanded && "rotate-180"
-                                                                                    )} />
+                                                                                    <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                                                                                        <button
+                                                                                            onClick={(e) => { e.stopPropagation(); handleEditCategory(cat); }}
+                                                                                            className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
+                                                                                        >
+                                                                                            <Edit2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
+                                                                                            className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                                                                                        >
+                                                                                            <Trash2 className="w-4 h-4" />
+                                                                                        </button>
+                                                                                        {hasSubcats && (
+                                                                                            <div className={clsx("p-1.5 transition-transform duration-300", isExpanded ? "rotate-180" : "rotate-0")}>
+                                                                                                <ChevronDown className="w-4 h-4 opacity-50" />
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
                                                                                 </>
                                                                             )}
                                                                         </div>
@@ -735,9 +833,20 @@ export default function SettingsPage() {
                                                                                 <div className="w-2 h-2 rounded-full bg-accent-theme/40" />
                                                                                 <span className="text-xs text-foreground/80">{sub.name}</span>
                                                                             </div>
-                                                                            <button onClick={() => handleDeleteCategory(sub.id)} className="p-1.5 text-gray-500 hover:text-red-500 opacity-0 group-hover/sub:opacity-100 transition-all">
-                                                                                <Trash2 className="w-3 h-3" />
-                                                                            </button>
+                                                                            <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-all">
+                                                                                <button
+                                                                                    onClick={() => handleEditCategory(sub)}
+                                                                                    className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
+                                                                                >
+                                                                                    <Edit2 className="w-3 h-3" />
+                                                                                </button>
+                                                                                <button
+                                                                                    onClick={() => handleDeleteCategory(sub.id)}
+                                                                                    className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                                                                                >
+                                                                                    <Trash2 className="w-3 h-3" />
+                                                                                </button>
+                                                                            </div>
                                                                         </div>
                                                                     ))}
                                                                 </div>

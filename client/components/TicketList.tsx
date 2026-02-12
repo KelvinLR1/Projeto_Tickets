@@ -26,6 +26,7 @@ export default function TicketList({
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionId, setActionId] = useState<number | null>(null);
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' });
 
     const [categories, setCategories] = useState<Category[]>([]);
     const [statuses, setStatuses] = useState<Status[]>([]);
@@ -132,6 +133,43 @@ export default function TicketList({
         }
     };
 
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const sortedTickets = [...tickets].sort((a, b) => {
+        let aValue: any = a[sortConfig.key as keyof Ticket];
+        let bValue: any = b[sortConfig.key as keyof Ticket];
+
+        // Custom sorting for nested objects if needed
+        if (sortConfig.key === 'client') {
+            aValue = a.client?.name || '';
+            bValue = b.client?.name || '';
+        } else if (sortConfig.key === 'assigned_user') {
+            aValue = a.assigned_user?.full_name || a.assigned_user?.username || '';
+            bValue = b.assigned_user?.full_name || b.assigned_user?.username || '';
+        }
+
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    const filteredTickets = sortedTickets.filter(t => {
+        const matchSearch = !searchTerm ||
+            t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            t.description.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchStatus = !status || t.status === status;
+        const matchPriority = !priority || t.priority === priority;
+        const matchCategory = !categoryId || t.category_id === categoryId;
+
+        return matchSearch && matchStatus && matchPriority && matchCategory;
+    });
+
     if (loading && tickets.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
@@ -148,39 +186,46 @@ export default function TicketList({
                     <table className="w-full text-left text-sm border-collapse">
                         <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
                             <tr>
-                                <th className="px-8 py-6 w-16">ID</th>
-                                <th className="px-8 py-6">Ticket / Cliente</th>
-                                <th className="px-8 py-6 w-40 text-center">Status</th>
-                                <th className="px-8 py-6 w-36 text-center">Prioridade</th>
-                                <th className="px-8 py-6 w-48">Responsável</th>
+                                <th onClick={() => handleSort('id')} className="px-8 py-6 w-16 cursor-pointer hover:text-foreground transition-colors group/th">
+                                    <div className="flex items-center gap-2">
+                                        ID {sortConfig.key === 'id' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('title')} className="px-8 py-6 cursor-pointer hover:text-foreground transition-colors group/th">
+                                    <div className="flex items-center gap-2">
+                                        Ticket / Cliente {sortConfig.key === 'title' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('status')} className="px-8 py-6 w-40 text-center cursor-pointer hover:text-foreground transition-colors group/th">
+                                    <div className="flex items-center justify-center gap-2">
+                                        Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('priority')} className="px-8 py-6 w-36 text-center cursor-pointer hover:text-foreground transition-colors group/th">
+                                    <div className="flex items-center justify-center gap-2">
+                                        Prioridade {sortConfig.key === 'priority' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('assigned_user')} className="px-8 py-6 w-48 cursor-pointer hover:text-foreground transition-colors group/th">
+                                    <div className="flex items-center gap-2">
+                                        Responsável {sortConfig.key === 'assigned_user' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                    </div>
+                                </th>
                                 <th className="px-8 py-6 text-right w-24">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border-theme/30">
-                            {tickets.filter(t =>
-                                !searchTerm ||
-                                t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                t.description.toLowerCase().includes(searchTerm.toLowerCase())
-                            ).length === 0 && !loading && (
-                                    <tr>
-                                        <td colSpan={4} className="py-24 text-center">
-                                            <div className="w-20 h-20 bg-background rounded-full mx-auto flex items-center justify-center border border-border-theme shadow-inner opacity-20 mb-4">
-                                                <ReceiptText className="w-10 h-10" />
-                                            </div>
-                                            <p className="text-gray-500 text-sm italic">Nenhum ticket encontrado no sistema.</p>
-                                        </td>
-                                    </tr>
-                                )}
-                            {tickets.filter(t => {
-                                const matchSearch = !searchTerm ||
-                                    t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                    t.description.toLowerCase().includes(searchTerm.toLowerCase());
-                                const matchStatus = !status || t.status === status;
-                                const matchPriority = !priority || t.priority === priority;
-                                const matchCategory = !categoryId || t.category_id === categoryId;
-
-                                return matchSearch && matchStatus && matchPriority && matchCategory;
-                            }).map((ticket) => {
+                            {filteredTickets.length === 0 && !loading && (
+                                <tr>
+                                    <td colSpan={6} className="py-24 text-center">
+                                        <div className="w-20 h-20 bg-background rounded-full mx-auto flex items-center justify-center border border-border-theme shadow-inner opacity-20 mb-4">
+                                            <ReceiptText className="w-10 h-10" />
+                                        </div>
+                                        <p className="text-gray-500 text-sm italic">Nenhum ticket encontrado no sistema.</p>
+                                    </td>
+                                </tr>
+                            )}
+                            {filteredTickets.map((ticket) => {
                                 const style = getStatusStyle(ticket.status, ticket.status_obj);
 
                                 return (
@@ -190,7 +235,7 @@ export default function TicketList({
                                                 <span className="font-mono text-sm font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
 
                                                 {/* Timer Controls */}
-                                                <div className="flex items-center">
+                                                <div className="flex items-center min-w-[32px]">
                                                     {activeTimers.find(t => t.ticket_id === ticket.id) ? (
                                                         <button
                                                             onClick={() => handleStopTimer(ticket.id)}
@@ -200,22 +245,17 @@ export default function TicketList({
                                                             <div className="w-3 h-3 bg-red-500 rounded-sm animate-pulse" />
                                                         </button>
                                                     ) : (
-                                                        <button
-                                                            onClick={() => {
-                                                                if (ticket.status === 'Finalizado') return;
-                                                                handleStartTimer(ticket.id);
-                                                            }}
-                                                            disabled={ticket.status === 'Finalizado'}
-                                                            className={clsx(
-                                                                "p-2 rounded-lg transition-all",
-                                                                ticket.status === 'Finalizado'
-                                                                    ? "bg-gray-500/5 text-gray-500 cursor-not-allowed opacity-20"
-                                                                    : "bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 opacity-0 group-hover:opacity-100"
-                                                            )}
-                                                            title={ticket.status === 'Finalizado' ? "Chamado Finalizado" : "Iniciar Cronômetro"}
-                                                        >
-                                                            <Play className="w-3 h-3 fill-current" />
-                                                        </button>
+                                                        ticket.status !== 'Finalizado' && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    handleStartTimer(ticket.id);
+                                                                }}
+                                                                className="p-2 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                                title="Iniciar Cronômetro"
+                                                            >
+                                                                <Play className="w-3 h-3 fill-current" />
+                                                            </button>
+                                                        )
                                                     )}
                                                 </div>
                                             </div>
@@ -233,7 +273,17 @@ export default function TicketList({
                                             </Link>
                                         </td>
                                         <td className="px-8 py-6 text-center">
-                                            <div className="inline-flex items-center gap-2.5 px-4 py-2 bg-background/40 rounded-xl border border-border-theme/50 w-32 justify-center">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleStatusChange(ticket.id, ticket.status);
+                                                }}
+                                                disabled={actionId === ticket.id}
+                                                className={clsx(
+                                                    "inline-flex items-center gap-2.5 px-4 py-2 bg-background/40 rounded-xl border border-border-theme/50 w-32 justify-center transition-all hover:bg-white/5",
+                                                    actionId === ticket.id && "animate-pulse opacity-50 cursor-wait"
+                                                )}
+                                            >
                                                 <div
                                                     className="w-2 h-2 rounded-full"
                                                     style={{ backgroundColor: style.color, boxShadow: `0 0 10px ${style.color}40` }}
@@ -244,7 +294,7 @@ export default function TicketList({
                                                 >
                                                     {style.name}
                                                 </span>
-                                            </div>
+                                            </button>
                                         </td>
                                         <td className="px-8 py-6 text-center">
                                             <span className={clsx(
