@@ -38,6 +38,15 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const fetchActiveTimers = useCallback(async () => {
         if (!user) return;
+
+        // Verifica se o token está presente antes de fazer a requisição
+        if (typeof window !== 'undefined') {
+            const token = localStorage.getItem('auth_token');
+            if (!token || token === 'undefined' || token === 'null') {
+                return;
+            }
+        }
+
         try {
             const timers = await getActiveTimers();
             setActiveTimers(timers);

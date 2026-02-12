@@ -3,9 +3,9 @@ import axios from 'axios';
 // Determina a BaseURL inicial dinamicamente para suportar acesso remoto
 const getDefaultBaseURL = () => {
   if (typeof window !== 'undefined') {
-    return `http://${window.location.hostname}:8000`;
+    return `http://${window.location.hostname}:8080`;
   }
-  return 'http://127.0.0.1:8000';
+  return 'http://127.0.0.1:8080';
 };
 
 const api = axios.create({
@@ -23,7 +23,17 @@ api.interceptors.request.use((config) => {
     const localConfig = localStorage.getItem('system_config');
     if (localConfig) {
       try {
-        const { apiUrl } = JSON.parse(localConfig);
+        const configData = JSON.parse(localConfig);
+        let { apiUrl } = configData;
+
+        // Auto-migração da porta 8000 para 8080 se detectada
+        if (apiUrl && apiUrl.includes(':8000')) {
+          console.log("[API] Detectada porta antiga 8000. Migrando para 8080...");
+          apiUrl = apiUrl.replace(':8000', ':8080');
+          configData.apiUrl = apiUrl;
+          localStorage.setItem('system_config', JSON.stringify(configData));
+        }
+
         if (apiUrl) {
           config.baseURL = apiUrl.replace(/\/$/, "");
         }
@@ -66,6 +76,14 @@ api.interceptors.response.use(
   }
 );
 
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  full_name?: string;
+  role: string;
+}
+
 export interface Ticket {
   id: number;
   title: string;
@@ -77,10 +95,23 @@ export interface Ticket {
   category?: Category;
   status_id?: number;
   status_obj?: Status;
+  assigned_user_id?: number;
+  assigned_user?: User;
   created_at: string;
+  updated_at: string;
   total_duration?: number;
   active_timer?: TimeLog;
   client?: Client;
+}
+
+export interface TicketHistory {
+  id: number;
+  ticket_id: number;
+  user_id?: number;
+  event_type: string;
+  description: string;
+  created_at: string;
+  user?: User;
 }
 
 export interface Category {
@@ -156,6 +187,11 @@ export async function createTicket(ticketData: any) {
 
 export const updateTicket = async (id: number, data: any) => {
   const response = await api.put<Ticket>(`/tickets/${id}`, data);
+  return response.data;
+};
+
+export const getTicketHistory = async (id: number) => {
+  const response = await api.get<TicketHistory[]>(`/tickets/${id}/history`);
   return response.data;
 };
 
@@ -323,6 +359,11 @@ export const getUsers = async () => {
   return response.data;
 };
 
+export const getAttendants = async () => {
+  const response = await api.get<{ id: number; name: string }[]>('/users/attendants');
+  return response.data;
+};
+
 export const createUser = async (user: any) => {
   const response = await api.post<User>('/users/', user);
   return response.data;
@@ -381,6 +422,27 @@ export interface TimeLog {
   ticket?: Ticket;
 }
 
+export interface Notification {
+  id: number;
+  user_id: number;
+  created_by_user_id?: number;
+  created_by_username?: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link?: string;
+  created_at: string;
+}
+
+export interface NotificationSend {
+  recipient_user_id: number;
+  title: string;
+  message: string;
+  type?: string;
+  ticket_id?: number;
+}
+
 // --- Timer API ---
 export const startTimer = async (ticketId: number) => {
   const response = await api.post<TimeLog>(`/tickets/${ticketId}/timer/start`);
@@ -394,6 +456,55 @@ export const stopTimer = async (ticketId: number) => {
 
 export const getActiveTimers = async () => {
   const response = await api.get<TimeLog[]>('/tickets/timers/active');
+  return response.data;
+};
+
+// --- Notification API ---
+export const getNotifications = async (skip: number = 0, limit: number = 20) => {
+  const response = await api.get<Notification[]>('/notifications', {
+    params: { skip, limit }
+  });
+  return response.data;
+};
+
+export const getUnreadNotificationCount = async () => {
+  const response = await api.get<{ count: number }>('/notifications/unread-count');
+  return response.data;
+};
+
+export const markNotificationRead = async (id: number) => {
+  const response = await api.post<Notification>(`/notifications/${id}/read`);
+  return response.data;
+};
+
+export const markNotificationUnread = async (id: number) => {
+  const response = await api.post<Notification>(`/notifications/${id}/unread`);
+  return response.data;
+};
+
+export const deleteNotification = async (id: number) => {
+  const response = await api.delete<{ message: string }>(`/notifications/${id}`);
+  return response.data;
+};
+
+export const markAllNotificationsRead = async () => {
+  const response = await api.post<{ message: string }>('/notifications/read-all');
+  return response.data;
+};
+
+export const sendNotification = async (data: NotificationSend) => {
+  const response = await api.post<Notification>('/notifications/send', data);
+  return response.data;
+};
+
+export const uploadFile = async (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post<{ url: string }>('/upload/', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
   return response.data;
 };
 

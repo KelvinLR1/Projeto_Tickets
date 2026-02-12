@@ -107,37 +107,43 @@ export default function NewTicket() {
 
     const handleDescriptionImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            setUploadingImage(true);
+        if (!file || !file.type.startsWith('image/')) return;
+
+        setUploadingImage(true);
+        try {
+            // Usando a porta correta 8080 configurada anteriormente
             const formDataUpload = new FormData();
             formDataUpload.append('file', file);
+            const response = await axios.post('http://localhost:8080/upload/', formDataUpload);
 
-            try {
-                const response = await axios.post('http://localhost:8000/upload/', formDataUpload);
-                const imageUrl = response.data.url;
-                const markdownImage = `\n![img](${imageUrl})\n`;
+            const imageUrl = response.data.url;
+            const markdownImage = `\n![img](${imageUrl})\n`;
 
-                // Inserir no cursor ou no final
-                const textarea = descriptionRef.current;
-                if (textarea) {
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    const val = formData.description;
-                    const newVal = val.substring(0, start) + markdownImage + val.substring(end);
-                    setFormData({ ...formData, description: newVal });
-                } else {
-                    setFormData({ ...formData, description: formData.description + markdownImage });
-                }
+            const textarea = descriptionRef.current;
+            if (textarea) {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const val = formData.description;
+                const newVal = val.substring(0, start) + markdownImage + val.substring(end);
+                setFormData({ ...formData, description: newVal });
 
-                showNotification('Imagem inserida na descrição!', 'success');
-            } catch (error) {
-                console.error('Upload error:', error);
-                showNotification('Erro ao fazer upload da imagem.', 'error');
-            } finally {
-                setUploadingImage(false);
-                // Reset input
-                e.target.value = '';
+                // Dar foco de volta e posicionar cursor após a imagem no próximo render
+                setTimeout(() => {
+                    textarea.focus();
+                    const newPos = start + markdownImage.length;
+                    textarea.setSelectionRange(newPos, newPos);
+                }, 10);
+            } else {
+                setFormData({ ...formData, description: formData.description + markdownImage });
             }
+
+            showNotification('Imagem inserida na descrição!', 'success');
+        } catch (error) {
+            console.error('Upload error:', error);
+            showNotification('Erro ao fazer upload da imagem.', 'error');
+        } finally {
+            setUploadingImage(false);
+            e.target.value = '';
         }
     };
 

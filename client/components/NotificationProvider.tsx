@@ -1,12 +1,22 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { CheckCircle2, AlertCircle, Info, X, AlertTriangle } from 'lucide-react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { CheckCircle2, AlertCircle, Info, X, AlertTriangle, Bell } from 'lucide-react';
 import clsx from 'clsx';
+import {
+    Notification as ApiNotification,
+    getNotifications,
+    getUnreadNotificationCount,
+    markNotificationRead,
+    markNotificationUnread,
+    deleteNotification,
+    markAllNotificationsRead
+} from '@/lib/api';
+import { useAuth } from './AuthProvider';
 
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 
-interface Notification {
+interface Toast {
     id: number;
     message: string;
     type: NotificationType;
@@ -23,6 +33,13 @@ interface ConfirmOptions {
 interface NotificationContextType {
     showNotification: (message: string, type?: NotificationType) => void;
     confirm: (options: ConfirmOptions) => Promise<boolean>;
+    notifications: ApiNotification[];
+    unreadCount: number;
+    fetchNotifications: () => Promise<void>;
+    markAsRead: (id: number) => Promise<void>;
+    markAsUnread: (id: number) => Promise<void>;
+    deleteNotif: (id: number) => Promise<void>;
+    markAllAsRead: () => Promise<void>;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -36,7 +53,10 @@ export const useNotification = () => {
 };
 
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
-    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const { isAuthenticated } = useAuth();
+    const [toasts, setToasts] = useState<Toast[]>([]);
+    const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
     const [confirmDialog, setConfirmDialog] = useState<{
         open: boolean;
         options: ConfirmOptions;
@@ -45,11 +65,81 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
     const showNotification = useCallback((message: string, type: NotificationType = 'info') => {
         const id = Date.now();
-        setNotifications((prev) => [...prev, { id, message, type }]);
+        setToasts((prev) => [...prev, { id, message, type }]);
         setTimeout(() => {
-            setNotifications((prev) => prev.filter((n) => n.id !== id));
+            setToasts((prev) => prev.filter((n) => n.id !== id));
         }, 5000);
     }, []);
+
+    const fetchNotifications = useCallback(async () => {
+        if (!isAuthenticated) return;
+        try {
+            const data = await getNotifications(0, 50);
+            setNotifications(data);
+            const countData = await getUnreadNotificationCount();
+            setUnreadCount(countData.count);
+        } catch (error) {
+            console.error('Failed to fetch notifications:', error);
+        }
+    }, [isAuthenticated]);
+
+    const markAsRead = useCallback(async (id: number) => {
+        try {
+            await markNotificationRead(id);
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+            setUnreadCount(prev => Math.max(0, prev - 1));
+        } catch (error) {
+            console.error('Failed to mark notification as read:', error);
+        }
+    }, []);
+
+    const markAsUnread = useCallback(async (id: number) => {
+        try {
+            await markNotificationUnread(id);
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
+            setUnreadCount(prev => prev + 1);
+        } catch (error) {
+            console.error('Failed to mark notification as unread:', error);
+        }
+    }, []);
+
+    const deleteNotif = useCallback(async (id: number) => {
+        try {
+            const notif = notifications.find(n => n.id === id);
+            await deleteNotification(id);
+            setNotifications(prev => prev.filter(n => n.id !== id));
+            if (notif && !notif.read) {
+                setUnreadCount(prev => Math.max(0, prev - 1));
+            }
+            showNotification('Notificação excluída.', 'success');
+        } catch (error) {
+            console.error('Failed to delete notification:', error);
+            showNotification('Erro ao excluir notificação.', 'error');
+        }
+    }, [notifications, showNotification]);
+
+    const markAllAsRead = useCallback(async () => {
+        try {
+            await markAllNotificationsRead();
+            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            setUnreadCount(0);
+        } catch (error) {
+            console.error('Failed to mark all as read:', error);
+        }
+    }, []);
+
+    // Polling de notificações
+    useEffect(() => {
+        if (!isAuthenticated) {
+            setNotifications([]);
+            setUnreadCount(0);
+            return;
+        }
+
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 60000); // 1 minuto
+        return () => clearInterval(interval);
+    }, [isAuthenticated, fetchNotifications]);
 
     const confirm = useCallback((options: ConfirmOptions) => {
         return new Promise<boolean>((resolve) => {
@@ -65,12 +155,22 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     return (
-        <NotificationContext.Provider value={{ showNotification, confirm }}>
+        <NotificationContext.Provider value={{
+            showNotification,
+            confirm,
+            notifications,
+            unreadCount,
+            fetchNotifications,
+            markAsRead,
+            markAsUnread,
+            deleteNotif,
+            markAllAsRead
+        }}>
             {children}
 
             {/* Toasts Container */}
             <div className="fixed bottom-8 right-8 z-[100] flex flex-col gap-3 pointer-events-none">
-                {notifications.map((n) => (
+                {toasts.map((n) => (
                     <div
                         key={n.id}
                         className={clsx(
@@ -89,7 +189,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
                         <span className="text-sm font-medium flex-1">{n.message}</span>
 
                         <button
-                            onClick={() => setNotifications(prev => prev.filter(item => item.id !== n.id))}
+                            onClick={() => setToasts(prev => prev.filter(item => item.id !== n.id))}
                             className="p-1 hover:bg-black/10 rounded-lg transition-colors"
                         >
                             <X className="w-4 h-4" />

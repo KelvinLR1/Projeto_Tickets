@@ -6,22 +6,22 @@ import { useAuth } from "@/components/AuthProvider";
 import { usePathname } from "next/navigation";
 import { canAccessMenu, getFirstAllowedPath, canPerformAction } from '@/lib/permissions';
 import { useTimer } from './TimerProvider';
+import { useNotification } from './NotificationProvider';
 import {
     LayoutDashboard,
     BookOpen,
     ListFilter,
-    MessageSquarePlus,
     Sparkles,
     Ticket,
     Settings,
     Users,
     BarChart3,
     ChevronRight,
-    Search,
     PlusCircle,
     User,
     LogOut,
-    Clock
+    Clock,
+    Bell
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -29,11 +29,13 @@ export default function Sidebar() {
     const pathname = usePathname();
     const { user, logout } = useAuth();
     const { activeTimers, openPiP } = useTimer();
+    const { unreadCount } = useNotification();
 
     const navItems = [
         { id: 'dashboard', name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { id: 'reports', name: 'Relatórios', href: '/reports', icon: BarChart3 },
         { id: 'tickets', name: 'Chamados', href: '/tickets', icon: ListFilter },
+        { id: 'notifications', name: 'Notificações', href: '/notifications', icon: Bell },
         { id: 'clients', name: 'Clientes', href: '/clients', icon: Users },
         { id: 'knowledge', name: 'Base IA', href: '/knowledge', icon: BookOpen },
         { id: 'chat', name: 'Soluções IA', href: '/chat', icon: Sparkles },
@@ -74,7 +76,14 @@ export default function Sidebar() {
                                 <Icon className={clsx("w-5 h-5 transition-transform group-hover:scale-110", isActive ? "text-accent-theme" : "text-[var(--color-text-muted)] group-hover:text-foreground")} />
                                 <span>{item.name}</span>
                             </div>
-                            {isActive && <ChevronRight className="w-4 h-4 z-10 animate-in slide-in-from-left duration-300" />}
+
+                            {item.id === 'notifications' && unreadCount > 0 && (
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex h-5 min-w-5 px-1.5 items-center justify-center rounded-full bg-accent-theme text-[8px] font-black text-white shadow-lg shadow-accent-theme/20 z-10 animate-in zoom-in duration-300">
+                                    {unreadCount}
+                                </div>
+                            )}
+
+                            {isActive && item.id !== 'notifications' && <ChevronRight className="w-4 h-4 z-10 animate-in slide-in-from-left duration-300" />}
                             {isActive && (
                                 <div className="absolute inset-0 bg-gradient-to-r from-accent-theme/10 to-transparent pointer-events-none" />
                             )}

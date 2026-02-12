@@ -1,57 +1,105 @@
-# Sistema de Tickets Offline com IA (LAN)
+# 🎫 Antigravity Ticket System
+### Gestão Inteligente de Chamados 100% Offline e Local
 
-Sistema de gestão de tickets e base de conhecimento, operando 100% offline em rede local, com suporte a IA distribuída.
+O **Antigravity Ticket System** é uma plataforma state-of-the-art para gestão de suporte técnico e base de conhecimento. Projetado para operar com máxima privacidade em redes locais (LAN), o sistema integra inteligência artificial distribuída (RAG) para acelerar a resolução de problemas sem depender da nuvem.
 
-## Estrutura do Projeto
-- `/server`: Backend em Python (FastAPI) + SQLite + ChromaDB.
-- `/client`: Frontend em Next.js (React).
+---
 
-## Pré-requisitos
-- Python 3.10+
-- Node.js 18+
-- [Ollama](https://ollama.com/) instalado em cada máquina cliente.
+## ✨ Principais Funcionalidades
 
-## Como Rodar
+### 📋 Gestão de Tickets de Alta Performance
+- **Ciclo de Vida Completo:** Criação, atribuição, transferência de setor e encerramento de chamados.
+- **Conteúdo Rico Inline:** Suporte direto no texto para imagens, vídeos e anexos de qualquer tipo (Excel, PDF, Executáveis).
+- **Ações Rápidas:** Interface otimizada para adicionar informações, transferir técnicos ou copiar links instantaneamente.
+
+### 🧠 Base de Conhecimento com RAG
+- **Busca Vetorial Inteligente:** Utilize o poder da IA (Chromadb) para buscar soluções em chamados passados e manuais técnicos.
+- **Treinamento em Tempo Real:** Cada novo ticket resolvido alimenta automaticamente a inteligência do sistema.
+
+### 🎨 Experiência de Usuário Premium
+- **Design Glassmorphism:** Interface moderna com efeitos de vidro, desfoques e animações suaves.
+- **Multitemas:** Suporte a diversos temas (Cyberpunk, Matrix, Nordic, Gold, entre outros).
+- **Timeline de Alterações:** Rastreabilidade completa e localizada (PT-BR) de cada ação tomada no chamado.
+
+### 📊 Relatórios e Dashboard
+- **Insights em Tempo Real:** Estatísticas detalhadas sobre volume de tickets, categorias e desempenho da equipe.
+- **Monitoramento de SLA:** Acompanhamento visual de prioridades e estados críticos.
+
+---
+
+## 🛠️ Estrutura Técnica
+
+- **Frontend:** [Next.js 14+](https://nextjs.org/) (React, Tailwind CSS v4, Lucide Icons).
+- **Backend:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.10+).
+- **Banco de Dados:** SQLite (Relacional) + SQLAlchemy ORM.
+- **IA/Vetorial:** ChromaDB + [Ollama](https://ollama.com/) (Llama3/Llava).
+
+---
+
+## 🚀 Como Executar
+
+### 0. Verificar Ambiente (Recomendado)
+Antes de iniciar o projeto em uma nova máquina, verifique se todas as dependências estão presentes:
+
+```bash
+python check_env.py
+```
+
+> **Dica:** Ao iniciar em uma nova máquina, o sistema criará automaticamente um usuário administrador padrão:
+> - **Usuário:** `admin`
+> - **Senha:** `admin`
+
+---
 
 ### 1. Backend (Servidor)
-Abra o terminal na pasta raiz e execute:
+Acesse a pasta `server`, crie o ambiente virtual e instale as dependências:
 
 ```bash
 cd server
-# Ativar ambiente virtual
+# Criar ambiente virtual (se não existir)
+python -m venv .venv
+# Ativar
 .venv\Scripts\activate
-# Rodar servidor (acessível na rede)
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Instalar dependências
+pip install -r requirements.txt
+# Rodar servidor
+uvicorn main:app --host 0.0.0.0 --port 8080 --reload
 ```
-
-A API estará disponível em `http://localhost:8000` (ou IP da máquina).
+> O backend estará disponível em: `http://localhost:8080`
 
 ### 2. Frontend (Cliente)
-Abra outro terminal:
+Acesse a pasta `client` e instale as dependências do Node:
 
 ```bash
 cd client
+# Instalar dependências
+npm install
+# Iniciar ambiente de desenvolvimento
 npm run dev
 ```
+> Acesse a interface em: `http://localhost:3000`
 
-Acesse `http://localhost:3000`.
+---
 
-## Como Desativar / Parar os Serviços
+## 🛑 Comandos Úteis
 
-### 1. Parar o Frontend ou Backend
-Em ambos os terminais (Client ou Server), basta pressionar:
-- **`Ctrl + C`**
+- **Parar Serviços:** `Ctrl + C` em qualquer terminal.
+- **Desativar venv:** `deactivate` no terminal do servidor.
+- **Atualizar Modelos de IA:**
+  ```bash
+  ollama pull llama3
+  ollama pull llava
+  ```
 
-### 2. Sair do Ambiente Virtual (Backend)
-No terminal do servidor, após parar o processo, você pode desativar o ambiente virtual executando:
-```bash
-deactivate
+---
+
+## 📁 Estrutura de Pastas
+```text
+/client   -> Código fonte do frontend Next.js
+/server   -> API FastAPI, lógica CRUD e IA
+  /uploads -> Armazenamento local de anexos e imagens
+  /brain   -> Artefatos de planejamento e evolução
 ```
 
-## IA Local (Ollama)
-Certifique-se de ter os modelos baixados:
-
-```bash
-ollama pull llama3
-ollama pull llava
-```
+---
+*Desenvolvido com foco em privacidade, velocidade e experiência estética premium.*

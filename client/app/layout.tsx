@@ -40,15 +40,15 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${outfit.variable} antialiased font-sans`}
       >
         <ThemeProvider>
-          <NotificationProvider>
-            <AuthProvider>
+          <AuthProvider>
+            <NotificationProvider>
               <TimerProvider>
                 <AppLayout>
                   {children}
                 </AppLayout>
               </TimerProvider>
-            </AuthProvider>
-          </NotificationProvider>
+            </NotificationProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

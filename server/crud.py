@@ -191,7 +191,12 @@ def get_or_create_default_status(db: Session):
 
 # --- Ticket CRUD ---
 def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None):
-    query = db.query(models.Ticket)
+    from sqlalchemy.orm import joinedload
+    query = db.query(models.Ticket).options(
+        joinedload(models.Ticket.client),
+        joinedload(models.Ticket.assigned_user),
+        joinedload(models.Ticket.status_obj)
+    )
     if status:
         query = query.filter(models.Ticket.status == status)
     if client_id:
@@ -296,7 +301,13 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 desc = f"Alterou {field} de '{old_value}' para '{new_value}'"
                 
                 # Nomes amigáveis para campos específicos
-                if field == "status_id":
+                if field == "description":
+                    # Se houver o separador de nova informação, logamos de forma específica
+                    if "---" in str(new_value):
+                        desc = "Adicionada nova informação ao chamado"
+                    else:
+                        desc = "Descrição do ticket atualizada"
+                elif field == "status_id":
                     new_status = db.query(models.Status).filter(models.Status.id == new_value).first()
                     new_label = new_status.name if new_status else str(new_value)
                     desc = f"Alterou Status para '{new_label}'"
@@ -715,6 +726,22 @@ def mark_notification_as_read(db: Session, notification_id: int, user_id: int):
         db.commit()
         db.refresh(notification)
     return notification
+
+def mark_notification_as_unread(db: Session, notification_id: int, user_id: int):
+    notification = db.query(models.Notification).filter(models.Notification.id == notification_id, models.Notification.user_id == user_id).first()
+    if notification:
+        notification.read = False
+        db.commit()
+        db.refresh(notification)
+    return notification
+
+def delete_notification(db: Session, notification_id: int, user_id: int):
+    notification = db.query(models.Notification).filter(models.Notification.id == notification_id, models.Notification.user_id == user_id).first()
+    if notification:
+        db.delete(notification)
+        db.commit()
+        return True
+    return False
 
 def mark_all_notifications_as_read(db: Session, user_id: int):
     db.query(models.Notification).filter(models.Notification.user_id == user_id, models.Notification.read == False).update({models.Notification.read: True}, synchronize_session=False)

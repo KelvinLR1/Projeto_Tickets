@@ -69,7 +69,7 @@ export default function SettingsPage() {
 
     // Estado Configurações
     const [config, setConfig] = useState({
-        apiUrl: 'http://127.0.0.1:8000',
+        apiUrl: 'http://127.0.0.1:8080',
         ollamaUrl: 'http://localhost:11434',
         textModel: 'phi3',
         visionModel: 'moondream',

@@ -23,7 +23,38 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 models.Base.metadata.create_all(bind=engine)
 
+def seed_db():
+    db = database.SessionLocal()
+    try:
+        # Verificar se existem usuários
+        admin_user = crud.get_user_by_username(db, username="admin")
+        if not admin_user:
+            print("Nenhum usuário encontrado. Criando usuário admin padrão...")
+            admin_schema = schemas.UserCreate(
+                username="admin",
+                email="admin@sistema.com",
+                full_name="Administrador Padrão",
+                password="admin",
+                role="ADMIN"
+            )
+            hashed_password = auth.get_password_hash("admin")
+            crud.create_user(db, admin_schema, hashed_password)
+            print("Usuário 'admin' com senha 'admin' criado com sucesso!")
+        
+        # Garantir categorias e status padrão se necessário
+        crud.get_or_create_default_category(db)
+        crud.get_or_create_default_status(db)
+        
+    except Exception as e:
+        print(f"Erro ao popular banco de dados: {e}")
+    finally:
+        db.close()
+
 app = FastAPI(title="Sistema de Tickets Offline")
+
+@app.on_event("startup")
+async def startup_event():
+    seed_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -451,9 +482,9 @@ async def upload_file(file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # Retorna a URL para acessar o arquivo (assumindo rodar na porta 8000)
+    # Retorna a URL para acessar o arquivo (assumindo rodar na porta 8080)
     # Em produção, isso viria de uma variável de ambiente BASE_URL
-    return {"url": f"http://localhost:8000/uploads/{unique_filename}"}
+    return {"url": f"http://localhost:8080/uploads/{unique_filename}"}
 
 # --- RAG / Knowledge Base Endpoints (Busca Vetorial - Temporariamente desativado) ---
 # from pydantic import BaseModel
@@ -640,3 +671,25 @@ def send_notification(
     if not notification:
         raise HTTPException(status_code=404, detail="Usuário destinatário não encontrado")
     return notification
+
+@app.post("/notifications/{notification_id}/unread", response_model=schemas.Notification)
+def mark_notification_unread(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    notification = crud.mark_notification_as_unread(db, notification_id=notification_id, user_id=current_user.id)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notificação não encontrada")
+    return notification
+
+@app.delete("/notifications/{notification_id}")
+def delete_notification(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    success = crud.delete_notification(db, notification_id=notification_id, user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Notificação não encontrada")
+    return {"message": "Notificação excluída com sucesso"}

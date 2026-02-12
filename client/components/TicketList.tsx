@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { getTickets, updateTicket, deleteTicket, getCategories, getStatuses, Ticket, Category, Status } from '@/lib/api';
-import { Loader2, AlertCircle, CheckCircle, Clock, Trash2, RefreshCw, Pencil, X, Save, ReceiptText, ExternalLink, Hash, Play } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Clock, Trash2, RefreshCw, Pencil, X, Save, ReceiptText, ExternalLink, Hash, Play, User } from 'lucide-react';
 import { useNotification } from '@/components/NotificationProvider';
 import { useTimer } from './TimerProvider';
 import { useAuth } from './AuthProvider';
@@ -148,11 +148,12 @@ export default function TicketList({
                     <table className="w-full text-left text-sm border-collapse">
                         <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
                             <tr>
-                                <th className="px-8 py-6">ID</th>
-                                <th className="px-8 py-6">Ticket / Problema</th>
-                                <th className="px-8 py-6">Status / Fluxo</th>
-                                <th className="px-8 py-6">Prioridade</th>
-                                <th className="px-8 py-6 text-right">Ações</th>
+                                <th className="px-8 py-6 w-16">ID</th>
+                                <th className="px-8 py-6">Ticket / Cliente</th>
+                                <th className="px-8 py-6 w-40 text-center">Status</th>
+                                <th className="px-8 py-6 w-36 text-center">Prioridade</th>
+                                <th className="px-8 py-6 w-48">Responsável</th>
+                                <th className="px-8 py-6 text-right w-24">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border-theme/30">
@@ -186,10 +187,7 @@ export default function TicketList({
                                     <tr key={ticket.id} className="group hover:bg-white/[0.03] transition-all duration-300 border-b border-border-theme/20 last:border-0">
                                         <td className="px-8 py-6 align-top">
                                             <div className="flex items-center gap-4">
-                                                <div className="flex flex-col items-center gap-1">
-                                                    <Hash className="w-3 h-3 text-accent-theme/40" />
-                                                    <span className="font-mono text-[11px] font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
-                                                </div>
+                                                <span className="font-mono text-sm font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
 
                                                 {/* Timer Controls */}
                                                 <div className="flex items-center">
@@ -223,55 +221,53 @@ export default function TicketList({
                                             </div>
                                         </td>
                                         <td className="px-8 py-6 max-w-md">
-                                            <Link href={`/tickets/${ticket.id}`} className="block space-y-1.5 group/link">
+                                            <Link href={`/tickets/${ticket.id}`} className="block space-y-1 group/link">
                                                 <div className="font-black text-foreground group-hover/link:text-accent-theme transition-all flex items-center gap-2 uppercase tracking-tight italic">
                                                     {ticket.title}
-                                                    <ExternalLink className="w-3.5 h-3.5 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all text-accent-theme" />
+                                                    <ExternalLink className="w-3 h-3 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all text-accent-theme" />
                                                 </div>
-                                                <div className="text-[11px] text-[var(--color-text-muted)] group-hover/link:text-foreground/60 transition-colors line-clamp-2 leading-relaxed">
-                                                    {ticket.description}
+                                                <div className="text-[10px] font-bold text-accent-theme/70 flex items-center gap-1.5">
+                                                    <User className="w-3 h-3" />
+                                                    {ticket.client?.name || 'Cliente Desconhecido'}
                                                 </div>
                                             </Link>
                                         </td>
-                                        <td className="px-8 py-6">
-                                            <button
-                                                onClick={() => handleStatusChange(ticket.id, ticket.status)}
-                                                disabled={actionId === ticket.id}
-                                                className="flex flex-col gap-2 p-3 bg-background/40 hover:bg-background/80 rounded-2xl border border-border-theme/50 transition-all group/status active:scale-95 disabled:opacity-50 min-w-[140px]"
-                                                title="Clique para avançar status"
-                                            >
-                                                <div className="flex items-center gap-2.5">
-                                                    {actionId === ticket.id ? <Loader2 className="w-3 h-3 animate-spin text-accent-theme" /> : (
-                                                        <div
-                                                            className="w-2.5 h-2.5 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.1)]"
-                                                            style={{ backgroundColor: style.color, boxShadow: `0 0 12px ${style.color}40` }}
-                                                        />
-                                                    )}
-                                                    <span
-                                                        className="text-[10px] font-black uppercase tracking-[0.15em]"
-                                                        style={{ color: style.color }}
-                                                    >
-                                                        {style.name}
-                                                    </span>
-                                                </div>
-                                                <div className="w-full bg-border-theme/20 h-1 rounded-full overflow-hidden">
-                                                    <div
-                                                        className="h-full transition-all duration-500 rounded-full"
-                                                        style={{
-                                                            backgroundColor: style.color,
-                                                            width: `${((statuses.findIndex(s => s.name === style.name) + 1) / statuses.length) * 100}%`
-                                                        }}
-                                                    />
-                                                </div>
-                                            </button>
+                                        <td className="px-8 py-6 text-center">
+                                            <div className="inline-flex items-center gap-2.5 px-4 py-2 bg-background/40 rounded-xl border border-border-theme/50 w-32 justify-center">
+                                                <div
+                                                    className="w-2 h-2 rounded-full"
+                                                    style={{ backgroundColor: style.color, boxShadow: `0 0 10px ${style.color}40` }}
+                                                />
+                                                <span
+                                                    className="text-[9px] font-black uppercase tracking-widest"
+                                                    style={{ color: style.color }}
+                                                >
+                                                    {style.name}
+                                                </span>
+                                            </div>
                                         </td>
-                                        <td className="px-8 py-6">
+                                        <td className="px-8 py-6 text-center">
                                             <span className={clsx(
-                                                "px-4 py-1.5 rounded-xl text-[9px] font-black uppercase border tracking-widest shadow-sm",
+                                                "inline-block px-4 py-2 rounded-xl text-[9px] font-black uppercase border tracking-widest w-28 text-center",
                                                 priorityColor(ticket.priority)
                                             )}>
                                                 {ticket.priority}
                                             </span>
+                                        </td>
+                                        <td className="px-8 py-6">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-accent-theme/10 flex items-center justify-center text-accent-theme border border-accent-theme/20">
+                                                    <User className="w-4 h-4" />
+                                                </div>
+                                                <div className="space-y-0.5">
+                                                    <p className="text-[10px] font-black uppercase tracking-tight leading-none text-foreground">
+                                                        {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'Sistema'}
+                                                    </p>
+                                                    <p className="text-[8px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                        Responsável
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </td>
                                         <td className="px-8 py-6 text-right">
                                             <button
