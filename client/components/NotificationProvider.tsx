@@ -174,11 +174,11 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
                     <div
                         key={n.id}
                         className={clsx(
-                            "pointer-events-auto flex items-center gap-3 p-4 rounded-2xl border backdrop-blur-md shadow-2xl animate-in fade-in slide-in-from-right-8 duration-300 min-w-[300px] max-w-md",
-                            n.type === 'success' && "bg-green-500/10 border-green-500/20 text-green-400",
-                            n.type === 'error' && "bg-red-500/10 border-red-500/20 text-red-400",
-                            n.type === 'warning' && "bg-orange-500/10 border-orange-500/20 text-orange-400",
-                            n.type === 'info' && "bg-blue-500/10 border-blue-500/20 text-blue-400"
+                            "pointer-events-auto flex items-center gap-3 p-4 rounded-2xl border backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] animate-in fade-in slide-in-from-right-8 duration-300 min-w-[320px] max-w-md",
+                            n.type === 'success' && "bg-zinc-900/90 border-green-500/50 text-green-400",
+                            n.type === 'error' && "bg-zinc-900/90 border-red-500/50 text-red-400",
+                            n.type === 'warning' && "bg-zinc-900/90 border-orange-500/50 text-orange-400",
+                            n.type === 'info' && "bg-zinc-900/90 border-blue-500/50 text-blue-400"
                         )}
                     >
                         {n.type === 'success' && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}

@@ -92,7 +92,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if not db_user or not auth.verify_password(form_data.password, db_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Usuário ou senha incorretos",
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = auth.create_access_token(data={"sub": db_user.username})
@@ -125,17 +125,17 @@ async def create_sector(sector: schemas.SectorCreate, db: Session = Depends(get_
 @app.delete("/sectors/{sector_id}")
 async def delete_sector(sector_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     if not crud.delete_sector(db, sector_id):
-        raise HTTPException(status_code=404, detail="Sector not found")
+        raise HTTPException(status_code=404, detail="Setor não encontrado")
     return {"status": "ok"}
 
 @app.post("/users/", response_model=schemas.User)
 async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_user = crud.get_user_by_username(db, username=user.username)
     if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise HTTPException(status_code=400, detail="Nome de usuário já registrado")
     db_email = crud.get_user_by_email(db, email=user.email)
     if db_email:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="E-mail já registrado")
     
     hashed_password = auth.get_password_hash(user.password)
     return crud.create_user(db=db, user=user, hashed_password=hashed_password)
@@ -144,7 +144,7 @@ async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), c
 async def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     # Apenas ROOT pode editar outros ADMINs ou mudar roles para ROOT
     if user.role == "ROOT" and current_user.role != "ROOT":
-         raise HTTPException(status_code=403, detail="Only ROOT can create other ROOT users")
+         raise HTTPException(status_code=403, detail="Apenas usuários ROOT podem criar outros ROOT")
     
     hashed_password = None
     if user.password:
@@ -152,17 +152,15 @@ async def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Sessi
     
     db_user = crud.update_user(db=db, user_id=user_id, user_update=user, hashed_password=hashed_password)
     if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     return db_user
 
 @app.delete("/users/{user_id}")
 async def delete_user_endpoint(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     success = crud.delete_user(db=db, user_id=user_id)
     if not success:
-        raise HTTPException(status_code=404, detail="User not found")
-    if not success:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User deleted successfully"}
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return {"message": "Usuário excluído com sucesso"}
 
 # --- Profile Endpoints ---
 @app.get("/profiles/", response_model=List[schemas.Profile])
@@ -177,22 +175,22 @@ def create_profile(profile: schemas.ProfileCreate, db: Session = Depends(get_db)
 def update_profile(profile_id: int, profile: schemas.ProfileCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     db_profile = crud.update_profile(db=db, profile_id=profile_id, profile_update=profile)
     if not db_profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        raise HTTPException(status_code=404, detail="Perfil não encontrado")
     return db_profile
 
 @app.delete("/profiles/{profile_id}")
 def delete_profile(profile_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     success = crud.delete_profile(db=db, profile_id=profile_id)
     if not success:
-        raise HTTPException(status_code=400, detail="Profile not found or currently in use by users")
-    return {"message": "Profile deleted successfully"}
+        raise HTTPException(status_code=400, detail="Perfil não encontrado ou em uso")
+    return {"message": "Perfil excluído com sucesso"}
 
 # --- Clients Endpoints ---
 @app.post("/clients/", response_model=schemas.Client)
 def create_client(client: schemas.ClientCreate, db: Session = Depends(get_db)):
     db_client = crud.get_client_by_email(db, email=client.email)
     if db_client:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="E-mail já registrado")
     return crud.create_client(db=db, client=client)
 
 @app.get("/clients/", response_model=List[schemas.Client])
@@ -204,15 +202,15 @@ def read_clients(skip: int = 0, limit: int = 100, db: Session = Depends(get_db))
 def update_client(client_id: int, client: schemas.ClientCreate, db: Session = Depends(get_db)):
     db_client = crud.update_client(db=db, client_id=client_id, client_update=client)
     if db_client is None:
-        raise HTTPException(status_code=404, detail="Client not found")
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
     return db_client
 
 @app.delete("/clients/{client_id}")
 def delete_client(client_id: int, db: Session = Depends(get_db)):
     success = crud.delete_client(db=db, client_id=client_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Client not found")
-    return {"message": "Client deleted successfully"}
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return {"message": "Cliente excluído com sucesso"}
 
 # --- Import Endpoints ---
 from fastapi import File, UploadFile
@@ -289,8 +287,8 @@ def create_category(cat: schemas.CategoryCreate, db: Session = Depends(get_db), 
 def delete_category(cat_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success = crud.delete_category(db=db, cat_id=cat_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Category not found")
-    return {"message": "Category deleted"}
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    return {"message": "Categoria excluída"}
 
 # --- Status Endpoints ---
 @app.get("/statuses/", response_model=List[schemas.Status])
@@ -305,14 +303,14 @@ def create_status(status: schemas.StatusCreate, db: Session = Depends(get_db), c
 def delete_status(status_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success = crud.delete_status(db=db, status_id=status_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Status not found")
-    return {"message": "Status deleted"}
+        raise HTTPException(status_code=404, detail="Status não encontrado")
+    return {"message": "Status excluído"}
 
 @app.put("/statuses/{status_id}", response_model=schemas.Status)
 def update_status(status_id: int, status: schemas.StatusBase, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_status = crud.update_status(db=db, status_id=status_id, status_update=status)
     if not db_status:
-        raise HTTPException(status_code=404, detail="Status not found")
+        raise HTTPException(status_code=404, detail="Status não encontrado")
     return db_status
 
 # --- Tickets Endpoints ---
@@ -344,7 +342,7 @@ def get_report_summary(db: Session = Depends(get_db)):
 def read_ticket(ticket_id: int, db: Session = Depends(get_db)):
     db_ticket = crud.get_ticket(db, ticket_id=ticket_id)
     if db_ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
     return db_ticket
 
 @app.post("/tickets/{ticket_id}/messages/", response_model=schemas.TicketMessage)
@@ -355,7 +353,7 @@ def create_message(ticket_id: int, message: schemas.TicketMessageCreate, db: Ses
 def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     db_ticket = crud.update_ticket(db=db, ticket_id=ticket_id, ticket_update=ticket, user_id=current_user.id)
     if db_ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
     return db_ticket
 
 @app.get("/tickets/{ticket_id}/history", response_model=List[schemas.TicketHistory])
@@ -366,8 +364,8 @@ def read_ticket_history(ticket_id: int, db: Session = Depends(get_db), current_u
 def delete_ticket(ticket_id: int, db: Session = Depends(get_db)):
     success = crud.delete_ticket(db=db, ticket_id=ticket_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    return {"message": "Ticket deleted successfully"}
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+    return {"message": "Chamado excluído com sucesso"}
 
 # --- Timer Endpoints ---
 @app.post("/tickets/{ticket_id}/timer/start", response_model=schemas.TimeLog)
@@ -378,7 +376,7 @@ def start_timer(ticket_id: int, db: Session = Depends(get_db), current_user: mod
 def stop_timer(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     db_log = crud.stop_ticket_timer(db=db, ticket_id=ticket_id, user_id=current_user.id)
     if not db_log:
-        raise HTTPException(status_code=400, detail="No active timer found for this ticket/user")
+        raise HTTPException(status_code=400, detail="Nenhum cronômetro ativo para este chamado/usuário")
     return db_log
 
 @app.get("/tickets/timers/active", response_model=List[schemas.TimeLog])
@@ -405,7 +403,7 @@ def create_knowledge(doc: schemas.KnowledgeDocumentCreate, db: Session = Depends
 def update_knowledge(doc_id: int, doc: schemas.KnowledgeDocumentCreate, db: Session = Depends(get_db)):
     db_doc = crud.update_knowledge_document(db=db, doc_id=doc_id, doc_update=doc)
     if not db_doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
     # Atualiza no ChromaDB
     rag.add_document(
         doc_id=db_doc.id, 
@@ -418,8 +416,8 @@ def update_knowledge(doc_id: int, doc: schemas.KnowledgeDocumentCreate, db: Sess
 def delete_knowledge(doc_id: int, db: Session = Depends(get_db)):
     success = crud.delete_knowledge_document(db=db, doc_id=doc_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return {"message": "Document deleted successfully"}
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    return {"message": "Documento excluído com sucesso"}
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -700,3 +698,50 @@ def delete_notification(
     if not success:
         raise HTTPException(status_code=404, detail="Notificação não encontrada")
     return {"message": "Notificação excluída com sucesso"}
+
+# --- System Settings Endpoints ---
+@app.get("/system-settings", response_model=schemas.SystemSettings)
+def read_system_settings(db: Session = Depends(get_db)):
+    return crud.get_system_settings(db)
+
+@app.patch("/system-settings", response_model=schemas.SystemSettings)
+def update_system_settings_endpoint(
+    update: schemas.SystemSettingsUpdate, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_admin)
+):
+    return crud.update_system_settings(db, update)
+
+@app.post("/system-settings/logo")
+async def upload_system_logo(
+    theme: str = "light", # "light" ou "dark"
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_admin)
+):
+    # Criar pasta de branding se não existir
+    BRANDING_DIR = os.path.join(UPLOAD_DIR, "branding")
+    if not os.path.exists(BRANDING_DIR):
+        os.makedirs(BRANDING_DIR)
+        
+    # Salvar arquivo com nome único
+    ext = os.path.splitext(file.filename)[1]
+    filename = f"logo_{theme}_{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(BRANDING_DIR, filename)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Gerar URL pública
+    logo_url = f"/uploads/branding/{filename}"
+    
+    # Atualizar no banco baseado no tema
+    update_data = {}
+    if theme == "dark":
+        update_data["logo_url_dark"] = logo_url
+    else:
+        update_data["logo_url_light"] = logo_url
+        
+    crud.update_system_settings(db, schemas.SystemSettingsUpdate(**update_data))
+    
+    return {"logo_url": logo_url, "theme": theme}

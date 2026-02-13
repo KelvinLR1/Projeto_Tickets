@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { canAccessMenu, getFirstAllowedPath, canPerformAction } from '@/lib/permissions';
 import { useTimer } from './TimerProvider';
 import { useNotification } from './NotificationProvider';
+import { useSystemSettings } from './SystemSettingsProvider';
 import {
     LayoutDashboard,
     BookOpen,
@@ -30,6 +31,7 @@ export default function Sidebar() {
     const { user, logout } = useAuth();
     const { activeTimers, openPiP } = useTimer();
     const { unreadCount } = useNotification();
+    const { systemName, logoUrlOnAccent } = useSystemSettings();
 
     const navItems = [
         { id: 'dashboard', name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -47,11 +49,22 @@ export default function Sidebar() {
             {/* Logo Area */}
             <div className="p-8 pb-10">
                 <Link href={user ? getFirstAllowedPath(user) : "/"} className="flex items-center gap-3 group">
-                    <div className="bg-accent-theme p-2 rounded-2xl group-hover:rotate-12 transition-transform shadow-lg shadow-accent-theme/20">
-                        <Ticket className="w-6 h-6 text-white" />
+                    <div className="bg-accent-theme p-2 rounded-2xl group-hover:rotate-12 transition-transform shadow-lg shadow-accent-theme/20 overflow-hidden w-10 h-10 flex items-center justify-center">
+                        {logoUrlOnAccent ? (
+                            <img src={logoUrlOnAccent} alt="Logo" className="w-full h-full object-contain" />
+                        ) : (
+                            <Ticket className="w-6 h-6 text-white" />
+                        )}
                     </div>
-                    <span className="text-xl font-black tracking-tighter uppercase italic text-foreground">
-                        Ticket<span className="text-accent-theme">Flow</span>
+                    <span className={clsx(
+                        "font-black tracking-tighter uppercase italic text-foreground leading-tight",
+                        systemName.length > 15 ? "text-sm" : systemName.length > 10 ? "text-lg" : "text-xl"
+                    )}>
+                        {systemName === 'TicketFlow' ? (
+                            <>Ticket<span className="text-accent-theme">Flow</span></>
+                        ) : (
+                            systemName
+                        )}
                     </span>
                 </Link>
             </div>

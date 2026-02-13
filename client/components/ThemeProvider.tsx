@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-type Theme = 'dark' | 'light' | 'cyberpunk' | 'matrix' | 'antigravity' | 'sunset' | 'nordic' | 'gold' | 'carbon-red' | 'obsidian-red' | 'office-red' | 'ash-red';
+type Theme = 'dark' | 'light' | 'cyberpunk' | 'matrix' | 'antigravity' | 'sunset' | 'nordic' | 'gold' | 'carbon-red' | 'obsidian-red' | 'office-red' | 'ash-red' | 'hub' | 'hub-dark' | 'midnight-purple' | 'emerald-dark' | 'custom';
 
 interface ThemeContextType {
     theme: Theme;
@@ -11,7 +11,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const THEMES: Theme[] = ['dark', 'light', 'cyberpunk', 'matrix', 'antigravity', 'sunset', 'nordic', 'gold', 'carbon-red', 'obsidian-red', 'office-red', 'ash-red'];
+const THEMES: Theme[] = ['dark', 'light', 'cyberpunk', 'matrix', 'antigravity', 'sunset', 'nordic', 'gold', 'carbon-red', 'obsidian-red', 'office-red', 'ash-red', 'hub', 'hub-dark', 'midnight-purple', 'emerald-dark', 'custom'];
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [theme, setThemeState] = useState<Theme>('dark');

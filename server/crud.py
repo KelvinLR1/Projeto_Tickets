@@ -814,3 +814,28 @@ def send_user_notification(db: Session, sender_id: int, data: schemas.Notificati
     db.refresh(db_notification)
     
     return db_notification
+
+# --- System Settings CRUD ---
+def get_system_settings(db: Session):
+    settings = db.query(models.SystemSettings).first()
+    if not settings:
+        # Criar configuração padrão se não existir
+        settings = models.SystemSettings(system_name="TicketFlow")
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+def update_system_settings(db: Session, update: schemas.SystemSettingsUpdate):
+    settings = get_system_settings(db)
+    if update.system_name is not None:
+        settings.system_name = update.system_name
+    if update.logo_url_light is not None:
+        settings.logo_url_light = update.logo_url_light
+    if update.logo_url_dark is not None:
+        settings.logo_url_dark = update.logo_url_dark
+    if update.custom_colors is not None:
+        settings.custom_colors = update.custom_colors
+    db.commit()
+    db.refresh(settings)
+    return settings

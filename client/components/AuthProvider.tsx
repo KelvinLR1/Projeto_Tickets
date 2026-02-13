@@ -92,8 +92,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Redireciona para o primeiro menu permitido
             const firstPath = getFirstAllowedPath(userData);
             router.push(firstPath);
-        } catch (error) {
-            console.error('Login failed:', error);
+        } catch (error: any) {
+            // Só loga se não for erro de credenciais (401)
+            if (error.response?.status !== 401) {
+                console.error('Login failed:', error);
+            }
             throw error;
         }
     };

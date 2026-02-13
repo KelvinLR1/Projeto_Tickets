@@ -313,3 +313,22 @@ class Notification(NotificationBase):
 
     class Config:
         from_attributes = True
+
+class SystemSettingsBase(BaseModel):
+    system_name: str = "TicketFlow"
+    logo_url_light: Optional[str] = None
+    logo_url_dark: Optional[str] = None
+    custom_colors: Optional[dict] = None
+
+class SystemSettingsUpdate(BaseModel):
+    system_name: Optional[str] = None
+    logo_url_light: Optional[str] = None
+    logo_url_dark: Optional[str] = None
+    custom_colors: Optional[dict] = None
+
+class SystemSettings(SystemSettingsBase):
+    id: int
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

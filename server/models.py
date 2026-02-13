@@ -188,5 +188,15 @@ class Notification(Base):
     user = relationship("User", foreign_keys=[user_id], back_populates="notifications")
     created_by = relationship("User", foreign_keys=[created_by_user_id])
 
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    system_name = Column(String, default="TicketFlow")
+    logo_url_light = Column(String, nullable=True) # Logo para tema claro
+    logo_url_dark = Column(String, nullable=True)  # Logo para tema escuro
+    custom_colors = Column(JSON, nullable=True)    # Cores personalizadas para o tema "custom"
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 # Update User relationship
 User.notifications = relationship("Notification", foreign_keys="Notification.user_id", back_populates="user", order_by="desc(Notification.created_at)")

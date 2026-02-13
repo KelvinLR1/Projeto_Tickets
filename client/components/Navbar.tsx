@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSystemSettings } from './SystemSettingsProvider';
 import {
     LayoutDashboard,
     BookOpen,
@@ -18,6 +19,7 @@ import clsx from 'clsx';
 
 export default function Navbar() {
     const pathname = usePathname();
+    const { systemName, logoUrlOnAccent } = useSystemSettings();
 
     const navItems = [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -35,11 +37,19 @@ export default function Navbar() {
                 <div className="flex justify-between h-16 items-center">
                     {/* Logo / Brand */}
                     <Link href="/" className="flex items-center gap-2 group">
-                        <div className="bg-blue-600 p-1.5 rounded-lg group-hover:bg-blue-500 transition-colors">
-                            <Ticket className="w-5 h-5 text-white" />
+                        <div className="bg-accent-theme p-1.5 rounded-lg group-hover:brightness-110 transition-all w-8 h-8 flex items-center justify-center overflow-hidden">
+                            {logoUrlOnAccent ? (
+                                <img src={logoUrlOnAccent} alt="Logo" className="w-full h-full object-contain" />
+                            ) : (
+                                <Ticket className="w-5 h-5 text-white" />
+                            )}
                         </div>
                         <span className="text-xl font-bold tracking-tight text-foreground hidden sm:block">
-                            Ticket<span className="text-blue-500">Flow</span>
+                            {systemName === 'TicketFlow' ? (
+                                <>Ticket<span className="text-accent-theme">Flow</span></>
+                            ) : (
+                                systemName
+                            )}
                         </span>
                     </Link>
 

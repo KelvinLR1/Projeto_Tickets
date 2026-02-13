@@ -172,6 +172,71 @@
   --prose-class: normal;
 }
 
+.theme-hub {
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card: rgba(255, 255, 255, 0.85);
+  --color-card-hover: rgba(255, 255, 255, 0.98);
+  --color-primary-theme: #b91c1c;
+  --color-border-theme: rgba(185, 28, 28, 0.1);
+  --color-accent-theme: #dc2626;
+  --color-text-muted: #64748b;
+  --color-input: #ffffff;
+  --prose-class: normal;
+}
+
+.theme-hub-dark {
+  --color-background: #0d0d0d;
+  --color-foreground: #f3f4f6;
+  --color-card: rgba(24, 24, 27, 0.8);
+  --color-card-hover: rgba(39, 39, 42, 0.9);
+  --color-primary-theme: #dc2626;
+  --color-border-theme: rgba(220, 38, 38, 0.15);
+  --color-accent-theme: #b91c1c;
+  --color-text-muted: #9ca3af;
+  --color-input: #18181b;
+  --prose-class: invert;
+}
+
+.theme-midnight-purple {
+  --color-background: #0b061a;
+  --color-foreground: #f8fafc;
+  --color-card: rgba(20, 15, 40, 0.8);
+  --color-card-hover: rgba(30, 25, 60, 0.9);
+  --color-primary-theme: #8b5cf6;
+  --color-border-theme: rgba(139, 92, 246, 0.2);
+  --color-accent-theme: #ec4899;
+  --color-text-muted: #94a3b8;
+  --color-input: #140f28;
+  --prose-class: invert;
+}
+
+.theme-emerald-dark {
+  --color-background: #021a14;
+  --color-foreground: #f0fdf4;
+  --color-card: rgba(5, 30, 25, 0.8);
+  --color-card-hover: rgba(10, 45, 35, 0.9);
+  --color-primary-theme: #10b981;
+  --color-border-theme: rgba(16, 185, 129, 0.2);
+  --color-accent-theme: #34d399;
+  --color-text-muted: #94a3b8;
+  --color-input: #051e19;
+  --prose-class: invert;
+}
+
+.theme-custom {
+  --color-background: var(--custom-bg, #0f172a);
+  --color-foreground: var(--custom-fg, #f8fafc);
+  --color-card: var(--custom-card, rgba(30, 41, 59, 0.7));
+  --color-card-hover: var(--custom-card-hover, rgba(51, 65, 85, 0.8));
+  --color-primary-theme: var(--custom-primary, #3b82f6);
+  --color-border-theme: var(--custom-border, rgba(255, 255, 255, 0.1));
+  --color-accent-theme: var(--custom-accent, #60a5fa);
+  --color-text-muted: var(--custom-muted, #94a3b8);
+  --color-input: var(--custom-input, rgba(15, 23, 42, 0.5));
+  --prose-class: var(--custom-prose, invert);
+}
+
 
 /* Registrando Tokens de Tema para o Tailwind v4 */
 @theme {

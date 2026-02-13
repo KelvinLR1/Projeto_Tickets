@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
+import { useSystemSettings } from '@/components/SystemSettingsProvider';
 import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck } from 'lucide-react';
 
 export default function LoginPage() {
@@ -10,6 +11,7 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const { login } = useAuth();
+    const { systemName, logoUrlOnAccent } = useSystemSettings();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -38,15 +40,23 @@ export default function LoginPage() {
                     <div className="text-center space-y-6">
                         <div className="inline-flex relative">
                             <div className="absolute -inset-4 bg-accent-theme/20 blur-2xl rounded-full opacity-50 animate-pulse" />
-                            <div className="relative w-20 h-20 rounded-[2rem] premium-gradient flex items-center justify-center shadow-2xl shadow-accent-theme/30 group">
-                                <Ticket className="w-10 h-10 text-white group-hover:rotate-12 transition-transform duration-500" />
+                            <div className="relative w-20 h-20 rounded-[2rem] premium-gradient flex items-center justify-center shadow-2xl shadow-accent-theme/30 group overflow-hidden">
+                                {logoUrlOnAccent ? (
+                                    <img src={logoUrlOnAccent} alt="Logo" className="w-full h-full object-contain p-4" />
+                                ) : (
+                                    <Ticket className="w-10 h-10 text-white group-hover:rotate-12 transition-transform duration-500" />
+                                )}
                                 <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-accent-theme animate-bounce" />
                             </div>
                         </div>
 
                         <div>
                             <h2 className="text-4xl font-black italic tracking-tighter uppercase font-display">
-                                Ticket<span className="text-accent-theme">Flow</span>
+                                {systemName === 'TicketFlow' ? (
+                                    <>Ticket<span className="text-accent-theme">Flow</span></>
+                                ) : (
+                                    systemName
+                                )}
                             </h2>
                             <p className="mt-3 text-[10px] font-black uppercase tracking-[0.3em] text-[var(--color-text-muted)] opacity-80">
                                 ERP de Atendimento & Suporte Técnico

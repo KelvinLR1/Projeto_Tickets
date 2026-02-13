@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-    Save, RotateCcw, Globe, Cpu, Palette, CheckCircle2, ChevronDown, Loader2,
+    Save, RotateCcw, Globe, Cpu, Palette, CheckCircle2, ChevronDown, Loader2, Ticket,
     Plus, Edit2, Trash2, Shield, User as UserIcon, Mail, ShieldCheck,
     Settings as SettingsIcon, Key, UserSquare2, Users, ArrowLeft, ArrowRight,
     Link2, Tag, PlusCircle, HardDrive, FolderPlus, Download, Upload, AlertTriangle
@@ -10,7 +10,7 @@ import {
 import { getOllamaModels } from '@/lib/ollama';
 import { useTheme } from '@/components/ThemeProvider';
 import { useAuth } from '@/components/AuthProvider';
-import {
+import api, {
     getCategories, createCategory, updateCategory, deleteCategory, Category,
     getStatuses, createStatus, updateStatus, deleteStatus, Status,
     getUsers, createUser, updateUser, deleteUser, User,
@@ -18,6 +18,7 @@ import {
     getProfiles, createProfile, updateProfile, deleteProfile, Profile
 } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
+import { useSystemSettings } from '@/components/SystemSettingsProvider';
 import CustomSelect from '@/components/CustomSelect';
 import clsx from 'clsx';
 
@@ -37,6 +38,7 @@ const SETTINGS_TABS = [
     { id: 'users', label: 'Usuários', icon: Users, color: 'text-amber-400', roles: ['ADMIN', 'ROOT'] },
     { id: 'appearance', label: 'Aparência', icon: Palette, color: 'text-pink-400' },
     { id: 'profiles', label: 'Perfis de Acesso', icon: ShieldCheck, color: 'text-orange-400', roles: ['ADMIN', 'ROOT'] },
+    { id: 'system', label: 'Identidade', icon: Shield, color: 'text-accent-theme', roles: ['ADMIN', 'ROOT'] },
     { id: 'advanced', label: 'Avançado', icon: SettingsIcon, color: 'text-red-400', roles: ['ROOT'] },
 ];
 
@@ -60,9 +62,10 @@ const AVAILABLE_ACTIONS = [
 ];
 
 export default function SettingsPage() {
-    const { setTheme } = useTheme();
+    const { theme, setTheme } = useTheme();
     const { user } = useAuth();
     const { showNotification, confirm: askConfirm } = useNotification();
+    const { refreshSettings } = useSystemSettings();
 
     // Estado Navegação
     const [activeTab, setActiveTab] = useState('general');
@@ -116,6 +119,48 @@ export default function SettingsPage() {
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [currentProfile, setCurrentProfile] = useState<Partial<Profile>>({ permissions: { menus: [], actions: [] } });
 
+    // Estado Customização do Sistema
+    const [systemSettings, setSystemSettings] = useState({
+        system_name: 'TicketFlow',
+        logo_url_light: '',
+        logo_url_dark: '',
+        custom_colors: {} as Record<string, string>
+    });
+    const [logoFileLight, setLogoFileLight] = useState<File | null>(null);
+    const [logoFileDark, setLogoFileDark] = useState<File | null>(null);
+    const [logoPreviewLight, setLogoPreviewLight] = useState<string | null>(null);
+    const [logoPreviewDark, setLogoPreviewDark] = useState<string | null>(null);
+    const [isSavingSystem, setIsSavingSystem] = useState(false);
+
+    // Real-time Preview de Cores Customizadas
+    useEffect(() => {
+        if (theme === 'custom' && systemSettings.custom_colors) {
+            const root = document.documentElement;
+            // Forçamos a classe de tema customizado se estivermos editando cores
+            if (!root.classList.contains('theme-custom')) {
+                root.classList.add('theme-custom');
+            }
+
+            const mapping: Record<string, string> = {
+                'bg': '--color-background',
+                'fg': '--color-foreground',
+                'card': '--color-card',
+                'card-hover': '--color-card-hover',
+                'primary': '--color-primary-theme',
+                'border': '--color-border-theme',
+                'accent': '--color-accent-theme',
+                'muted': '--color-text-muted'
+            };
+
+            Object.entries(systemSettings.custom_colors).forEach(([key, value]) => {
+                const varName = mapping[key];
+                if (varName && value) {
+                    root.style.setProperty(varName, value as string);
+                }
+            });
+        }
+    }, [theme, systemSettings.custom_colors]);
+
     const toggleCategory = (id: number) => {
         console.log('Toggling category:', id, 'Current expanded:', expandedCategories);
         setExpandedCategories(prev =>
@@ -134,7 +179,129 @@ export default function SettingsPage() {
         if (user) {
             fetchUsers();
         }
+        fetchSystemSettings();
     }, [user]);
+
+    const fetchSystemSettings = async () => {
+        try {
+            const response = await api.get('/system-settings');
+            const data = response.data;
+
+            // Tenta obter a API URL das configurações locais ou do default do axios
+            const getBaseURL = () => {
+                if (typeof window !== 'undefined') {
+                    const localConfig = localStorage.getItem('system_config');
+                    if (localConfig) {
+                        try {
+                            const configData = JSON.parse(localConfig);
+                            if (configData.apiUrl) return configData.apiUrl.replace(/\/$/, "");
+                        } catch (e) { }
+                    }
+                }
+                return api.defaults.baseURL?.replace(/\/$/, "") || "";
+            };
+
+            const baseURL = getBaseURL();
+
+            const resolveUrl = (url: string | null) => {
+                if (url && !url.startsWith('http') && !url.startsWith('data:')) {
+                    return `${baseURL}${url.startsWith('/') ? '' : '/'}${url}`;
+                }
+                return url;
+            };
+
+            setSystemSettings({
+                ...data,
+                logo_url_light: resolveUrl(data.logo_url_light) || resolveUrl(data.logo_url) || null,
+                logo_url_dark: resolveUrl(data.logo_url_dark) || resolveUrl(data.logo_url) || null,
+                custom_colors: data.custom_colors || {}
+            });
+        } catch (error) {
+            console.error("Failed to fetch system settings:", error);
+        }
+    };
+
+    const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>, theme: 'light' | 'dark') => {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (theme === 'light') setLogoFileLight(file);
+            else setLogoFileDark(file);
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                if (theme === 'light') setLogoPreviewLight(reader.result as string);
+                else setLogoPreviewDark(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleSaveSystemSettings = async () => {
+        setIsSavingSystem(true);
+        try {
+            // 1. Salvar Nome e Cores
+            await api.patch('/system-settings', {
+                system_name: systemSettings.system_name,
+                custom_colors: systemSettings.custom_colors
+            });
+
+            // 2. Salvar Logos se houver novos arquivos
+            if (logoFileLight) {
+                const formData = new FormData();
+                formData.append('file', logoFileLight);
+                await api.post('/system-settings/logo?theme=light', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+            }
+
+            if (logoFileDark) {
+                const formData = new FormData();
+                formData.append('file', logoFileDark);
+                await api.post('/system-settings/logo?theme=dark', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+            }
+
+            showNotification('Configurações de identidade salvas!', 'success');
+            // Recarrega as configurações globalmente sem reload da página
+            refreshSettings();
+        } catch (error) {
+            console.error("Error saving system settings:", error);
+            showNotification('Erro ao salvar identidade: Verifique as permissões.', 'error');
+        } finally {
+            setIsSavingSystem(false);
+        }
+    };
+
+    const handleRemoveLogo = async (theme: 'light' | 'dark') => {
+        const confirmed = await askConfirm({
+            title: 'Remover Logo',
+            message: `Deseja remover o logo do tema ${theme === 'light' ? 'claro' : 'escuro'} e voltar ao padrão?`,
+            confirmText: 'Sim, Remover',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!confirmed) return;
+        setIsSavingSystem(true);
+        try {
+            const field = theme === 'light' ? 'logo_url_light' : 'logo_url_dark';
+            await api.patch('/system-settings', { [field]: '' });
+            showNotification('Logo removido com sucesso!', 'success');
+
+            // Atualiza estado local e global
+            setSystemSettings({ ...systemSettings, [field]: null });
+            if (theme === 'light') setLogoPreviewLight(null);
+            else setLogoPreviewDark(null);
+
+            refreshSettings();
+        } catch (error) {
+            console.error("Error removing logo:", error);
+            showNotification('Erro ao remover logo', 'error');
+        } finally {
+            setIsSavingSystem(false);
+        }
+    };
 
     const fetchUsers = async () => {
         setLoadingUsers(true);
@@ -296,13 +463,13 @@ export default function SettingsPage() {
             if (editingCategory) {
                 await updateCategory(editingCategory.id, {
                     name: newCategoryName,
-                    parent_id: parentCategory ? parseInt(parentCategory) : null
+                    parent_id: parentCategory ? parseInt(parentCategory) : undefined
                 } as any);
                 showNotification('Categoria atualizada!', 'success');
             } else {
                 await createCategory({
                     name: newCategoryName,
-                    parent_id: parentCategory ? parseInt(parentCategory) : null
+                    parent_id: parentCategory ? parseInt(parentCategory) : undefined
                 });
                 showNotification('Categoria criada!', 'success');
             }
@@ -500,7 +667,7 @@ export default function SettingsPage() {
                                 <tab.icon className={clsx("w-5 h-5", activeTab === tab.id ? "text-white" : tab.color)} />
                                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">{tab.label}</span>
                                 {activeTab === tab.id && (
-                                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white/30 rounded-full" />
+                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white/40 rounded-r-full shadow-[2px_0_8px_rgba(255,255,255,0.3)]" />
                                 )}
                             </button>
                         ))}
@@ -956,6 +1123,143 @@ export default function SettingsPage() {
                             </div>
                         )}
 
+                        {/* Aba: Identidade do Sistema */}
+                        {activeTab === 'system' && (
+                            <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden transition-all animate-slide-in-right">
+                                <div className="flex items-center gap-3 text-accent-theme">
+                                    <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                        <ShieldCheck className="w-6 h-6" />
+                                    </div>
+                                    <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Identidade do Sistema</h2>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                    <div className="space-y-6">
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">
+                                                Nome do Projeto
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={systemSettings.system_name}
+                                                onChange={(e) => setSystemSettings({ ...systemSettings, system_name: e.target.value })}
+                                                className="w-full bg-background/40 border border-border-theme rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:border-accent-theme/50 transition-all"
+                                                placeholder="Ex: MyTicket Portal"
+                                            />
+                                            <p className="text-[9px] text-[var(--color-text-muted)] italic px-1">
+                                                Este nome será exibido na barra lateral, navegação e tela de login.
+                                            </p>
+                                        </div>
+
+                                        <div className="pt-4">
+                                            <button
+                                                onClick={handleSaveSystemSettings}
+                                                disabled={isSavingSystem}
+                                                className="premium-gradient text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-accent-theme/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
+                                            >
+                                                {isSavingSystem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                Salvar Alterações
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                        <div className="space-y-3">
+                                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">
+                                                Logos do Sistema
+                                            </h3>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                {/* Logo Tema Claro */}
+                                                <div className="space-y-3">
+                                                    <label className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                        Tema Claro
+                                                    </label>
+                                                    <div className="flex flex-col gap-4">
+                                                        <div className="w-full aspect-video rounded-3xl bg-slate-200 border-2 border-dashed border-slate-400 flex items-center justify-center overflow-hidden group relative">
+                                                            {logoPreviewLight || systemSettings.logo_url_light ? (
+                                                                <img
+                                                                    src={logoPreviewLight || systemSettings.logo_url_light}
+                                                                    alt="Logo Light Preview"
+                                                                    className="w-full h-full object-contain p-4"
+                                                                />
+                                                            ) : (
+                                                                <Ticket className="w-8 h-8 text-slate-400 opacity-50" />
+                                                            )}
+
+                                                            <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                                                                <input
+                                                                    type="file"
+                                                                    className="hidden"
+                                                                    accept="image/*"
+                                                                    onChange={(e) => handleLogoUpload(e, 'light')}
+                                                                />
+                                                                <Edit2 className="w-5 h-5 text-white" />
+                                                            </label>
+                                                        </div>
+                                                        <div className="flex flex-col gap-2">
+                                                            {(logoPreviewLight || systemSettings.logo_url_light) && (
+                                                                <button
+                                                                    onClick={() => handleRemoveLogo('light')}
+                                                                    className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 hover:underline"
+                                                                >
+                                                                    <Trash2 className="w-3 h-3" /> Remover logo claro
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Logo Tema Escuro */}
+                                                <div className="space-y-3">
+                                                    <label className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                        Tema Escuro
+                                                    </label>
+                                                    <div className="flex flex-col gap-4">
+                                                        <div className="w-full aspect-video rounded-3xl bg-slate-900 border-2 border-dashed border-slate-700 flex items-center justify-center overflow-hidden group relative">
+                                                            {logoPreviewDark || systemSettings.logo_url_dark ? (
+                                                                <img
+                                                                    src={logoPreviewDark || systemSettings.logo_url_dark}
+                                                                    alt="Logo Dark Preview"
+                                                                    className="w-full h-full object-contain p-4"
+                                                                />
+                                                            ) : (
+                                                                <Ticket className="w-8 h-8 text-slate-700 opacity-50" />
+                                                            )}
+
+                                                            <label className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                                                                <input
+                                                                    type="file"
+                                                                    className="hidden"
+                                                                    accept="image/*"
+                                                                    onChange={(e) => handleLogoUpload(e, 'dark')}
+                                                                />
+                                                                <Edit2 className="w-5 h-5 text-white" />
+                                                            </label>
+                                                        </div>
+                                                        <div className="flex flex-col gap-2">
+                                                            {(logoPreviewDark || systemSettings.logo_url_dark) && (
+                                                                <button
+                                                                    onClick={() => handleRemoveLogo('dark')}
+                                                                    className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 hover:underline"
+                                                                >
+                                                                    <Trash2 className="w-3 h-3" /> Remover logo escuro
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <p className="text-[9px] text-[var(--color-text-muted)] italic pt-2">
+                                                Recomendado: PNG ou SVG transparente. O sistema alternará automaticamente entre os logos baseado no seu tema.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Aba: Aparência */}
                         {activeTab === 'appearance' && (
                             <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden transition-all animate-slide-in-right">
@@ -980,6 +1284,11 @@ export default function SettingsPage() {
                                         { id: 'obsidian-red', name: 'Obsidian Red', bg: 'bg-[#000000]', accent: 'bg-[#991b1b]' },
                                         { id: 'office-red', name: 'Office Red', bg: 'bg-[#f8fafc]', accent: 'bg-[#e11d48]' },
                                         { id: 'ash-red', name: 'Ash Red', bg: 'bg-[#e2e8f0]', accent: 'bg-[#dc2626]' },
+                                        { id: 'hub', name: 'HUB', bg: 'bg-[#f8fafc]', accent: 'bg-[#b91c1c]' },
+                                        { id: 'hub-dark', name: 'HUB Dark', bg: 'bg-[#0d0d0d]', accent: 'bg-[#dc2626]' },
+                                        { id: 'midnight-purple', name: 'Midnight', bg: 'bg-[#0b061a]', accent: 'bg-[#8b5cf6]' },
+                                        { id: 'emerald-dark', name: 'Emerald', bg: 'bg-[#021a14]', accent: 'bg-[#10b981]' },
+                                        { id: 'custom', name: 'Personalizado', bg: 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500', accent: 'bg-white' },
                                     ].map((theme) => (
                                         <button
                                             key={theme.id}
@@ -992,9 +1301,18 @@ export default function SettingsPage() {
                                             )}
                                         >
                                             <div className="space-y-4">
-                                                <div className="flex gap-2">
-                                                    <div className={`w-8 h-8 rounded-xl ${theme.bg} border border-border-theme shadow-md`} />
-                                                    <div className={`w-8 h-8 rounded-xl ${theme.accent} shadow-md`} />
+                                                <div className="flex gap-2 items-center">
+                                                    {theme.id === 'custom' ? (
+                                                        <div className={`w-20 h-10 rounded-2xl ${theme.bg} border border-white/20 shadow-lg flex items-center justify-center relative group-hover:scale-105 transition-transform`}>
+                                                            <div className="absolute inset-0 bg-white/10 backdrop-blur-sm rounded-[inherit]" />
+                                                            <Palette className="w-5 h-5 text-white z-10 drop-shadow-md" />
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <div className={`w-10 h-10 rounded-2xl ${theme.bg} border border-border-theme shadow-md group-hover:scale-105 transition-transform`} />
+                                                            <div className={`w-10 h-10 rounded-2xl ${theme.accent} shadow-md group-hover:scale-105 transition-transform`} />
+                                                        </>
+                                                    )}
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className={clsx(
@@ -1015,6 +1333,93 @@ export default function SettingsPage() {
                                         </button>
                                     ))}
                                 </div>
+
+                                {config.theme === 'custom' && (
+                                    <div className="pt-10 border-t border-border-theme space-y-8 animate-slide-in-bottom">
+                                        <div className="flex items-center gap-3 text-accent-theme">
+                                            <div className="p-2 bg-accent-theme/10 rounded-lg">
+                                                <Palette className="w-4 h-4" />
+                                            </div>
+                                            <h3 className="font-bold text-sm uppercase tracking-widest text-foreground">Ajustar Cores Personalizadas</h3>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                                            {[
+                                                { label: 'Fundo', key: 'bg', description: 'Cor principal do plano de fundo' },
+                                                { label: 'Texto', key: 'fg', description: 'Cor principal das fontes' },
+                                                { label: 'Primária', key: 'primary', description: 'Cor para botões e destaque principal' },
+                                                { label: 'Destaque (Accent)', key: 'accent', description: 'Cor secundária e ícones da lateral' },
+                                                { label: 'Cards', key: 'card', description: 'Cor de fundo dos cartões' },
+                                                { label: 'Hover dos Cards', key: 'card-hover', description: 'Cor ao passar o mouse nos cards' },
+                                                { label: 'Bordas', key: 'border', description: 'Cor das linhas divisórias' },
+                                                { label: 'Texto Mudo', key: 'muted', description: 'Cor para textos secundários' },
+                                            ].map((color) => (
+                                                <div key={color.key} className="glass-card p-6 rounded-[2rem] border border-white/5 space-y-4 hover:border-accent-theme/20 transition-all group">
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="space-y-1">
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-foreground opacity-90">
+                                                                {color.label}
+                                                            </p>
+                                                            <p className="text-[8px] font-medium text-[var(--color-text-muted)] uppercase tracking-tight">
+                                                                {color.description}
+                                                            </p>
+                                                        </div>
+                                                        <div
+                                                            className="w-8 h-8 rounded-full shadow-inner border border-white/10"
+                                                            style={{ backgroundColor: systemSettings.custom_colors[color.key] || '#000000' }}
+                                                        />
+                                                    </div>
+
+                                                    <div className="flex gap-2 items-center">
+                                                        <div className="relative flex-shrink-0">
+                                                            <input
+                                                                type="color"
+                                                                value={systemSettings.custom_colors[color.key] || '#000000'}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    setSystemSettings({
+                                                                        ...systemSettings,
+                                                                        custom_colors: { ...systemSettings.custom_colors, [color.key]: val }
+                                                                    });
+                                                                }}
+                                                                className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-20"
+                                                            />
+                                                            <div className="w-10 h-10 rounded-xl bg-background border border-border-theme flex items-center justify-center group-hover:border-accent-theme/50 transition-all shadow-inner">
+                                                                <Palette className="w-4 h-4 text-accent-theme" />
+                                                            </div>
+                                                        </div>
+                                                        <input
+                                                            type="text"
+                                                            value={systemSettings.custom_colors[color.key] || ''}
+                                                            maxLength={7}
+                                                            onChange={(e) => {
+                                                                let val = e.target.value;
+                                                                if (!val.startsWith('#') && val.length > 0) val = '#' + val;
+                                                                setSystemSettings({
+                                                                    ...systemSettings,
+                                                                    custom_colors: { ...systemSettings.custom_colors, [color.key]: val }
+                                                                });
+                                                            }}
+                                                            className="w-full min-w-0 bg-background/50 border border-border-theme rounded-xl px-3 py-2 text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-accent-theme/20 transition-all uppercase placeholder:opacity-30"
+                                                            placeholder="#000000"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="flex justify-start pt-4">
+                                            <button
+                                                onClick={handleSaveSystemSettings}
+                                                disabled={isSavingSystem}
+                                                className="premium-gradient text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-accent-theme/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
+                                            >
+                                                {isSavingSystem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                Salvar Cores Customizadas
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -1276,220 +1681,226 @@ export default function SettingsPage() {
             </div>
 
             {/* Modais Consolidados */}
-            {isResetModalOpen && (
-                <div className="fixed inset-0 bg-background/90 backdrop-blur-2xl flex items-center justify-center z-[3000] p-4 animate-fade-in">
-                    <div className="glass-card w-full max-w-md rounded-[3rem] border border-red-500/30 p-10 space-y-8 animate-zoom-in">
-                        <div className="text-center space-y-6">
-                            <div className="inline-flex p-5 bg-red-500/20 rounded-3xl text-red-500 animate-bounce">
-                                <Trash2 className="w-10 h-10" />
-                            </div>
-                            <h2 className="text-3xl font-black italic uppercase tracking-tight text-red-500">Confirmação Crítica</h2>
-                            <p className="text-xs text-[var(--color-text-muted)]">Ação irreversível em {resetEntities.length} módulo(s). Digite DELETAR para prosseguir.</p>
-                            <input
-                                type="text"
-                                className="w-full bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center text-red-500 font-black tracking-[0.3em] outline-none"
-                                value={resetConfirmation}
-                                onChange={e => setResetConfirmation(e.target.value)}
-                            />
-                            <div className="grid grid-cols-2 gap-4">
-                                <button onClick={() => setIsResetModalOpen(false)} className="px-6 py-4 rounded-2xl border border-border-theme font-black text-[10px] uppercase">Abortar</button>
-                                <button
-                                    disabled={resetConfirmation !== 'DELETAR' || loadingReset}
-                                    onClick={async () => {
-                                        setLoadingReset(true);
-                                        try {
-                                            await resetDatabase(resetEntities, resetConfirmation);
-                                            showNotification('Dados limpos!', 'success');
-                                            setIsResetModalOpen(false);
-                                            setResetConfirmation('');
-                                            setResetEntities([]);
-                                            fetchCategories();
-                                            fetchStatuses();
-                                        } catch (err) { showNotification('Erro ao limpar', 'error'); }
-                                        finally { setLoadingReset(false); }
-                                    }}
-                                    className="px-6 py-4 rounded-2xl bg-red-500 text-white font-black text-[10px] uppercase disabled:opacity-50"
-                                >
-                                    {loadingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {isUserModalOpen && (
-                <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
-                    <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in">
-                        <div className="p-10 border-b border-border-theme/50">
-                            <h2 className="text-3xl font-black italic uppercase tracking-tight">
-                                {isEditingUser ? 'Editar' : 'Novo'} <span className="text-accent-theme">Usuário</span>
-                            </h2>
-                        </div>
-                        <form onSubmit={handleSaveUser} className="p-10 space-y-6">
-                            <div className="grid grid-cols-2 gap-6">
-                                <div className="col-span-2 space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome Completo</label>
-                                    <input type="text" required value={currentUser.full_name || ''} onChange={e => setCurrentUser({ ...currentUser, full_name: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
+            {
+                isResetModalOpen && (
+                    <div className="fixed inset-0 bg-background/90 backdrop-blur-2xl flex items-center justify-center z-[3000] p-4 animate-fade-in">
+                        <div className="glass-card w-full max-w-md rounded-[3rem] border border-red-500/30 p-10 space-y-8 animate-zoom-in">
+                            <div className="text-center space-y-6">
+                                <div className="inline-flex p-5 bg-red-500/20 rounded-3xl text-red-500 animate-bounce">
+                                    <Trash2 className="w-10 h-10" />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Username</label>
-                                    <input type="text" required disabled={isEditingUser} value={currentUser.username || ''} onChange={e => setCurrentUser({ ...currentUser, username: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none disabled:opacity-50" />
-                                </div>
-                                <div className="space-y-2">
-                                    <CustomSelect
-                                        label="Nível"
-                                        value={currentUser.role || 'AGENT'}
-                                        onChange={val => setCurrentUser({ ...currentUser, role: val })}
-                                        icon={<Shield className="w-3 h-3" />}
-                                        options={[
-                                            { value: 'AGENT', label: 'Agente', icon: <UserIcon className="w-4 h-4" /> },
-                                            { value: 'ADMIN', label: 'Admin', icon: <ShieldCheck className="w-4 h-4 text-accent-theme" /> },
-                                            ...(user?.role === 'ROOT' ? [{ value: 'ROOT', label: 'Root', icon: <SettingsIcon className="w-4 h-4 text-purple-500" /> }] : [])
-                                        ]}
-                                    />
-                                    <div className="pt-4">
-                                        <CustomSelect
-                                            label="Perfil de Acesso (RBAC)"
-                                            value={currentUser.profile_id || ''}
-                                            onChange={val => setCurrentUser({ ...currentUser, profile_id: Number(val) || undefined })}
-                                            icon={<ShieldCheck className="w-3 h-3 text-orange-400" />}
-                                            options={[
-                                                { value: '', label: 'Nenhum (Usar Role Padrão)', icon: <UserIcon className="w-4 h-4 opacity-50" /> },
-                                                ...profiles.map(p => ({
-                                                    value: p.id,
-                                                    label: p.name,
-                                                    icon: <ShieldCheck className="w-4 h-4 text-orange-400" />
-                                                }))
-                                            ]}
-                                            placeholder="Selecione um perfil customizado..."
-                                        />
-                                        <p className="text-[9px] text-[var(--color-text-muted)] mt-1 ml-1">* Perfis sobrescrevem permissões padrão da role.</p>
-                                    </div>
-                                </div>
-                                <div className="col-span-2 space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Email</label>
-                                    <input type="email" required value={currentUser.email || ''} onChange={e => setCurrentUser({ ...currentUser, email: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
-                                </div>
-                                <div className="col-span-2 space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">{isEditingUser ? 'Nova Senha (Opcional)' : 'Senha'}</label>
-                                    <input type="password" required={!isEditingUser} value={currentUser.password || ''} onChange={e => setCurrentUser({ ...currentUser, password: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
-                                </div>
-                                <div className="col-span-2 flex items-center justify-between p-4 bg-white/5 rounded-2xl">
-                                    <span className="text-[10px] font-black uppercase">Ativo</span>
-                                    <button type="button" onClick={() => setCurrentUser({ ...currentUser, is_active: !currentUser.is_active })} className={clsx("w-10 h-5 rounded-full relative transition-all", currentUser.is_active ? "bg-accent-theme" : "bg-white/10")}>
-                                        <div className={clsx("w-3 h-3 bg-white rounded-full absolute top-1 transition-all", currentUser.is_active ? "left-6" : "left-1")} />
+                                <h2 className="text-3xl font-black italic uppercase tracking-tight text-red-500">Confirmação Crítica</h2>
+                                <p className="text-xs text-[var(--color-text-muted)]">Ação irreversível em {resetEntities.length} módulo(s). Digite DELETAR para prosseguir.</p>
+                                <input
+                                    type="text"
+                                    className="w-full bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center text-red-500 font-black tracking-[0.3em] outline-none"
+                                    value={resetConfirmation}
+                                    onChange={e => setResetConfirmation(e.target.value)}
+                                />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <button onClick={() => setIsResetModalOpen(false)} className="px-6 py-4 rounded-2xl border border-border-theme font-black text-[10px] uppercase">Abortar</button>
+                                    <button
+                                        disabled={resetConfirmation !== 'DELETAR' || loadingReset}
+                                        onClick={async () => {
+                                            setLoadingReset(true);
+                                            try {
+                                                await resetDatabase(resetEntities, resetConfirmation);
+                                                showNotification('Dados limpos!', 'success');
+                                                setIsResetModalOpen(false);
+                                                setResetConfirmation('');
+                                                setResetEntities([]);
+                                                fetchCategories();
+                                                fetchStatuses();
+                                            } catch (err) { showNotification('Erro ao limpar', 'error'); }
+                                            finally { setLoadingReset(false); }
+                                        }}
+                                        className="px-6 py-4 rounded-2xl bg-red-500 text-white font-black text-[10px] uppercase disabled:opacity-50"
+                                    >
+                                        {loadingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
                                     </button>
                                 </div>
                             </div>
-                            <div className="flex justify-end gap-4 pt-4">
-                                <button type="button" onClick={() => setIsUserModalOpen(false)} className="text-[10px] font-black uppercase">Cancelar</button>
-                                <button type="submit" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl">Salvar</button>
-                            </div>
-                        </form>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
+
+            {
+                isUserModalOpen && (
+                    <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
+                        <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in">
+                            <div className="p-10 border-b border-border-theme/50">
+                                <h2 className="text-3xl font-black italic uppercase tracking-tight">
+                                    {isEditingUser ? 'Editar' : 'Novo'} <span className="text-accent-theme">Usuário</span>
+                                </h2>
+                            </div>
+                            <form onSubmit={handleSaveUser} className="p-10 space-y-6">
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div className="col-span-2 space-y-2">
+                                        <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome Completo</label>
+                                        <input type="text" required value={currentUser.full_name || ''} onChange={e => setCurrentUser({ ...currentUser, full_name: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Username</label>
+                                        <input type="text" required disabled={isEditingUser} value={currentUser.username || ''} onChange={e => setCurrentUser({ ...currentUser, username: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none disabled:opacity-50" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <CustomSelect
+                                            label="Nível"
+                                            value={currentUser.role || 'AGENT'}
+                                            onChange={val => setCurrentUser({ ...currentUser, role: val })}
+                                            icon={<Shield className="w-3 h-3" />}
+                                            options={[
+                                                { value: 'AGENT', label: 'Agente', icon: <UserIcon className="w-4 h-4" /> },
+                                                { value: 'ADMIN', label: 'Admin', icon: <ShieldCheck className="w-4 h-4 text-accent-theme" /> },
+                                                ...(user?.role === 'ROOT' ? [{ value: 'ROOT', label: 'Root', icon: <SettingsIcon className="w-4 h-4 text-purple-500" /> }] : [])
+                                            ]}
+                                        />
+                                        <div className="pt-4">
+                                            <CustomSelect
+                                                label="Perfil de Acesso (RBAC)"
+                                                value={currentUser.profile_id || ''}
+                                                onChange={val => setCurrentUser({ ...currentUser, profile_id: Number(val) || undefined })}
+                                                icon={<ShieldCheck className="w-3 h-3 text-orange-400" />}
+                                                options={[
+                                                    { value: '', label: 'Nenhum (Usar Role Padrão)', icon: <UserIcon className="w-4 h-4 opacity-50" /> },
+                                                    ...profiles.map(p => ({
+                                                        value: p.id,
+                                                        label: p.name,
+                                                        icon: <ShieldCheck className="w-4 h-4 text-orange-400" />
+                                                    }))
+                                                ]}
+                                                placeholder="Selecione um perfil customizado..."
+                                            />
+                                            <p className="text-[9px] text-[var(--color-text-muted)] mt-1 ml-1">* Perfis sobrescrevem permissões padrão da role.</p>
+                                        </div>
+                                    </div>
+                                    <div className="col-span-2 space-y-2">
+                                        <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Email</label>
+                                        <input type="email" required value={currentUser.email || ''} onChange={e => setCurrentUser({ ...currentUser, email: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
+                                    </div>
+                                    <div className="col-span-2 space-y-2">
+                                        <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">{isEditingUser ? 'Nova Senha (Opcional)' : 'Senha'}</label>
+                                        <input type="password" required={!isEditingUser} value={currentUser.password || ''} onChange={e => setCurrentUser({ ...currentUser, password: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
+                                    </div>
+                                    <div className="col-span-2 flex items-center justify-between p-4 bg-white/5 rounded-2xl">
+                                        <span className="text-[10px] font-black uppercase">Ativo</span>
+                                        <button type="button" onClick={() => setCurrentUser({ ...currentUser, is_active: !currentUser.is_active })} className={clsx("w-10 h-5 rounded-full relative transition-all", currentUser.is_active ? "bg-accent-theme" : "bg-white/10")}>
+                                            <div className={clsx("w-3 h-3 bg-white rounded-full absolute top-1 transition-all", currentUser.is_active ? "left-6" : "left-1")} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-4 pt-4">
+                                    <button type="button" onClick={() => setIsUserModalOpen(false)} className="text-[10px] font-black uppercase">Cancelar</button>
+                                    <button type="submit" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl">Salvar</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
 
             {/* Modal de Perfis */}
-            {isProfileModalOpen && (
-                <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
-                    <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] overflow-y-auto custom-scrollbar">
-                        <div className="p-10 border-b border-border-theme/50 sticky top-0 bg-background/50 backdrop-blur-md z-10">
-                            <h2 className="text-3xl font-black italic uppercase tracking-tight">
-                                {currentProfile.id ? 'Editar' : 'Novo'} <span className="text-orange-500">Perfil</span>
-                            </h2>
+            {
+                isProfileModalOpen && (
+                    <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
+                        <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] overflow-y-auto custom-scrollbar">
+                            <div className="p-10 border-b border-border-theme/50 sticky top-0 bg-background/50 backdrop-blur-md z-10">
+                                <h2 className="text-3xl font-black italic uppercase tracking-tight">
+                                    {currentProfile.id ? 'Editar' : 'Novo'} <span className="text-orange-500">Perfil</span>
+                                </h2>
+                            </div>
+                            <form onSubmit={handleSaveProfile} className="p-10 space-y-8">
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome do Perfil</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={currentProfile.name || ''}
+                                        onChange={e => setCurrentProfile({ ...currentProfile, name: e.target.value })}
+                                        className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors"
+                                        placeholder="Ex: Gerente de Contas"
+                                    />
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Descrição</label>
+                                    <textarea
+                                        rows={2}
+                                        value={currentProfile.description || ''}
+                                        onChange={e => setCurrentProfile({ ...currentProfile, description: e.target.value })}
+                                        className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors resize-none"
+                                        placeholder="Breve descrição das responsabilidades..."
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* Permissões de Menu */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Acesso a Menus</h3>
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 cursor-pointer hover:bg-white/10 transition-all">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={currentProfile.permissions?.menus?.includes('*') || false}
+                                                    onChange={() => toggleProfilePermission('menus', '*')}
+                                                    className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
+                                                />
+                                                <span className="text-xs font-bold text-orange-400">Acesso Total (Admin)</span>
+                                            </label>
+                                            {!currentProfile.permissions?.menus?.includes('*') && AVAILABLE_MENUS.map(menu => (
+                                                <label key={menu.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-theme/50 cursor-pointer hover:border-orange-500/30 transition-all">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={currentProfile.permissions?.menus?.includes(menu.id) || false}
+                                                        onChange={() => toggleProfilePermission('menus', menu.id)}
+                                                        className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
+                                                    />
+                                                    <span className="text-xs font-medium">{menu.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Permissões de Ação */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Permissões de Ação</h3>
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 cursor-pointer hover:bg-white/10 transition-all">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={currentProfile.permissions?.actions?.includes('*') || false}
+                                                    onChange={() => toggleProfilePermission('actions', '*')}
+                                                    className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
+                                                />
+                                                <span className="text-xs font-bold text-orange-400">Superusuário</span>
+                                            </label>
+                                            {!currentProfile.permissions?.actions?.includes('*') && AVAILABLE_ACTIONS.map(action => (
+                                                <label key={action.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-theme/50 cursor-pointer hover:border-orange-500/30 transition-all">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={currentProfile.permissions?.actions?.includes(action.id) || false}
+                                                        onChange={() => toggleProfilePermission('actions', action.id)}
+                                                        className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
+                                                    />
+                                                    <span className="text-xs font-medium">{action.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end gap-4 pt-6 border-t border-border-theme/50">
+                                    <button type="button" onClick={() => setIsProfileModalOpen(false)} className="px-6 py-3 rounded-xl text-xs font-black uppercase hover:bg-white/5 transition-colors">Cancelar</button>
+                                    <button type="submit" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:shadow-orange-500/20 transition-all transform active:scale-95">
+                                        {loadingProfiles ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Perfil'}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
-                        <form onSubmit={handleSaveProfile} className="p-10 space-y-8">
-                            <div className="space-y-4">
-                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome do Perfil</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={currentProfile.name || ''}
-                                    onChange={e => setCurrentProfile({ ...currentProfile, name: e.target.value })}
-                                    className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors"
-                                    placeholder="Ex: Gerente de Contas"
-                                />
-                            </div>
-                            <div className="space-y-4">
-                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Descrição</label>
-                                <textarea
-                                    rows={2}
-                                    value={currentProfile.description || ''}
-                                    onChange={e => setCurrentProfile({ ...currentProfile, description: e.target.value })}
-                                    className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors resize-none"
-                                    placeholder="Breve descrição das responsabilidades..."
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                {/* Permissões de Menu */}
-                                <div className="space-y-4">
-                                    <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Acesso a Menus</h3>
-                                    <div className="space-y-2">
-                                        <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 cursor-pointer hover:bg-white/10 transition-all">
-                                            <input
-                                                type="checkbox"
-                                                checked={currentProfile.permissions?.menus?.includes('*') || false}
-                                                onChange={() => toggleProfilePermission('menus', '*')}
-                                                className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                            />
-                                            <span className="text-xs font-bold text-orange-400">Acesso Total (Admin)</span>
-                                        </label>
-                                        {!currentProfile.permissions?.menus?.includes('*') && AVAILABLE_MENUS.map(menu => (
-                                            <label key={menu.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-theme/50 cursor-pointer hover:border-orange-500/30 transition-all">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={currentProfile.permissions?.menus?.includes(menu.id) || false}
-                                                    onChange={() => toggleProfilePermission('menus', menu.id)}
-                                                    className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                                />
-                                                <span className="text-xs font-medium">{menu.label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Permissões de Ação */}
-                                <div className="space-y-4">
-                                    <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Permissões de Ação</h3>
-                                    <div className="space-y-2">
-                                        <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 cursor-pointer hover:bg-white/10 transition-all">
-                                            <input
-                                                type="checkbox"
-                                                checked={currentProfile.permissions?.actions?.includes('*') || false}
-                                                onChange={() => toggleProfilePermission('actions', '*')}
-                                                className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                            />
-                                            <span className="text-xs font-bold text-orange-400">Superusuário</span>
-                                        </label>
-                                        {!currentProfile.permissions?.actions?.includes('*') && AVAILABLE_ACTIONS.map(action => (
-                                            <label key={action.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-theme/50 cursor-pointer hover:border-orange-500/30 transition-all">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={currentProfile.permissions?.actions?.includes(action.id) || false}
-                                                    onChange={() => toggleProfilePermission('actions', action.id)}
-                                                    className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                                />
-                                                <span className="text-xs font-medium">{action.label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-4 pt-6 border-t border-border-theme/50">
-                                <button type="button" onClick={() => setIsProfileModalOpen(false)} className="px-6 py-3 rounded-xl text-xs font-black uppercase hover:bg-white/5 transition-colors">Cancelar</button>
-                                <button type="submit" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:shadow-orange-500/20 transition-all transform active:scale-95">
-                                    {loadingProfiles ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Perfil'}
-                                </button>
-                            </div>
-                        </form>
                     </div>
-                </div>
-            )}
-        </main>
+                )
+            }
+        </main >
 
     );
 }

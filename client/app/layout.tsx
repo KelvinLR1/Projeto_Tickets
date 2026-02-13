@@ -27,6 +27,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { NotificationProvider } from "@/components/NotificationProvider";
 import { AuthProvider } from "@/components/AuthProvider";
 import { TimerProvider } from "@/components/TimerProvider";
+import { SystemSettingsProvider } from "@/components/SystemSettingsProvider";
 import AppLayout from "@/components/AppLayout";
 
 export default function RootLayout({
@@ -40,15 +41,17 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${outfit.variable} antialiased font-sans`}
       >
         <ThemeProvider>
-          <AuthProvider>
-            <NotificationProvider>
-              <TimerProvider>
-                <AppLayout>
-                  {children}
-                </AppLayout>
-              </TimerProvider>
-            </NotificationProvider>
-          </AuthProvider>
+          <SystemSettingsProvider>
+            <AuthProvider>
+              <NotificationProvider>
+                <TimerProvider>
+                  <AppLayout>
+                    {children}
+                  </AppLayout>
+                </TimerProvider>
+              </NotificationProvider>
+            </AuthProvider>
+          </SystemSettingsProvider>
         </ThemeProvider>
       </body>
     </html>

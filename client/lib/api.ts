@@ -55,22 +55,25 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   response => response,
   error => {
+    const isLoginRequest = error.config?.url?.includes('/token');
+
     // Se for 401 (Unauthorized), limpa o token local apenas se não for na página de login
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
         localStorage.removeItem('auth_token');
-        // Opcional: window.location.href = '/login'; 
-        // Mas o AuthProvider já cuida do redirecionamento
       }
     }
 
-    const errorDetails = error.response?.data || error.toJSON?.() || { message: error.message };
-    console.error('[API Error]', {
-      url: error.config?.url,
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message
-    });
+    // Só loga no console se NÃO for um erro de login esperado (401 no /token)
+    // ou se for um erro crítico (500+)
+    if (!isLoginRequest || (error.response?.status && error.response.status >= 500)) {
+      console.error('[API Error]', {
+        url: error.config?.url,
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+    }
 
     return Promise.reject(error);
   }
