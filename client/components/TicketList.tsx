@@ -124,10 +124,17 @@ export default function TicketList({
     };
 
     const priorityColor = (priority: string) => {
-        switch (priority) {
+        const p = priority?.toLowerCase() || '';
+        switch (p) {
+            case 'crítica':
+            case 'critica':
             case 'critical': return 'bg-red-500/10 text-red-500 border-red-500/30';
+            case 'alta':
             case 'high': return 'bg-orange-500/10 text-orange-500 border-orange-500/30';
+            case 'média':
+            case 'media':
             case 'medium': return 'bg-blue-500/10 text-blue-500 border-blue-500/30';
+            case 'baixa':
             case 'low': return 'bg-green-500/10 text-green-500 border-green-500/30';
             default: return 'bg-gray-500/10 text-gray-500 border-border-theme';
         }

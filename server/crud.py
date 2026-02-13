@@ -250,10 +250,20 @@ def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int 
         ticket_data["status_id"] = default_status.id
         ticket_data["status"] = default_status.name
     else:
-        # Sincroniza o nome do status se o ID for passado
-        if db_status:
-            ticket_data["status"] = db_status.name
-        
+        # Sincroniza o nome do status se o ID for passado (Placeholder para lógica de sincronia)
+        pass
+
+    # Normalização de Prioridade
+    priority_map = {
+        "low": "Baixa", "baixa": "Baixa",
+        "medium": "Média", "media": "Média", "média": "Média",
+        "high": "Alta", "alta": "Alta",
+        "critical": "Crítica", "critica": "Crítica", "crítica": "Crítica"
+    }
+    if ticket_data.get("priority"):
+        p_lower = ticket_data["priority"].lower().strip()
+        ticket_data["priority"] = priority_map.get(p_lower, ticket_data["priority"])
+
     db_ticket = models.Ticket(**ticket_data)
     # Use o argumento created_by_id passado para a função
     if created_by_id:
@@ -336,6 +346,17 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
     db_ticket = get_ticket(db, ticket_id)
     if db_ticket:
         update_data = ticket_update.dict(exclude_unset=True)
+
+    # Normalização de Prioridade
+    if "priority" in update_data and update_data["priority"]:
+        priority_map = {
+            "low": "Baixa", "baixa": "Baixa",
+            "medium": "Média", "media": "Média", "média": "Média",
+            "high": "Alta", "alta": "Alta",
+            "critical": "Crítica", "critica": "Crítica", "crítica": "Crítica"
+        }
+        p_lower = update_data["priority"].lower().strip()
+        update_data["priority"] = priority_map.get(p_lower, update_data["priority"])
         
         # Log de Histórico
         for field, new_value in update_data.items():
