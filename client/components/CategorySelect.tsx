@@ -142,7 +142,7 @@ export default function CategorySelect({
                             <Tag className={clsx("w-3.5 h-3.5 mr-2", isSelected ? "text-accent-theme" : "text-gray-600")} />
                         )}
 
-                        <span className={clsx("text-xs", level === 0 ? "font-black uppercase tracking-widest" : "font-medium")}>
+                        <span className={clsx("text-xs", level === 0 ? "font-black" : "font-medium")}>
                             {cat.name}
                         </span>
                     </div>
@@ -193,7 +193,7 @@ export default function CategorySelect({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="absolute top-[calc(100%+8px)] left-0 w-full bg-card/95 backdrop-blur-3xl border border-border-theme rounded-2xl shadow-3xl z-[1000] overflow-hidden"
+                        className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#1e293b] dark:bg-card border border-border-theme rounded-2xl shadow-2xl z-[1000] overflow-hidden shadow-black/50"
                     >
                         <div className="p-3 border-b border-border-theme/50 bg-white/5">
                             <div className="relative">

@@ -341,8 +341,8 @@ def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depen
     return crud.create_ticket_simple(db=db, ticket=ticket)
 
 @app.get("/tickets/", response_model=List[schemas.Ticket])
-def read_tickets(skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, db: Session = Depends(get_db)):
-    tickets = crud.get_tickets(db, skip=skip, limit=limit, status=status, client_id=client_id)
+def read_tickets(skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, db: Session = Depends(get_db)):
+    tickets = crud.get_tickets(db, skip=skip, limit=limit, status=status, client_id=client_id, unassigned_only=unassigned_only)
     return tickets
 
 @app.get("/dashboard/stats")

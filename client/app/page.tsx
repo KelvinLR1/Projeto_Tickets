@@ -1,19 +1,27 @@
 import DashboardCharts from '@/components/DashboardCharts';
 import Link from 'next/link';
-import { MessageSquarePlus, ListFilter, LayoutDashboard, BookOpen, Search } from 'lucide-react';
+import { MessageSquarePlus, ListFilter, LayoutDashboard, BookOpen, Search, Monitor } from 'lucide-react';
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground p-8">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header Area */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 border-b border-border-theme pb-10">
           <div className="space-y-2">
             <h1 className="text-5xl font-black font-display tracking-tight italic uppercase">
               Dashboard <span className="text-accent-theme">Executivo</span>
             </h1>
             <p className="text-[var(--color-text-muted)] text-sm font-medium mt-1">Visão geral do sistema e indicadores LAN</p>
           </div>
+
+          <Link
+            href="/monitor"
+            className="p-3 bg-accent-theme/10 hover:bg-accent-theme/20 rounded-2xl text-accent-theme transition-all group"
+            title="Abrir Painel de Monitoramento"
+          >
+            <Monitor className="w-8 h-8 group-hover:scale-110 transition-transform" />
+          </Link>
         </div>
 
         {/* Dashboards Visuais */}

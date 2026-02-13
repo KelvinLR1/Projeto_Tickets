@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile } from '@/lib/api';
-import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -43,6 +44,7 @@ export default function TicketDetailsPage() {
     const [targetSector, setTargetSector] = useState<string>('');
     const [performingAction, setPerformingAction] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [zoomedImage, setZoomedImage] = useState<string | null>(null);
     const infoDescriptionRef = React.useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
@@ -281,13 +283,12 @@ export default function TicketDetailsPage() {
             let markdown = '';
             if (isImage) {
                 markdown = `\n\n![Anexo - ${file.name}](${url})\n\n`;
-            } else if (isVideo) {
-                markdown = `\n\n<video src="${url}" controls className="w-full rounded-2xl border border-border-theme my-4" />\n\n`;
             } else {
-                markdown = `\n\n[📂 **Download de Arquivo:** ${file.name}](${url})\n\n`;
+                const type = isVideo ? 'VIDEO' : 'FILE';
+                markdown = `\n\n[ATTACHMENT:${type}:${file.name}](${url})\n\n`;
             }
 
-            setNewInfoContent(prev => prev + markdown);
+            setNewInfoContent(prev => prev.trim() + markdown);
             showNotification('Arquivo anexado!', 'success');
         } catch (error) {
             console.error(error);
@@ -332,9 +333,8 @@ export default function TicketDetailsPage() {
         setPerformingAction(true);
         try {
             const timestamp = new Date().toLocaleString();
-            // Formato simples e robusto com o separador que o renderizador usa para quebrar em blocos
             const separator = `\n\n---\n\n`;
-            const header = `### 📝 INFORMAÇÃO ADICIONADA EM ${timestamp.toUpperCase()}\n\n`;
+            const header = `### [UPDATE] ${timestamp.toUpperCase()}\n\n`;
             const updatedDescription = ticket.description + separator + header + newInfoContent.trim();
 
             await updateTicket(ticket.id, { description: updatedDescription });
@@ -468,20 +468,20 @@ export default function TicketDetailsPage() {
                                 value: s.id,
                                 label: s.name,
                                 icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />,
-                                className: "text-[10px] font-black uppercase tracking-widest"
+                                className: "text-xs font-bold"
                             }))}
                             placeholder="Status..."
                             className="w-[180px] !space-y-0"
                         />
 
                         <CustomSelect
-                            value={ticket.priority}
+                            value={ticket.priority?.toLowerCase() || ''}
                             onChange={handlePriorityChange}
                             options={[
-                                { value: 'low', label: 'BAIXA', icon: <Flag className="w-3 h-3 text-green-500" /> },
-                                { value: 'medium', label: 'MÉDIA', icon: <Flag className="w-3 h-3 text-blue-500" /> },
-                                { value: 'high', label: 'ALTA', icon: <Flag className="w-3 h-3 text-orange-500" /> },
-                                { value: 'critical', label: 'CRÍTICA', icon: <Flag className="w-3 h-3 text-red-500" /> }
+                                { value: 'baixa', label: 'Baixa', icon: <Flag className="w-3 h-3 text-green-500" /> },
+                                { value: 'média', label: 'Média', icon: <Flag className="w-3 h-3 text-blue-500" /> },
+                                { value: 'alta', label: 'Alta', icon: <Flag className="w-3 h-3 text-orange-500" /> },
+                                { value: 'crítica', label: 'Crítica', icon: <Flag className="w-3 h-3 text-red-500" /> }
                             ]}
                             placeholder="Prioridade..."
                             className="w-[160px] !space-y-0"
@@ -525,12 +525,12 @@ export default function TicketDetailsPage() {
 
                             <div className="flex items-center gap-5 p-5 rounded-3xl bg-background/40 border border-border-theme/30">
                                 <div className="w-14 h-14 rounded-2xl bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme shadow-xl">
-                                    <User className="w-6 h-6" />
+                                    <ShieldCheck className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-1">Criado Por</p>
+                                    <p className="text-[10px] font-black text-accent-theme uppercase tracking-widest mb-1 font-shadow-none">Responsável</p>
                                     <p className="font-bold text-lg">
-                                        {ticket.created_by?.full_name || ticket.created_by?.username || 'Sistema'}
+                                        {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'Não Atribuído'}
                                     </p>
                                 </div>
                             </div>
@@ -542,147 +542,276 @@ export default function TicketDetailsPage() {
                     {/* Description Area */}
                     <div className="lg:col-span-2 flex flex-col gap-6">
                         {/* Tabs Switcher */}
-                        <div className="flex p-1.5 bg-background/40 backdrop-blur-xl border border-border-theme/30 rounded-[2rem] w-fit">
+                        <div className="flex p-1.5 bg-background/40 backdrop-blur-xl border border-border-theme/30 rounded-[2rem] w-fit relative">
                             <button
                                 onClick={() => setActiveTab('details')}
                                 className={clsx(
-                                    "flex items-center gap-2.5 px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all",
+                                    "relative z-10 flex items-center gap-2.5 px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all",
                                     activeTab === 'details'
-                                        ? "bg-foreground text-background shadow-lg shadow-white/5"
+                                        ? "text-background"
                                         : "text-gray-500 hover:text-foreground hover:bg-white/5"
                                 )}
                             >
                                 <Info className="w-4 h-4" />
                                 Detalhes
+                                {activeTab === 'details' && (
+                                    <motion.div
+                                        layoutId="active-tab"
+                                        className="absolute inset-0 bg-foreground rounded-[1.5rem] -z-10 shadow-lg shadow-white/5"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
                             </button>
                             <button
                                 onClick={() => setActiveTab('history')}
                                 className={clsx(
-                                    "flex items-center gap-2.5 px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all",
+                                    "relative z-10 flex items-center gap-2.5 px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all",
                                     activeTab === 'history'
-                                        ? "bg-foreground text-background shadow-lg shadow-white/5"
+                                        ? "text-background"
                                         : "text-gray-500 hover:text-foreground hover:bg-white/5"
                                 )}
                             >
                                 <History className="w-4 h-4" />
                                 Histórico
                                 {history.length > 0 && (
-                                    <span className="bg-accent-theme text-foreground px-1.5 py-0.5 rounded-md text-[8px] ml-1">
+                                    <span className={clsx(
+                                        "px-1.5 py-0.5 rounded-md text-[8px] ml-1 transition-colors",
+                                        activeTab === 'history' ? "bg-background text-foreground" : "bg-accent-theme text-foreground"
+                                    )}>
                                         {history.length}
                                     </span>
+                                )}
+                                {activeTab === 'history' && (
+                                    <motion.div
+                                        layoutId="active-tab"
+                                        className="absolute inset-0 bg-foreground rounded-[1.5rem] -z-10 shadow-lg shadow-white/5"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
                                 )}
                             </button>
                         </div>
 
-                        <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-lg min-h-[500px] flex-1 transition-all duration-500">
-                            {activeTab === 'details' ? (
-                                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="flex items-center gap-3 pb-6 mb-8 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-10 pt-10">
-                                        <MessageSquare className="w-4 h-4 text-accent-theme" />
-                                        Descrição Técnica e Detalhes
-                                    </div>
+                        <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-lg min-h-[500px] flex-1">
+                            <AnimatePresence mode="wait">
+                                {activeTab === 'details' ? (
+                                    <motion.div
+                                        key="details"
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        transition={{ duration: 0.3 }}
+                                    >
+                                        <div className="flex items-center gap-3 pb-6 mb-8 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-10 pt-10">
+                                            <MessageSquare className="w-4 h-4 text-accent-theme" />
+                                            Descrição Técnica e Detalhes
+                                        </div>
 
-                                    <div className="space-y-8 pr-4 max-h-[600px] overflow-y-auto custom-scrollbar">
-                                        {(function renderFormattedDescription() {
-                                            const parts = ticket.description.split(/\n\s*---\s*\n/);
-                                            // Guardamos qual é a parte original (a primeira da string original)
-                                            const originalPart = parts[0];
+                                        <div className="space-y-8 pr-4 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                            {(function renderFormattedDescription() {
+                                                const parts = ticket.description.split(/\n\s*---\s*\n/);
+                                                const originalPart = parts[0];
+                                                const reversedParts = [...parts].reverse();
 
-                                            // Revertemos para mostrar o mais recente em cima
-                                            const reversedParts = [...parts].reverse();
+                                                // Custom component for ReactMarkdown to handle premium attachments
+                                                const MarkdownComponents = {
+                                                    a: ({ href, children }: any) => {
+                                                        const content = String(children);
+                                                        if (content.startsWith('ATTACHMENT:')) {
+                                                            const [_, type, filename] = content.split(':');
+                                                            const isVideo = type === 'VIDEO';
 
-                                            return reversedParts.map((part, index) => {
-                                                const isOriginal = part === originalPart;
+                                                            return (
+                                                                <a
+                                                                    href={href}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="flex items-center gap-4 p-5 rounded-[1.5rem] bg-white/[0.03] border border-white/5 hover:bg-white/5 hover:border-accent-theme/30 transition-all group/attach my-6 no-underline"
+                                                                >
+                                                                    <span className="w-14 h-14 rounded-2xl bg-accent-theme/10 flex items-center justify-center text-accent-theme group-hover/attach:scale-110 transition-transform shadow-lg shadow-accent-theme/5">
+                                                                        {isVideo ? <PlayCircle className="w-7 h-7" /> : <FileText className="w-7 h-7" />}
+                                                                    </span>
+                                                                    <span className="flex-1 min-w-0">
+                                                                        <span className="flex items-center gap-2 mb-1">
+                                                                            <span className="text-[9px] font-black text-accent-theme uppercase tracking-[0.2em]">Anexo Disponível</span>
+                                                                            <span className="w-1 h-1 rounded-full bg-white/20" />
+                                                                            <span className="text-[9px] font-bold text-gray-500 uppercase">{isVideo ? 'VÍDEO' : 'DOCUMENTO'}</span>
+                                                                        </span>
+                                                                        <span className="text-sm font-black text-foreground truncate group-hover/attach:text-accent-theme transition-colors block">{filename}</span>
+                                                                    </span>
+                                                                    <span className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 group-hover/attach:bg-accent-theme group-hover/attach:text-background transition-all">
+                                                                        <Download className="w-4 h-4" />
+                                                                    </span>
+                                                                </a>
+                                                            );
+                                                        }
+                                                        return <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent-theme hover:underline font-bold"># {children}</a>;
+                                                    },
+                                                    img: ({ src, alt }: any) => {
+                                                        return (
+                                                            <motion.span
+                                                                initial="initial"
+                                                                whileHover="hover"
+                                                                className="relative my-6 cursor-zoom-in block w-fit"
+                                                                onClick={() => setZoomedImage(src)}
+                                                            >
+                                                                <motion.img
+                                                                    src={src}
+                                                                    alt={alt}
+                                                                    variants={{
+                                                                        initial: { filter: "brightness(1) contrast(1)" },
+                                                                        hover: { filter: "brightness(0.7) contrast(1.1)" }
+                                                                    }}
+                                                                    transition={{ duration: 0.3 }}
+                                                                    className="max-h-[300px] w-auto rounded-2xl shadow-xl border border-white/5"
+                                                                />
+                                                            </motion.span>
+                                                        );
+                                                    }
+                                                };
 
-                                                if (isOriginal) {
-                                                    // Descrição Original (agora no final se houver updates, ou única)
-                                                    return (
-                                                        <div key={index} className="relative group/original">
-                                                            <div className="flex items-center gap-2 mb-4">
-                                                                <span className="text-[8px] font-black uppercase tracking-[0.2em] px-2 py-0.5 bg-white/5 text-gray-400 rounded-md border border-white/10">Descrição Inicial</span>
+                                                return reversedParts.map((part, index) => {
+                                                    const isOriginal = part === originalPart;
+
+                                                    if (isOriginal) {
+                                                        return (
+                                                            <div key={index} className="relative group/original">
+                                                                <div className="flex items-center gap-3 mb-8">
+                                                                    <div className="w-8 h-8 rounded-lg bg-accent-theme/10 flex items-center justify-center border border-accent-theme/20">
+                                                                        <ShieldCheck className="w-4 h-4 text-accent-theme" />
+                                                                    </div>
+                                                                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-accent-theme/60">Descrição Principal</span>
+                                                                    <div className="flex-1 h-px bg-white/5" />
+                                                                </div>
+                                                                <div className="prose prose-invert prose-p:text-gray-300 prose-headings:text-foreground prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-3xl prose-img:shadow-2xl prose-img:border prose-img:border-white/5 max-w-none">
+                                                                    <ReactMarkdown components={MarkdownComponents}>{part}</ReactMarkdown>
+                                                                </div>
                                                             </div>
-                                                            <div className="prose prose-invert prose-p:text-gray-300 prose-headings:text-foreground prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-2xl prose-img:shadow-2xl prose-img:border prose-img:border-border-theme max-w-none">
-                                                                <ReactMarkdown>{part}</ReactMarkdown>
+                                                        );
+                                                    }
+
+                                                    // Parse header for additional info
+                                                    // Support both old and new header formats for backward compatibility
+                                                    const headerMatch = part.match(/### (?:📝 INFORMAÇÃO ADICIONADA EM|\[UPDATE\]) (.*?)\n\n/);
+                                                    const cleanPart = headerMatch ? part.replace(headerMatch[0], '') : part;
+                                                    const timestamp = headerMatch ? headerMatch[1] : '';
+
+                                                    return (
+                                                        <div key={index} className="relative group/update mb-12 last:mb-0">
+                                                            <div className="absolute -left-8 inset-y-0 w-1.5 bg-gradient-to-b from-accent-theme to-transparent rounded-full opacity-20 group-hover/update:opacity-100 transition-opacity" />
+                                                            <div className="glass-card p-10 rounded-[2.5rem] border border-white/5 bg-white/[0.01] shadow-2xl relative overflow-hidden group-hover/update:border-accent-theme/20 transition-all">
+                                                                <div className="absolute top-0 right-0 p-10 opacity-[0.02] pointer-events-none group-hover/update:scale-110 transition-transform duration-1000">
+                                                                    <MessageSquare className="w-32 h-32 rotate-12" />
+                                                                </div>
+
+                                                                {timestamp && (
+                                                                    <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/5">
+                                                                        <div className="flex items-center gap-4">
+                                                                            <div className="w-12 h-12 rounded-2xl bg-accent-theme/10 text-accent-theme flex items-center justify-center shadow-inner">
+                                                                                <MessageSquare className="w-6 h-6" />
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-accent-theme/80">Atualização do Técnico</p>
+                                                                                <p className="text-sm font-black text-foreground/40">{timestamp}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[8px] font-black uppercase tracking-widest text-gray-500">
+                                                                            <Clock className="w-3 h-3" />
+                                                                            Novos Dados
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="prose prose-invert prose-p:text-foreground/90 prose-headings:text-accent-theme prose-headings:italic prose-headings:mt-0 prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-3xl max-w-none relative z-10 font-medium">
+                                                                    <ReactMarkdown components={MarkdownComponents}>{cleanPart}</ReactMarkdown>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     );
-                                                }
-                                                // Blocos Adicionais (Updates)
-                                                return (
-                                                    <div key={index} className="relative group/update">
-                                                        <div className="absolute -left-4 inset-y-0 w-1 bg-accent-theme rounded-full opacity-50 group-hover/update:opacity-100 transition-opacity" />
-                                                        <div className="glass-card p-8 rounded-[1.5rem] border border-accent-theme/20 bg-accent-theme/5 shadow-xl shadow-accent-theme/5">
-                                                            <div className="prose prose-invert prose-p:text-foreground/80 prose-headings:text-accent-theme prose-headings:italic prose-headings:mt-0 prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-xl max-w-none">
-                                                                <ReactMarkdown>{part}</ReactMarkdown>
+                                                });
+                                            })()}
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="history"
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        transition={{ duration: 0.3 }}
+                                    >
+                                        <div className="flex items-center gap-3 pb-6 mb-8 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-10 pt-10">
+                                            <History className="w-4 h-4 text-accent-theme" />
+                                            Linha do Tempo de Alterações
+                                        </div>
+
+                                        {loadingHistory && history.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-30">
+                                                <Loader2 className="w-10 h-10 animate-spin" />
+                                                <p className="text-[10px] font-black uppercase tracking-widest">Carregando Histórico...</p>
+                                            </div>
+                                        ) : history.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-20 italic">
+                                                <History className="w-16 h-16" />
+                                                <p className="text-sm">Nenhuma alteração registrada ainda.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="relative pl-8 pr-4 space-y-10 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                                {history.map((event, idx) => {
+                                                    const nextEvent = history[idx + 1];
+                                                    const isSameUserAsNext = nextEvent && (
+                                                        (nextEvent.user?.id && event.user?.id && nextEvent.user.id === event.user.id) ||
+                                                        (!nextEvent.user && !event.user)
+                                                    );
+
+                                                    return (
+                                                        <div key={event.id} className="relative group/item">
+                                                            {/* Line Connector (only if same user) */}
+                                                            {isSameUserAsNext && (
+                                                                <div className="absolute -left-[19px] top-6 bottom-[-2.5rem] w-0.5 bg-accent-theme/30 rounded-full" />
+                                                            )}
+
+                                                            {/* Timeline Point */}
+                                                            <div className="absolute -left-[27px] top-1.5 w-4 h-4 rounded-full bg-background border-2 border-accent-theme shadow-[0_0_10px_rgba(var(--accent-rgb),0.3)] z-10 group-hover/item:scale-125 transition-transform duration-300" />
+
+                                                            <div className="space-y-2">
+                                                                <div className="flex items-center justify-between gap-4">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 bg-accent-theme/10 text-accent-theme rounded-lg border border-accent-theme/20">
+                                                                            {(function translate(type: string, desc: string): string {
+                                                                                const t = type.toUpperCase();
+                                                                                if (t === 'DESCRIPTION_CHANGE') {
+                                                                                    return desc.includes('Adicionada nova informação') ? 'NOVA INFORMAÇÃO' : 'DESCRIÇÃO ATUALIZADA';
+                                                                                }
+                                                                                const map: Record<string, string> = {
+                                                                                    'STATUS_CHANGE': 'MUDANÇA DE STATUS',
+                                                                                    'PRIORITY_CHANGE': 'MUDANÇA DE PRIORIDADE',
+                                                                                    'CATEGORY_ID_CHANGE': 'MUDANÇA DE CATEGORIA',
+                                                                                    'ASSIGNED_USER_CHANGE': 'TROCA DE TÉCNICO'
+                                                                                };
+                                                                                return map[t] || t.replaceAll('_', ' ');
+                                                                            })(event.event_type, event.description)}
+                                                                        </span>
+                                                                        <span className="text-[10px] font-bold text-gray-500 bg-white/5 px-2.5 py-1 rounded-lg">
+                                                                            {new Date(event.created_at).toLocaleString()}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400">
+                                                                        <User className="w-3.5 h-3.5 text-accent-theme/50" />
+                                                                        {event.user?.full_name || event.user?.username || 'Sistema'}
+                                                                    </div>
+                                                                </div>
+                                                                <p className="text-sm text-gray-300 font-medium leading-relaxed pl-1">
+                                                                    {event.description}
+                                                                </p>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                );
-                                            });
-                                        })()}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="flex items-center gap-3 pb-6 mb-8 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-10 pt-10">
-                                        <History className="w-4 h-4 text-accent-theme" />
-                                        Linha do Tempo de Alterações
-                                    </div>
-
-                                    {loadingHistory && history.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-30">
-                                            <Loader2 className="w-10 h-10 animate-spin" />
-                                            <p className="text-[10px] font-black uppercase tracking-widest">Carregando Histórico...</p>
-                                        </div>
-                                    ) : history.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-20 italic">
-                                            <History className="w-16 h-16" />
-                                            <p className="text-sm">Nenhuma alteração registrada ainda.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="relative pl-8 pr-4 space-y-10 max-h-[600px] overflow-y-auto custom-scrollbar before:absolute before:inset-y-0 before:left-[11px] before:w-0.5 before:bg-border-theme/30">
-                                            {history.map((event, idx) => (
-                                                <div key={event.id} className="relative group/item">
-                                                    {/* Timeline Point */}
-                                                    <div className="absolute -left-[27px] top-1.5 w-4 h-4 rounded-full bg-background border-2 border-accent-theme shadow-[0_0_10px_rgba(var(--accent-rgb),0.3)] z-10 group-hover/item:scale-125 transition-transform duration-300" />
-
-                                                    <div className="space-y-2">
-                                                        <div className="flex items-center justify-between gap-4">
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 bg-accent-theme/10 text-accent-theme rounded-lg border border-accent-theme/20">
-                                                                    {(function translate(type: string, desc: string): string {
-                                                                        const t = type.toUpperCase();
-                                                                        if (t === 'DESCRIPTION_CHANGE') {
-                                                                            return desc.includes('Adicionada nova informação') ? 'NOVA INFORMAÇÃO' : 'DESCRIÇÃO ATUALIZADA';
-                                                                        }
-                                                                        const map: Record<string, string> = {
-                                                                            'STATUS_CHANGE': 'MUDANÇA DE STATUS',
-                                                                            'PRIORITY_CHANGE': 'MUDANÇA DE PRIORIDADE',
-                                                                            'CATEGORY_ID_CHANGE': 'MUDANÇA DE CATEGORIA',
-                                                                            'ASSIGNED_USER_CHANGE': 'TROCA DE TÉCNICO'
-                                                                        };
-                                                                        return map[t] || t.replaceAll('_', ' ');
-                                                                    })(event.event_type, event.description)}
-                                                                </span>
-                                                                <span className="text-[10px] font-bold text-gray-500 bg-white/5 px-2.5 py-1 rounded-lg">
-                                                                    {new Date(event.created_at).toLocaleString()}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400">
-                                                                <User className="w-3.5 h-3.5 text-accent-theme/50" />
-                                                                {event.user?.full_name || event.user?.username || 'Sistema'}
-                                                            </div>
-                                                        </div>
-                                                        <p className="text-sm text-gray-300 font-medium leading-relaxed pl-1">
-                                                            {event.description}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </div>
 
@@ -769,9 +898,9 @@ export default function TicketDetailsPage() {
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500">Atribuído a:</span>
+                                    <span className="text-gray-500">Criado por:</span>
                                     <span className="font-bold text-accent-theme truncate max-w-[120px] text-right">
-                                        {ticket?.assigned_user?.full_name || ticket?.assigned_user?.username || 'Sistema'}
+                                        {ticket.created_by?.full_name || ticket.created_by?.username || 'Sistema'}
                                     </span>
                                 </div>
                             </div>
@@ -1054,6 +1183,37 @@ export default function TicketDetailsPage() {
                     </div>
                 )}
             </div>
-        </main >
+
+            {/* Image Zoom Modal */}
+            <AnimatePresence>
+                {zoomedImage && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setZoomedImage(null)}
+                        className="fixed inset-0 z-[2000] bg-background/95 backdrop-blur-xl flex items-center justify-center p-8 cursor-zoom-out"
+                    >
+                        <motion.button
+                            initial={{ scale: 0.5, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.5, opacity: 0 }}
+                            className="absolute top-8 right-8 w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-colors"
+                        >
+                            <X className="w-6 h-6" />
+                        </motion.button>
+                        <motion.img
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            src={zoomedImage}
+                            alt="Zoomed"
+                            className="max-w-full max-h-full rounded-3xl shadow-2xl border border-white/10"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </main>
     );
 }

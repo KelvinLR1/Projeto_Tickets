@@ -184,9 +184,9 @@ export const getClients = async () => {
   return response.data;
 };
 
-export const getTickets = async (clientId?: number) => {
+export const getTickets = async (clientId?: number, unassignedOnly: boolean = false) => {
   const response = await api.get<Ticket[]>('/tickets/', {
-    params: { client_id: clientId }
+    params: { client_id: clientId, unassigned_only: unassignedOnly }
   });
   return response.data;
 };

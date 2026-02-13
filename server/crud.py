@@ -226,7 +226,7 @@ def get_or_create_default_status(db: Session):
     return db_status
 
 # --- Ticket CRUD ---
-def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None):
+def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False):
     from sqlalchemy.orm import joinedload
     query = db.query(models.Ticket).options(
         joinedload(models.Ticket.client),
@@ -237,6 +237,8 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None
         query = query.filter(models.Ticket.status == status)
     if client_id:
         query = query.filter(models.Ticket.client_id == client_id)
+    if unassigned_only:
+        query = query.filter(models.Ticket.assigned_user_id == None)
     return query.offset(skip).limit(limit).all()
 
 def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int = None):
@@ -344,8 +346,10 @@ def get_ticket_history_list(db: Session, ticket_id: int):
 
 def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpdate, user_id: Optional[int] = None):
     db_ticket = get_ticket(db, ticket_id)
-    if db_ticket:
-        update_data = ticket_update.dict(exclude_unset=True)
+    if not db_ticket:
+        return None
+        
+    update_data = ticket_update.dict(exclude_unset=True)
 
     # Normalização de Prioridade
     if "priority" in update_data and update_data["priority"]:
@@ -358,86 +362,86 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
         p_lower = update_data["priority"].lower().strip()
         update_data["priority"] = priority_map.get(p_lower, update_data["priority"])
         
-        # Log de Histórico
-        for field, new_value in update_data.items():
-            old_value = getattr(db_ticket, field)
-            if old_value != new_value:
-                event_type = f"{field}_change"
-                desc = f"Alterou {field} de '{old_value}' para '{new_value}'"
-                
-                # Nomes amigáveis para campos específicos
-                if field == "description":
-                    # Se houver o separador de nova informação, logamos de forma específica
-                    if "---" in str(new_value):
-                        desc = "Adicionada nova informação ao chamado"
-                    else:
-                        desc = "Descrição do ticket atualizada"
-                elif field == "status_id":
-                    new_status = db.query(models.Status).filter(models.Status.id == new_value).first()
-                    new_label = new_status.name if new_status else str(new_value)
-                    desc = f"Alterou Status para '{new_label}'"
-                elif field == "assigned_user_id":
-                    new_user = db.query(models.User).filter(models.User.id == new_value).first()
-                    new_label = new_user.full_name or new_user.username if new_user else "Ninguém"
-                    desc = f"Atribuiu o ticket para '{new_label}'"
-                    
-                    # Notify new assignee
-                    if new_value and new_value != user_id:
-                        create_notification(db, schemas.NotificationCreate(
-                            user_id=new_value,
-                            title=f"Ticket Atribuído: #{ticket_id}",
-                            message=f"Você foi definido como responsável pelo ticket '{db_ticket.title}'.",
-                            type="info",
-                            link=f"/tickets/{ticket_id}"
-                        ))
-
-                elif field == "sector_id":
-                    new_sector = db.query(models.Sector).filter(models.Sector.id == new_value).first()
-                    new_label = new_sector.name if new_sector else "Nenhum"
-                    desc = f"Transferiu para o setor '{new_label}'"
-                elif field == "priority":
-                    priority_map = {
-                        "low": "Baixa",
-                        "medium": "Média",
-                        "high": "Alta",
-                        "critical": "Crítica"
-                    }
-                    # Tenta traduzir valor novo e antigo para um log amigável
-                    old_label = priority_map.get(str(old_value).lower(), old_value)
-                    new_label = priority_map.get(str(new_value).lower(), new_value)
-                    desc = f"Alterou prioridade de '{old_label}' para '{new_label}'"
-                elif field == "category_id":
-                    new_cat = db.query(models.Category).filter(models.Category.id == new_value).first()
-                    new_label = new_cat.name if new_cat else "Sem Categoria"
-                    desc = f"Alterou categoria para '{new_label}'"
-
-                create_ticket_history(db, schemas.TicketHistoryCreate(
-                    ticket_id=ticket_id,
-                    user_id=user_id,
-                    event_type=event_type,
-                    description=desc
-                ))
+    # Log de Histórico
+    for field, new_value in update_data.items():
+        old_value = getattr(db_ticket, field)
+        if old_value != new_value:
+            event_type = f"{field}_change"
+            desc = f"Alterou {field} de '{old_value}' para '{new_value}'"
             
-            # Notify assignee if status or priority changes (and auth user is not the assignee)
-            if field in ["status_id", "priority"] and db_ticket.assigned_user_id and db_ticket.assigned_user_id != user_id:
-                 create_notification(db, schemas.NotificationCreate(
-                    user_id=db_ticket.assigned_user_id,
-                    title=f"Ticket Atualizado: #{ticket_id}",
-                    message=f"O ticket '{db_ticket.title}' teve atualizações em {field}.",
-                    type="info",
-                    link=f"/tickets/{ticket_id}"
-                ))
+            # Nomes amigáveis para campos específicos
+            if field == "description":
+                # Se houver o separador de nova informação, logamos de forma específica
+                if "---" in str(new_value):
+                    desc = "Adicionada nova informação ao chamado"
+                else:
+                    desc = "Descrição do ticket atualizada"
+            elif field == "status_id":
+                new_status = db.query(models.Status).filter(models.Status.id == new_value).first()
+                new_label = new_status.name if new_status else str(new_value)
+                desc = f"Alterou Status para '{new_label}'"
+            elif field == "assigned_user_id":
+                new_user = db.query(models.User).filter(models.User.id == new_value).first()
+                new_label = new_user.full_name or new_user.username if new_user else "Ninguém"
+                desc = f"Atribuiu o ticket para '{new_label}'"
+                
+                # Notify new assignee
+                if new_value and new_value != user_id:
+                    create_notification(db, schemas.NotificationCreate(
+                        user_id=new_value,
+                        title=f"Ticket Atribuído: #{ticket_id}",
+                        message=f"Você foi definido como responsável pelo ticket '{db_ticket.title}'.",
+                        type="info",
+                        link=f"/tickets/{ticket_id}"
+                    ))
 
-        # Se atualizar status_id, sincroniza o nome do status (legado)
-        if "status_id" in update_data:
-            db_status = db.query(models.Status).filter(models.Status.id == update_data["status_id"]).first()
-            if db_status:
-                update_data["status"] = db_status.name
+            elif field == "sector_id":
+                new_sector = db.query(models.Sector).filter(models.Sector.id == new_value).first()
+                new_label = new_sector.name if new_sector else "Nenhum"
+                desc = f"Transferiu para o setor '{new_label}'"
+            elif field == "priority":
+                p_labels = {
+                    "low": "Baixa",
+                    "medium": "Média",
+                    "high": "Alta",
+                    "critical": "Crítica"
+                }
+                # Tenta traduzir valor novo e antigo para um log amigável
+                old_label = p_labels.get(str(old_value).lower(), old_value)
+                new_label = p_labels.get(str(new_value).lower(), new_value)
+                desc = f"Alterou prioridade de '{old_label}' para '{new_label}'"
+            elif field == "category_id":
+                new_cat = db.query(models.Category).filter(models.Category.id == new_value).first()
+                new_label = new_cat.name if new_cat else "Sem Categoria"
+                desc = f"Alterou categoria para '{new_label}'"
 
-        for key, value in update_data.items():
-            setattr(db_ticket, key, value)
-        db.commit()
-        db.refresh(db_ticket)
+            create_ticket_history(db, schemas.TicketHistoryCreate(
+                ticket_id=ticket_id,
+                user_id=user_id,
+                event_type=event_type,
+                description=desc
+            ))
+        
+        # Notify assignee if status or priority changes (and auth user is not the assignee)
+        if field in ["status_id", "priority"] and db_ticket.assigned_user_id and db_ticket.assigned_user_id != user_id:
+                create_notification(db, schemas.NotificationCreate(
+                user_id=db_ticket.assigned_user_id,
+                title=f"Ticket Atualizado: #{ticket_id}",
+                message=f"O ticket '{db_ticket.title}' teve atualizações em {field}.",
+                type="info",
+                link=f"/tickets/{ticket_id}"
+            ))
+
+    # Se atualizar status_id, sincroniza o nome do status (legado)
+    if "status_id" in update_data:
+        db_status = db.query(models.Status).filter(models.Status.id == update_data["status_id"]).first()
+        if db_status:
+            update_data["status"] = db_status.name
+
+    for key, value in update_data.items():
+        setattr(db_ticket, key, value)
+    db.commit()
+    db.refresh(db_ticket)
     return db_ticket
 
 # --- Sector CRUD ---

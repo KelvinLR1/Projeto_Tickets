@@ -299,7 +299,7 @@ export default function TicketList({
                                                     className="text-[9px] font-black uppercase tracking-widest"
                                                     style={{ color: style.color }}
                                                 >
-                                                    {style.name}
+                                                    {style.name.toUpperCase()}
                                                 </span>
                                             </button>
                                         </td>
@@ -308,7 +308,7 @@ export default function TicketList({
                                                 "inline-block px-4 py-2 rounded-xl text-[9px] font-black uppercase border tracking-widest w-28 text-center",
                                                 priorityColor(ticket.priority)
                                             )}>
-                                                {ticket.priority}
+                                                {ticket.priority.toUpperCase()}
                                             </span>
                                         </td>
                                         <td className="px-8 py-6">

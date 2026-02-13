@@ -56,11 +56,11 @@ Acesse a pasta `server`, crie o ambiente virtual e instale as dependências:
 
 ```bash
 cd server
-# Criar ambiente virtual (se não existir)
+# Criar ambiente virtual (se não existir) - primeira vez
 python -m venv .venv
 # Ativar
 .venv\Scripts\activate
-# Instalar dependências
+# Instalar dependências - primeira vez
 pip install -r requirements.txt
 # Rodar servidor
 uvicorn main:app --host 0.0.0.0 --port 8080 --reload
@@ -72,7 +72,7 @@ Acesse a pasta `client` e instale as dependências do Node:
 
 ```bash
 cd client
-# Instalar dependências
+# Instalar dependências - primeira vez
 npm install
 # Iniciar ambiente de desenvolvimento
 npm run dev

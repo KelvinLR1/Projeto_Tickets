@@ -105,6 +105,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         );
     }
 
+    const isMonitorPage = pathname === "/monitor";
+
+    if (isMonitorPage) {
+        return <main className="min-h-screen">{children}</main>;
+    }
+
     return (
         <div className="flex min-h-screen">
             <Sidebar />
