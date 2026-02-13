@@ -1,7 +1,16 @@
 @import "tailwindcss";
 
 
+html {
+  /* Fluid root scaling: 14px on small/high-DPI screens, scale up to 16px on large desktops */
+  font-size: clamp(14px, 1.2vw, 16px);
+}
+
 :root {
+  /* Dynamic Spacing Variables */
+  --spacing-section: clamp(1rem, 5vw, 2.5rem);
+  --spacing-card: clamp(1rem, 3vw, 2rem);
+
   /* Default / Dark Theme Refined */
   --color-background: #0f172a;
   --color-foreground: #f8fafc;
@@ -392,6 +401,11 @@ body {
 
   .premium-gradient {
     background: linear-gradient(135deg, var(--color-primary-theme) 0%, var(--color-accent-theme) 100%);
+  }
+
+  /* Responsive Padding Helper */
+  .p-responsive {
+    padding: var(--spacing-section);
   }
 }
 

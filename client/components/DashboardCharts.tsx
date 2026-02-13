@@ -98,7 +98,7 @@ export default function DashboardCharts() {
                         <BarChart data={statusData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-theme)" vertical={false} />
                             <XAxis dataKey="name" stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                            <YAxis stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
                             <Tooltip
                                 contentStyle={{
                                     backgroundColor: 'var(--color-card)',
@@ -208,6 +208,7 @@ export default function DashboardCharts() {
                                 tickLine={false}
                                 axisLine={false}
                                 dx={-10}
+                                allowDecimals={false}
                             />
                             <Tooltip
                                 contentStyle={{

@@ -26,15 +26,26 @@ api.interceptors.request.use((config) => {
         const configData = JSON.parse(localConfig);
         let { apiUrl } = configData;
 
-        // Auto-migração da porta 8000 para 8080 se detectada
-        if (apiUrl && apiUrl.includes(':8000')) {
-          console.log("[API] Detectada porta antiga 8000. Migrando para 8080...");
-          apiUrl = apiUrl.replace(':8000', ':8080');
-          configData.apiUrl = apiUrl;
-          localStorage.setItem('system_config', JSON.stringify(configData));
-        }
-
         if (apiUrl) {
+          // Auto-migração da porta 8000 para 8080 se detectada
+          if (apiUrl.includes(':8000')) {
+            console.log("[API] Detectada porta antiga 8000. Migrando para 8080...");
+            apiUrl = apiUrl.replace(':8000', ':8080');
+            configData.apiUrl = apiUrl;
+            localStorage.setItem('system_config', JSON.stringify(configData));
+          }
+
+          // INTELLIGENT HOSTNAME: Se apiUrl for localhost/127.0.0.1 mas estivermos acessando remotamente,
+          // substituímos pelo hostname atual para que o frontend consiga falar com o backend remoto.
+          const currentHost = window.location.hostname;
+          const isRemoteAccess = currentHost !== 'localhost' && currentHost !== '127.0.0.1';
+          const isApiLocal = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
+
+          if (isRemoteAccess && isApiLocal) {
+            console.log(`[API] Acesso remoto detectado (${currentHost}). Redirecionando API de localhost para o servidor atual.`);
+            apiUrl = apiUrl.replace(/localhost|127\.0\.0\.1/g, currentHost);
+          }
+
           config.baseURL = apiUrl.replace(/\/$/, "");
         }
       } catch (e) {
@@ -105,6 +116,7 @@ export interface Ticket {
   total_duration?: number;
   active_timer?: TimeLog;
   client?: Client;
+  created_by?: User;
 }
 
 export interface TicketHistory {

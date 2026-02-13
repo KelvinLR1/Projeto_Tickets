@@ -45,7 +45,7 @@ export default function Sidebar() {
     ].filter(item => canAccessMenu(user, item.id));
 
     return (
-        <aside className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border-theme flex flex-col z-50">
+        <aside className="fixed left-0 top-0 h-screen w-[clamp(240px,18vw,280px)] bg-card border-r border-border-theme flex flex-col z-50 transition-all duration-300">
             {/* Logo Area */}
             <div className="p-8 pb-10">
                 <Link href={user ? getFirstAllowedPath(user) : "/"} className="flex items-center gap-3 group">
@@ -70,7 +70,7 @@ export default function Sidebar() {
             </div>
 
             {/* Navigation Links */}
-            <nav className="flex-1 px-6 space-y-3 overflow-y-auto custom-scrollbar">
+            <nav className="flex-1 px-[clamp(0.75rem,2vw,1.5rem)] space-y-2 overflow-y-auto custom-scrollbar">
                 {navItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
@@ -85,9 +85,9 @@ export default function Sidebar() {
                                     : "text-[var(--color-text-muted)] hover:text-foreground hover:bg-card-hover border border-transparent"
                             )}
                         >
-                            <div className="flex items-center gap-4 z-10">
-                                <Icon className={clsx("w-5 h-5 transition-transform group-hover:scale-110", isActive ? "text-accent-theme" : "text-[var(--color-text-muted)] group-hover:text-foreground")} />
-                                <span>{item.name}</span>
+                            <div className="flex items-center gap-3 z-10">
+                                <Icon className={clsx("w-[clamp(1.1rem,1.5vw,1.25rem)] h-[clamp(1.1rem,1.5vw,1.25rem)] transition-transform group-hover:scale-110", isActive ? "text-accent-theme" : "text-[var(--color-text-muted)] group-hover:text-foreground")} />
+                                <span className="truncate">{item.name}</span>
                             </div>
 
                             {item.id === 'notifications' && unreadCount > 0 && (
@@ -120,7 +120,7 @@ export default function Sidebar() {
                         "w-full p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 group relative overflow-hidden",
                         activeTimers.length > 0
                             ? "bg-accent-theme/10 text-accent-theme border border-accent-theme/20 hover:bg-accent-theme/20"
-                            : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+                            : "bg-foreground/5 text-[var(--color-text-muted)] hover:bg-card-hover hover:text-foreground"
                     )}
                 >
                     <Clock className={clsx("w-4 h-4", activeTimers.length > 0 && "animate-pulse")} />
@@ -137,8 +137,8 @@ export default function Sidebar() {
             {/* Footer / Profile */}
             <div className="p-6 mt-auto border-t border-border-theme bg-card/10 backdrop-blur-md">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 p-2 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group flex-1 mr-2">
-                        <div className="w-10 h-10 rounded-full bg-accent-theme/20 border border-accent-theme/30 flex items-center justify-center text-accent-theme group-hover:scale-105 transition-transform overflow-hidden">
+                    <div className="flex items-center gap-3 p-2 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group flex-1 mr-2 overflow-hidden">
+                        <div className="w-9 h-9 shrink-0 rounded-full bg-accent-theme/20 border border-accent-theme/30 flex items-center justify-center text-accent-theme group-hover:scale-105 transition-transform overflow-hidden">
                             {user?.username ? (
                                 <span className="font-bold">{user.username[0].toUpperCase()}</span>
                             ) : (

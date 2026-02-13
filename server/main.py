@@ -315,8 +315,26 @@ def update_status(status_id: int, status: schemas.StatusBase, db: Session = Depe
 
 # --- Tickets Endpoints ---
 @app.post("/tickets/", response_model=schemas.Ticket)
-def create_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db)):
-    return crud.create_ticket(db=db, ticket=ticket)
+def create_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    # Injeta o ID do usuário criador no schema antes de passar pro CRUD
+    # Como TicketCreate não tem created_by_id, passamos como argumento extra ou modificamos o dict no crud
+    # Mas o ideal é passar no objeto se o modelo permitir, ou alterar a assinatura do crud.
+    # Vamos alterar a assinatura do crud levemente ou passar hackeado no dict.
+    # Melhor: Alterar o crud para aceitar override ou setar no dict.
+    
+    # Opção: setar no objeto ticket se ele tiver o campo (não tem no schema de entrada)
+    # Então vamos passar via kwargs no crud ou modificar o dict lá dentro.
+    # Vou modificar o crud.create_ticket para aceitar user_id opcional? 
+    # Não, o crud.create_ticket pega ticket.dict().
+    # Vou interceptar aqui.
+    ticket_dict = ticket.dict()
+    ticket_dict["created_by_id"] = current_user.id
+    # Recriar um objeto ou passar o dict. O crud espera TicketCreate. 
+    # O crud chama .dict(). Então vamos alterar o crud para aceitar um dict ou adicionar field no schema?
+    # Schema TicketCreate não tem created_by_id.
+    # Vou alterar o crud para aceitar created_by_id no ticket_data.
+    
+    return crud.create_ticket(db=db, ticket=ticket, created_by_id=current_user.id)
 
 @app.post("/tickets/simple", response_model=schemas.Ticket)
 def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depends(get_db)):

@@ -180,9 +180,10 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
             });
 
-            // Garantir que as classes de tema do body sejam copiadas
-            pip.document.body.className = document.body.className;
+            // Garantir que as classes de tema e ESTILOS INLINE (variáveis custom) do root sejam copiadas
             pip.document.documentElement.className = document.documentElement.className;
+            pip.document.body.className = document.body.className;
+            pip.document.documentElement.style.cssText = document.documentElement.style.cssText;
 
             setPipWindow(pip);
             setIsPiPOpen(true);

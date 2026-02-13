@@ -70,7 +70,10 @@ class Ticket(Base):
     category = relationship("Category", back_populates="tickets")
     sector = relationship("Sector", back_populates="tickets")
     status_obj = relationship("Status", back_populates="tickets")
-    assigned_user = relationship("User")
+    assigned_user = relationship("User", foreign_keys=[assigned_user_id])
+    
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by = relationship("User", foreign_keys=[created_by_id])
     messages = relationship("TicketMessage", back_populates="ticket")
     time_logs = relationship("TicketTimeLog", back_populates="ticket")
 

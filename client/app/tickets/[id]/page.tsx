@@ -448,7 +448,7 @@ export default function TicketDetailsPage() {
 
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
-            <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
                 {/* Top Navigation */}
                 <div className="flex items-center justify-between">
@@ -525,12 +525,12 @@ export default function TicketDetailsPage() {
 
                             <div className="flex items-center gap-5 p-5 rounded-3xl bg-background/40 border border-border-theme/30">
                                 <div className="w-14 h-14 rounded-2xl bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme shadow-xl">
-                                    <ShieldCheck className="w-6 h-6" />
+                                    <User className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Técnico Responsável</p>
+                                    <p className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-1">Criado Por</p>
                                     <p className="font-bold text-lg">
-                                        {ticket?.assigned_user?.full_name || ticket?.assigned_user?.username || 'Sistema / Antigravity'}
+                                        {ticket.created_by?.full_name || ticket.created_by?.username || 'Sistema'}
                                     </p>
                                 </div>
                             </div>

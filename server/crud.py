@@ -239,7 +239,7 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None
         query = query.filter(models.Ticket.client_id == client_id)
     return query.offset(skip).limit(limit).all()
 
-def create_ticket(db: Session, ticket: schemas.TicketCreate):
+def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int = None):
     ticket_data = ticket.dict()
     if not ticket_data.get("category_id"):
         default_cat = get_or_create_default_category(db)
@@ -251,11 +251,14 @@ def create_ticket(db: Session, ticket: schemas.TicketCreate):
         ticket_data["status"] = default_status.name
     else:
         # Sincroniza o nome do status se o ID for passado
-        db_status = db.query(models.Status).filter(models.Status.id == ticket_data["status_id"]).first()
         if db_status:
             ticket_data["status"] = db_status.name
         
     db_ticket = models.Ticket(**ticket_data)
+    # Use o argumento created_by_id passado para a função
+    if created_by_id:
+        db_ticket.created_by_id = created_by_id
+
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)
@@ -292,9 +295,14 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
         ticket_data["category_id"] = default_cat.id
     
     # Lógica de status padrão
+    # Lógica de status padrão
     default_status = get_or_create_default_status(db)
     
-    db_ticket = models.Ticket(**ticket_data, client_id=client.id, status_id=default_status.id, status=default_status.name)
+    # Simple ticket geralmente vem do form público ou rápido, pode não ter user logado (definir como None ou Admin)
+    # Se quiser forçar um user, pode ser o ID 1 (Admin)
+    created_by = ticket_data.get("created_by_id", 1) 
+
+    db_ticket = models.Ticket(**ticket_data, client_id=client.id, status_id=default_status.id, status=default_status.name, created_by_id=created_by)
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)
