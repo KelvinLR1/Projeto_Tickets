@@ -6,9 +6,12 @@ import shutil
 import uuid
 import zipfile
 import io
+import asyncio
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from datetime import datetime
 from typing import List, Dict, Optional
+from fastapi import Request, Response
 
 # Importando módulos locais (sem ponto inicial se rodar como script, 
 # mas mantendo estrutura de pacote se rodar com uvicorn main:app)
@@ -26,27 +29,45 @@ models.Base.metadata.create_all(bind=engine)
 def seed_db():
     db = database.SessionLocal()
     try:
-        # Verificar se existem usuários
-        admin_user = crud.get_user_by_username(db, username="admin")
+        # 1. Garantir usuário ROOT (admin)
+        # Tenta buscar por username ou por email de sistema
+        admin_user = db.query(models.User).filter(
+            (models.User.username == "admin") | (models.User.email == "admin@sistema.com")
+        ).first()
+
         if not admin_user:
-            print("Nenhum usuário encontrado. Criando usuário admin padrão...")
+            print("Nenhum usuário ROOT encontrado. Criando admin padrão...")
             admin_schema = schemas.UserCreate(
                 username="admin",
                 email="admin@sistema.com",
                 full_name="Administrador Padrão",
                 password="admin",
-                role="ADMIN"
+                role="ROOT"
             )
             hashed_password = auth.get_password_hash("admin")
             crud.create_user(db, admin_schema, hashed_password)
-            print("Usuário 'admin' com senha 'admin' criado com sucesso!")
-        
-        # Garantir categorias e status padrão se necessário
+            print("Usuário 'admin' (ROOT) criado com sucesso!")
+        else:
+            # Garante que as credenciais e papel estão corretos
+            updated = False
+            if admin_user.username != "admin":
+                admin_user.username = "admin"
+                updated = True
+            if admin_user.role != "ROOT":
+                admin_user.role = "ROOT"
+                updated = True
+            
+            if updated:
+                db.commit()
+                print("Usuário admin existente atualizado para papel ROOT.")
+
+        # 2. Garantir categorias e status padrão
         crud.get_or_create_default_category(db)
         crud.get_or_create_default_status(db)
         
     except Exception as e:
         print(f"Erro ao popular banco de dados: {e}")
+        db.rollback()
     finally:
         db.close()
 
@@ -55,6 +76,20 @@ app = FastAPI(title="Sistema de Tickets Offline")
 @app.on_event("startup")
 async def startup_event():
     seed_db()
+
+# Flag global para manutenção durante restauração
+IS_RESTORING = False
+
+@app.middleware("http")
+async def maintenance_middleware(request: Request, call_next):
+    # Permite o endpoint de restauração mesmo em modo de restauração
+    if IS_RESTORING and request.url.path != "/system/restore":
+        return Response(
+            content='{"detail": "Sistema em manutenção para restauração de backup. Tente novamente em alguns segundos."}',
+            status_code=503,
+            media_type="application/json"
+        )
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,13 +107,7 @@ if not os.path.exists(UPLOAD_DIR):
 # Montar arquivos estáticos
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-# Dependency
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# get_db is imported from database module
 
 @app.get("/")
 def read_root():
@@ -213,9 +242,6 @@ def delete_client(client_id: int, db: Session = Depends(get_db)):
     return {"message": "Cliente excluído com sucesso"}
 
 # --- Import Endpoints ---
-from fastapi import File, UploadFile
-import io
-
 @app.post("/clients/import/excel", response_model=schemas.ImportResult)
 async def import_clients_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
     import pandas as pd
@@ -251,7 +277,7 @@ def import_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(get
     driver = driver_map.get(config.db_type)
     if not driver:
         raise HTTPException(status_code=400, detail="Tipo de banco não suportado")
-        
+    
     url = f"{driver}://{config.user}:{config.password}@{config.host}:{config.port}/{config.database}"
     
     try:
@@ -316,24 +342,6 @@ def update_status(status_id: int, status: schemas.StatusBase, db: Session = Depe
 # --- Tickets Endpoints ---
 @app.post("/tickets/", response_model=schemas.Ticket)
 def create_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    # Injeta o ID do usuário criador no schema antes de passar pro CRUD
-    # Como TicketCreate não tem created_by_id, passamos como argumento extra ou modificamos o dict no crud
-    # Mas o ideal é passar no objeto se o modelo permitir, ou alterar a assinatura do crud.
-    # Vamos alterar a assinatura do crud levemente ou passar hackeado no dict.
-    # Melhor: Alterar o crud para aceitar override ou setar no dict.
-    
-    # Opção: setar no objeto ticket se ele tiver o campo (não tem no schema de entrada)
-    # Então vamos passar via kwargs no crud ou modificar o dict lá dentro.
-    # Vou modificar o crud.create_ticket para aceitar user_id opcional? 
-    # Não, o crud.create_ticket pega ticket.dict().
-    # Vou interceptar aqui.
-    ticket_dict = ticket.dict()
-    ticket_dict["created_by_id"] = current_user.id
-    # Recriar um objeto ou passar o dict. O crud espera TicketCreate. 
-    # O crud chama .dict(). Então vamos alterar o crud para aceitar um dict ou adicionar field no schema?
-    # Schema TicketCreate não tem created_by_id.
-    # Vou alterar o crud para aceitar created_by_id no ticket_data.
-    
     return crud.create_ticket(db=db, ticket=ticket, created_by_id=current_user.id)
 
 @app.post("/tickets/simple", response_model=schemas.Ticket)
@@ -377,6 +385,59 @@ def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = De
 @app.get("/tickets/{ticket_id}/history", response_model=List[schemas.TicketHistory])
 def read_ticket_history(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_ticket_history_list(db, ticket_id=ticket_id)
+
+@app.get("/tickets/export")
+def export_tickets(format: str = "csv", db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    import pandas as pd
+    from io import BytesIO, StringIO
+    
+    # Busca TODOS os tickets solicitados para exportação
+    tickets = crud.get_tickets(db, limit=5000) # Limite generoso para exportação
+    
+    data = []
+    for t in tickets:
+        data.append({
+            "ID": t.id,
+            "Título": t.title,
+            "Status": t.status,
+            "Prioridade": t.priority,
+            "Cliente": t.client.name if t.client else "N/A",
+            "Categoria": t.category.name if t.category else "N/A",
+            "Data Criação": t.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "Responsável": t.assigned_user.full_name or t.assigned_user.username if t.assigned_user else "N/A",
+        })
+    
+    df = pd.DataFrame(data)
+    filename = f"relatorio_tickets_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    if format == "excel":
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Tickets')
+        output.seek(0)
+        return StreamingResponse(
+            output, 
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}.xlsx"}
+        )
+    
+    elif format == "json":
+        output = StringIO()
+        df.to_json(output, orient="records", force_ascii=False, indent=2)
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename={filename}.json"}
+        )
+    
+    else: # Default CSV
+        output = StringIO()
+        df.to_csv(output, index=False, encoding='utf-8-sig')
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8-sig')),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}.csv"}
+        )
 
 @app.delete("/tickets/{ticket_id}")
 def delete_ticket(ticket_id: int, db: Session = Depends(get_db)):
@@ -441,11 +502,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 @app.get("/knowledge/search/")
 def search_knowledge(query: str, limit: int = 3):
-    # OTIMIZAÇÃO: Busca sequencial simples (mais rápida para bases pequenas)
-    # Apenas RAG vetorial (ChromaDB) - mais inteligente e suficiente
     rag_results = rag.query_documents(query, n_results=limit)
     
-    # Fallback SQL apenas se RAG falhar completamente
     sql_kb_docs = []
     sql_tickets = []
     
@@ -461,7 +519,6 @@ def search_knowledge(query: str, limit: int = 3):
         "source": "parallel_hybrid_search"
     }
 
-    # 1. Processa RAG (Vetorial - Mais inteligente)
     if rag_results.get("documents") and len(rag_results["documents"][0]) > 0:
         for i in range(len(rag_results["documents"][0])):
             doc = rag_results["documents"][0][i]
@@ -477,7 +534,6 @@ def search_knowledge(query: str, limit: int = 3):
                 unified_results["metadatas"][0].append({"title": meta.get("title", "Manual"), "category": "Manual (RAG)"})
                 unified_results["ids"][0].append(id_)
 
-    # 2. Complementa com SQL se houver espaço ou se o RAG falhou
     if len(unified_results["documents"][0]) < limit:
         for doc in sql_kb_docs:
             if doc.content not in unified_results["documents"][0]:
@@ -494,10 +550,8 @@ def search_knowledge(query: str, limit: int = 3):
 
     return unified_results
 
-# --- Upload Endpoints ---
 @app.post("/upload/")
 async def upload_file(file: UploadFile = File(...)):
-    # Gerar nome único para o arquivo
     file_extension = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
@@ -505,33 +559,7 @@ async def upload_file(file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # Retorna a URL para acessar o arquivo (assumindo rodar na porta 8080)
-    # Em produção, isso viria de uma variável de ambiente BASE_URL
     return {"url": f"http://localhost:8080/uploads/{unique_filename}"}
-
-# --- RAG / Knowledge Base Endpoints (Busca Vetorial - Temporariamente desativado) ---
-# from pydantic import BaseModel
-# 
-# class DocumentInput(BaseModel):
-#     doc_id: str
-#     text: str
-#     metadata: Optional[Dict] = None
-# 
-# @app.post("/knowledge/")
-# def add_knowledge(doc: DocumentInput):
-#     try:
-#         # rag.add_document(doc.doc_id, doc.text, doc.metadata)
-#         return {"status": "error", "message": "RAG module disabled temporarily"}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-# 
-# @app.get("/knowledge/search/")
-# def search_knowledge(query: str, limit: int = 3):
-#     try:
-#         # results = rag.query_documents(query, n_results=limit)
-#         return {"results": []} 
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/system/reset")
 async def reset_database(
@@ -542,13 +570,20 @@ async def reset_database(
     if params.confirmation != "DELETAR":
         raise HTTPException(status_code=400, detail="Confirmação de segurança inválida")
     
-    # Executa limpeza SQL via CRUD
     stats = crud.reset_entities(db, entities=params.entities, current_user_id=current_user.id)
     
-    # Se knowledge estiver incluso, limpa o ChromaDB também
+    # Se houve erros na limpeza (ex: FK bloqueada), reporta
+    if stats.get("errors"):
+        error_msg = "; ".join(stats["errors"])
+        raise HTTPException(status_code=500, detail=f"Erro parcial na limpeza: {error_msg}")
+
     if "knowledge" in params.entities:
-        rag_cleared = rag.clear_knowledge_base()
-        stats["rag_cleared"] = rag_cleared
+        try:
+            rag_cleared = rag.clear_knowledge_base()
+            stats["rag_cleared"] = rag_cleared
+        except Exception as e:
+            print(f"[RESET] Erro ao limpar RAG: {e}")
+            stats["rag_cleared"] = False
         
     return {
         "message": "Operação de limpeza concluída com sucesso",
@@ -560,93 +595,139 @@ def backup_system(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_active_root)
 ):
-    # Buffer em memória para o ZIP
     zip_buffer = io.BytesIO()
     
+    print(f"[BACKUP] Iniciando backup para o usuário {current_user.username}...")
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        # 1. Banco de Dados SQL
-        if os.path.exists("./tickets_system.db"):
-            zip_file.write("./tickets_system.db", arcname="tickets_system.db")
+        for ext in ["", "-wal", "-shm"]:
+            db_file_path = f"{database.DB_PATH}{ext}"
+            if os.path.exists(db_file_path):
+                file_size = os.path.getsize(db_file_path)
+                print(f"[BACKUP] Zipping {os.path.basename(db_file_path)} ({file_size} bytes)...")
+                zip_file.write(db_file_path, arcname=os.path.basename(db_file_path))
             
-        # 2. Uploads
         if os.path.exists(UPLOAD_DIR):
             for root, dirs, files in os.walk(UPLOAD_DIR):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, os.path.dirname(UPLOAD_DIR))
+                    arcname = os.path.join("uploads", os.path.relpath(file_path, UPLOAD_DIR))
                     zip_file.write(file_path, arcname=arcname)
                     
-        # 3. ChromaDB (Banco Vetorial)
-        CHROMA_DIR = "./chroma_db"
+        CHROMA_DIR = os.path.join(database.BASE_DIR, "chroma_db")
         if os.path.exists(CHROMA_DIR):
             for root, dirs, files in os.walk(CHROMA_DIR):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, os.path.dirname(CHROMA_DIR))
+                    arcname = os.path.join("chroma_db", os.path.relpath(file_path, CHROMA_DIR))
                     zip_file.write(file_path, arcname=arcname)
 
     zip_buffer.seek(0)
+    # Pegar o tamanho total do buffer para o cabeçalho Content-Length
+    content_size = len(zip_buffer.getvalue())
     
-    # Nome do arquivo com data/hora seria ideal, mas frontend pode gerenciar nome
     return StreamingResponse(
         zip_buffer, 
         media_type="application/zip", 
-        headers={"Content-Disposition": "attachment; filename=backup_ticketflow.zip"}
+        headers={
+            "Content-Disposition": "attachment; filename=backup_ticketflow.zip",
+            "Content-Length": str(content_size)
+        }
     )
 
 @app.post("/system/restore")
 async def restore_system(
-    file: UploadFile = File(...),
-    current_user: models.User = Depends(auth.get_current_active_root)
+    request: Request,
+    file: UploadFile = File(...)
 ):
-    # Verificar extensão
+    global IS_RESTORING
+    
     if not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Arquivo deve ser um ZIP")
 
+    # 1. Autenticação Manual (para não segurar a conexão do get_db do Depends)
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Não autenticado")
+    
+    token = auth_header.split(" ")[1]
+    
+    # Abrimos uma sessão temporária apenas para validar o usuário
+    temp_db = database.SessionLocal()
     try:
-        # Ler conteúdo para memória
-        content = await file.read()
-        zip_buffer = io.BytesIO(content)
+        current_user = auth.get_current_user(temp_db, token)
+        if current_user.role != "ROOT":
+            raise HTTPException(status_code=403, detail="Acesso negado: Apenas ROOT pode restaurar")
+    finally:
+        temp_db.close() # FECHAMOS IMEDIATAMENTE
+
+    # Pasta temporária para o processo
+    temp_restore_path = os.path.join(database.BASE_DIR, f"temp_restore_{uuid.uuid4().hex}.zip")
+    bak_dir = os.path.join(database.BASE_DIR, "restore_bak")
+
+    try:
+        # Salva o upload no disco para não estourar a RAM com backups gigantes
+        print(f"[RESTORE] Salvando arquivo temporário: {temp_restore_path}")
+        with open(temp_restore_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
         
-        # Validar ZIP
-        if not zipfile.is_zipfile(zip_buffer):
+        if not zipfile.is_zipfile(temp_restore_path):
             raise HTTPException(status_code=400, detail="Arquivo ZIP inválido")
             
-        # Tentar fechar conexões com banco para liberar arquivo (Windows Lock)
+        # Ativa modo manutenção
+        IS_RESTORING = True
+        print("[RESTORE] Modo manutenção ATIVADO.")
+        
+        # Aguarda um pouco para conexões pendentes fecharem
+        await asyncio.sleep(1.5)
+        
+        # Fecha todas as conexões do pool
         engine.dispose()
         
-        # Extrair
-        with zipfile.ZipFile(zip_buffer, 'r') as zip_ref:
-            # Lista de arquivos no zip para validação básica
-            file_names = zip_ref.namelist()
+        with zipfile.ZipFile(temp_restore_path, 'r') as zip_ref:
+            # Limpa pastas (uploads e chroma)
+            for target_dir in [UPLOAD_DIR, os.path.join(database.BASE_DIR, "chroma_db")]:
+                if os.path.exists(target_dir):
+                    shutil.rmtree(target_dir, ignore_errors=True)
+                os.makedirs(target_dir, exist_ok=True)
             
-            # Resetar diretórios alvo
-            if os.path.exists(UPLOAD_DIR):
-                shutil.rmtree(UPLOAD_DIR)
-            os.makedirs(UPLOAD_DIR)
-            
-            CHROMA_DIR = "./chroma_db"
-            if os.path.exists(CHROMA_DIR):
-                shutil.rmtree(CHROMA_DIR)
-            os.makedirs(CHROMA_DIR)
-            
-            # Remover DB atual se existir (pode falhar no Windows se ainda tiver lock)
-            if os.path.exists("./tickets_system.db"):
-                try:
-                    os.remove("./tickets_system.db")
-                except PermissionError:
-                    # Fallback: Se não conseguir deletar, tenta truncar/sobrescrever na extração
-                    pass
+            # Trata arquivos de banco (Move em vez de deletar para evitar lock de leitura)
+            if os.path.exists(bak_dir):
+                shutil.rmtree(bak_dir, ignore_errors=True)
+            os.makedirs(bak_dir, exist_ok=True)
 
-            # Extrair tudo
-            zip_ref.extractall(".")
+            for ext in ["", "-wal", "-shm"]:
+                db_file = f"{database.DB_PATH}{ext}"
+                if os.path.exists(db_file):
+                    try:
+                        shutil.move(db_file, os.path.join(bak_dir, os.path.basename(db_file)))
+                    except Exception as e:
+                        print(f"[RESTORE] Aviso: Não foi possível mover {db_file}: {e}")
+
+            # Extrai o novo backup
+            print("[RESTORE] Extraindo arquivos do backup...")
+            zip_ref.extractall(database.BASE_DIR)
             
-        return {"message": "Sistema restaurado com sucesso. Reinicie o servidor se necessário."}
+        print("[RESTORE] Backup extraído. Populando banco...")
+        seed_db()
+        
+        # Limpa arquivos temporários
+        if os.path.exists(bak_dir):
+            shutil.rmtree(bak_dir, ignore_errors=True)
+        
+        return {"message": "Sistema restaurado com sucesso! O servidor está pronto."}
         
     except Exception as e:
+        print(f"[RESTORE] ERRO CRÍTICO: {e}")
+        # Tentar desfazer? No SQLite é difícil sem parar o processo. 
+        # Idealmente o usuário restauraria outro backup estável.
         raise HTTPException(status_code=500, detail=f"Erro na restauração: {str(e)}")
+    finally:
+        IS_RESTORING = False
+        if os.path.exists(temp_restore_path):
+            os.remove(temp_restore_path)
+        print("[RESTORE] Modo manutenção DESATIVADO.")
 
-# --- Notification Endpoints ---
+
 @app.get("/notifications", response_model=List[schemas.Notification])
 def read_notifications(
     skip: int = 0, 
@@ -689,7 +770,6 @@ def send_notification(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user)
 ):
-    """Send a notification from current user to another user"""
     notification = crud.send_user_notification(db, sender_id=current_user.id, data=notification_data)
     if not notification:
         raise HTTPException(status_code=404, detail="Usuário destinatário não encontrado")
@@ -717,7 +797,6 @@ def delete_notification(
         raise HTTPException(status_code=404, detail="Notificação não encontrada")
     return {"message": "Notificação excluída com sucesso"}
 
-# --- System Settings Endpoints ---
 @app.get("/system-settings", response_model=schemas.SystemSettings)
 def read_system_settings(db: Session = Depends(get_db)):
     return crud.get_system_settings(db)
@@ -732,17 +811,15 @@ def update_system_settings_endpoint(
 
 @app.post("/system-settings/logo")
 async def upload_system_logo(
-    theme: str = "light", # "light" ou "dark"
+    theme: str = "light", 
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_active_admin)
 ):
-    # Criar pasta de branding se não existir
     BRANDING_DIR = os.path.join(UPLOAD_DIR, "branding")
     if not os.path.exists(BRANDING_DIR):
         os.makedirs(BRANDING_DIR)
         
-    # Salvar arquivo com nome único
     ext = os.path.splitext(file.filename)[1]
     filename = f"logo_{theme}_{uuid.uuid4().hex}{ext}"
     file_path = os.path.join(BRANDING_DIR, filename)
@@ -750,10 +827,7 @@ async def upload_system_logo(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
-    # Gerar URL pública
     logo_url = f"/uploads/branding/{filename}"
-    
-    # Atualizar no banco baseado no tema
     update_data = {}
     if theme == "dark":
         update_data["logo_url_dark"] = logo_url
@@ -761,5 +835,4 @@ async def upload_system_logo(
         update_data["logo_url_light"] = logo_url
         
     crud.update_system_settings(db, schemas.SystemSettingsUpdate(**update_data))
-    
     return {"logo_url": logo_url, "theme": theme}

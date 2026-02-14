@@ -657,43 +657,91 @@ def delete_user(db: Session, user_id: int):
         return True
     return False
 def reset_entities(db: Session, entities: List[str], current_user_id: int):
-    results = {"total": 0, "deleted": []}
+    results = {"total": 0, "deleted": [], "errors": []}
     
-    # Ordem de deleção é importante por causa de FKs
-    if "tickets" in entities:
-        # Mensagens de tickets dependem de tickets
-        num_msgs = db.query(models.TicketMessage).delete(synchronize_session=False)
-        num_tickets = db.query(models.Ticket).delete(synchronize_session=False)
-        results["deleted"].append("tickets")
-        results["total"] += (num_msgs + num_tickets)
+    try:
+        # Ordem de deleção é importante por causa de FKs
+        if "tickets" in entities:
+            # Mensagens de tickets dependem de tickets
+            num_msgs = db.query(models.TicketMessage).delete(synchronize_session=False)
+            num_logs = db.query(models.TicketTimeLog).delete(synchronize_session=False)
+            num_hist = db.query(models.TicketHistory).delete(synchronize_session=False)
+            num_tickets = db.query(models.Ticket).delete(synchronize_session=False)
+            results["deleted"].append("tickets")
+            results["total"] += (num_msgs + num_tickets + num_logs + num_hist)
 
-    if "clients" in entities:
-        num_clients = db.query(models.Client).delete(synchronize_session=False)
-        results["deleted"].append("clients")
-        results["total"] += num_clients
+        if "clients" in entities:
+            # Se não deletou tickets, precisa nulificar references
+            if "tickets" not in entities:
+                db.query(models.Ticket).update({models.Ticket.client_id: None})
+            
+            num_clients = db.query(models.Client).delete(synchronize_session=False)
+            results["deleted"].append("clients")
+            results["total"] += num_clients
 
-    if "knowledge" in entities:
-        num_kb = db.query(models.KnowledgeDocument).delete(synchronize_session=False)
-        results["deleted"].append("knowledge")
-        results["total"] += num_kb
-        # Nota: O ChromaDB (RAG) deve ser limpo pelo chamador (main.py)
+        if "knowledge" in entities:
+            num_kb = db.query(models.KnowledgeDocument).delete(synchronize_session=False)
+            results["deleted"].append("knowledge")
+            results["total"] += num_kb
+            # Nota: O ChromaDB (RAG) deve ser limpo pelo chamador (main.py)
 
-    if "settings" in entities:
-        num_cats = db.query(models.Category).delete(synchronize_session=False)
-        num_status = db.query(models.Status).delete(synchronize_session=False)
-        results["deleted"].append("settings")
-        results["total"] += (num_cats + num_status)
+        if "settings" in entities:
+            # Nulifica referências em tickets se existirem
+            if "tickets" not in entities:
+                db.query(models.Ticket).update({
+                    models.Ticket.category_id: None,
+                    models.Ticket.status_id: None
+                })
+            
+            num_cats = db.query(models.Category).delete(synchronize_session=False)
+            num_status = db.query(models.Status).delete(synchronize_session=False)
+            results["deleted"].append("settings")
+            results["total"] += (num_cats + num_status)
 
-    if "users" in entities:
-        # Protege o usuário logado e o ROOT para evitar lockout total
-        num_users = db.query(models.User).filter(
-            models.User.id != current_user_id,
-            models.User.role != "ROOT"
-        ).delete(synchronize_session=False)
-        results["deleted"].append("users")
-        results["total"] += num_users
+        if "users" in entities:
+            # Identifica usuários que serão removidos
+            target_users_query = db.query(models.User).filter(
+                models.User.id != current_user_id,
+                models.User.username != "admin"
+            )
+            target_ids = [u.id for u in target_users_query.all()]
+            
+            if target_ids:
+                # 1. Limpa associações de setores
+                db.execute(
+                    models.user_sectors.delete().where(models.user_sectors.c.user_id.in_(target_ids))
+                )
+                
+                # 2. Limpa notificações
+                db.query(models.Notification).filter(
+                    (models.Notification.user_id.in_(target_ids)) | 
+                    (models.Notification.created_by_user_id.in_(target_ids))
+                ).delete(synchronize_session=False)
+                
+                # 3. Limpa logs de tempo e história se os tickets ainda existirem
+                db.query(models.TicketTimeLog).filter(models.TicketTimeLog.user_id.in_(target_ids)).delete(synchronize_session=False)
+                db.query(models.TicketHistory).filter(models.TicketHistory.user_id.in_(target_ids)).delete(synchronize_session=False)
+                
+                # 4. Nulifica referências em tickets
+                db.query(models.Ticket).filter(models.Ticket.assigned_user_id.in_(target_ids)).update(
+                    {models.Ticket.assigned_user_id: None}, synchronize_session=False
+                )
+                db.query(models.Ticket).filter(models.Ticket.created_by_id.in_(target_ids)).update(
+                    {models.Ticket.created_by_id: None}, synchronize_session=False
+                )
+                
+                # 5. Finalmente deleta os usuários
+                num_users = target_users_query.delete(synchronize_session=False)
+                results["deleted"].append("users")
+                results["total"] += num_users
 
-    db.commit()
+        db.commit()
+        print(f"[RESET] Sucesso! Entidades: {results['deleted']}, Total: {results['total']}")
+    except Exception as e:
+        db.rollback()
+        results["errors"].append(str(e))
+        print(f"[RESET] Erro durante limpeza: {e}")
+        
     return results
 
 # --- Timer CRUD ---

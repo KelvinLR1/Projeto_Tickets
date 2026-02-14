@@ -15,7 +15,8 @@ import api, {
     getStatuses, createStatus, updateStatus, deleteStatus, Status,
     getUsers, createUser, updateUser, deleteUser, User,
     resetDatabase, downloadBackup, restoreSystem,
-    getProfiles, createProfile, updateProfile, deleteProfile, Profile
+    getProfiles, createProfile, updateProfile, deleteProfile, Profile,
+    getDefaultBaseURL
 } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
 import { useSystemSettings } from '@/components/SystemSettingsProvider';
@@ -82,6 +83,8 @@ export default function SettingsPage() {
     const [visionModels, setVisionModels] = useState<any[]>([]);
     const [loadingModels, setLoadingModels] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [testingConnection, setTestingConnection] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'success' | 'error' | null>(null);
     // Usamos refs para evitar problemas com closures nos cleanups do useEffect
     const savedRef = React.useRef(false);
     const originalThemeRef = React.useRef<any>(null);
@@ -136,6 +139,8 @@ export default function SettingsPage() {
     const [resetConfirmation, setResetConfirmation] = useState('');
     const [loadingReset, setLoadingReset] = useState(false);
     const [loadingRestore, setLoadingRestore] = useState(false);
+    const [backupProgress, setBackupProgress] = useState<number | null>(null);
+    const [restoreProgress, setRestoreProgress] = useState<number | null>(null);
 
     // Estado Gestão de Usuários
     const [users, setUsers] = useState<User[]>([]);
@@ -646,7 +651,33 @@ export default function SettingsPage() {
         showNotification('Configurações salvas com sucesso!', 'success');
         setTheme(config.theme);
         window.dispatchEvent(new Event('storage'));
+        refreshSettings();
         setTimeout(() => setSaved(false), 3000);
+    };
+
+    const handleTestConnection = async () => {
+        setTestingConnection(true);
+        setConnectionStatus(null);
+        try {
+            // Tenta uma chamada simples ao backend usando a URL atual do estado
+            const response = await fetch(`${config.apiUrl.replace(/\/$/, '')}/`, {
+                method: 'GET',
+                mode: 'cors',
+                cache: 'no-cache'
+            });
+
+            if (response.ok) {
+                setConnectionStatus('success');
+                showNotification('Conexão com o servidor estabelecida!', 'success');
+            } else {
+                throw new Error('Servidor respondeu com erro');
+            }
+        } catch (error) {
+            setConnectionStatus('error');
+            showNotification('Não foi possível conectar ao servidor.', 'error');
+        } finally {
+            setTestingConnection(false);
+        }
     };
 
     const handleReset = async () => {
@@ -658,7 +689,7 @@ export default function SettingsPage() {
 
         if (confirmed) {
             const defaults = {
-                apiUrl: 'http://127.0.0.1:8000',
+                apiUrl: getDefaultBaseURL(),
                 ollamaUrl: 'http://localhost:11434',
                 textModel: 'phi3',
                 visionModel: 'moondream',
@@ -668,6 +699,8 @@ export default function SettingsPage() {
             setTheme('dark');
             localStorage.setItem('system_config', JSON.stringify(defaults));
             window.dispatchEvent(new Event('storage'));
+            refreshSettings();
+            showNotification('Configurações restauradas para o padrão.', 'info');
         }
     };
 
@@ -747,7 +780,41 @@ export default function SettingsPage() {
                                                 value={config.apiUrl}
                                                 onChange={(e) => setConfig({ ...config, apiUrl: e.target.value })}
                                             />
-                                            <p className="text-[10px] text-[var(--color-text-muted)] mt-2 font-mono italic">Backend FastAPI na rede local.</p>
+                                            <div className="mt-4 flex items-center justify-between">
+                                                <p className="text-[10px] text-[var(--color-text-muted)] font-mono italic">Backend FastAPI na rede local (Porta 8080).</p>
+                                                <button
+                                                    onClick={handleTestConnection}
+                                                    disabled={testingConnection}
+                                                    className={clsx(
+                                                        "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                                                        connectionStatus === 'success' ? "bg-green-500/20 text-green-400 border border-green-500/30" :
+                                                            connectionStatus === 'error' ? "bg-red-500/20 text-red-400 border border-red-500/30" :
+                                                                "bg-white/5 hover:bg-white/10 text-foreground border border-white/10"
+                                                    )}
+                                                >
+                                                    {testingConnection ? (
+                                                        <>
+                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                            Testando...
+                                                        </>
+                                                    ) : connectionStatus === 'success' ? (
+                                                        <>
+                                                            <CheckCircle2 className="w-3 h-3" />
+                                                            Conectado
+                                                        </>
+                                                    ) : connectionStatus === 'error' ? (
+                                                        <>
+                                                            <AlertTriangle className="w-3 h-3" />
+                                                            Falha na Conexão
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Globe className="w-3 h-3" />
+                                                            Testar Conexão
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
                                         </div>
                                         <div>
                                             <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Ollama Local (URL)</label>
@@ -856,19 +923,42 @@ export default function SettingsPage() {
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Representação Visual (Cor)</label>
-                                                        <div className="flex items-center gap-4">
-                                                            <input
-                                                                type="color"
-                                                                className="w-12 h-12 rounded-lg bg-transparent cursor-pointer border-none p-0 overflow-hidden"
-                                                                value={newStatusColor}
-                                                                onChange={e => setNewStatusColor(e.target.value)}
-                                                            />
-                                                            <input
-                                                                className="flex-1 bg-[var(--color-input)] border border-border-theme rounded-xl p-3 text-xs font-mono outline-none"
-                                                                value={newStatusColor}
-                                                                onChange={e => setNewStatusColor(e.target.value)}
-                                                            />
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-3 border-l-2 border-blue-500/50 pl-2">Representação Visual (Cor)</label>
+                                                        <div className="flex items-center gap-4 bg-background/40 p-3 rounded-2xl border border-border-theme group/color">
+                                                            <div className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
+                                                                <input
+                                                                    type="color"
+                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                                    value={newStatusColor}
+                                                                    onChange={e => setNewStatusColor(e.target.value)}
+                                                                />
+                                                                <div
+                                                                    className="w-12 h-12 rounded-xl border border-white/20 shadow-lg flex items-center justify-center relative overflow-hidden transition-all duration-500"
+                                                                    style={{
+                                                                        backgroundColor: newStatusColor,
+                                                                        boxShadow: `0 8px 20px -6px ${newStatusColor}66`
+                                                                    }}
+                                                                >
+                                                                    <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent pointer-events-none" />
+                                                                    <Palette className="w-5 h-5 text-white/80 drop-shadow-md relative z-0" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 space-y-1">
+                                                                <div className="flex items-center justify-between px-1">
+                                                                    <span className="text-[8px] font-black uppercase text-[var(--color-text-muted)] tracking-tighter">Hex Code</span>
+                                                                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: newStatusColor }} />
+                                                                </div>
+                                                                <input
+                                                                    className="w-full bg-white/5 border border-border-theme rounded-xl p-2.5 text-xs font-mono outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all uppercase"
+                                                                    value={newStatusColor}
+                                                                    maxLength={7}
+                                                                    onChange={e => {
+                                                                        let val = e.target.value;
+                                                                        if (!val.startsWith('#') && val.length > 0) val = '#' + val;
+                                                                        setNewStatusColor(val);
+                                                                    }}
+                                                                />
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-3 bg-background/40 p-3 rounded-xl border border-border-theme">
@@ -1634,76 +1724,135 @@ export default function SettingsPage() {
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                             {/* Download Backup */}
-                                            <div className="space-y-4">
-                                                <h3 className="text-sm font-bold text-foreground">Exportar Dados</h3>
-                                                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                                                    Baixe um arquivo ZIP contendo todo o banco de dados, uploads e memória da IA.
-                                                    Ideal para migração ou segurança.
-                                                </p>
-                                                <button
-                                                    onClick={() => {
-                                                        try {
-                                                            downloadBackup();
-                                                            showNotification('Backup iniciado!', 'success');
-                                                        } catch (error) {
-                                                            showNotification('Erro ao baixar backup', 'error');
-                                                        }
-                                                    }}
-                                                    className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 font-black text-[10px] uppercase transition-all"
-                                                >
-                                                    <Download className="w-4 h-4" />
-                                                    Fazer Backup Completo
-                                                </button>
+                                            <div className="flex flex-col h-full bg-white/5 p-8 rounded-3xl border border-border-theme/50 hover:border-blue-500/30 transition-all group/backup">
+                                                <div className="space-y-4 flex-grow">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                            <Download className="w-5 h-5 text-blue-500" />
+                                                        </div>
+                                                        <h3 className="text-base font-bold text-foreground">Exportar Dados</h3>
+                                                    </div>
+                                                    <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                                                        Baixe um arquivo ZIP contendo todo o banco de dados, uploads e memória da IA.
+                                                        Ideal para migração ou segurança.
+                                                    </p>
+                                                </div>
+                                                <div className="mt-8 space-y-4">
+                                                    <button
+                                                        onClick={async () => {
+                                                            try {
+                                                                setBackupProgress(0);
+                                                                await downloadBackup((p) => setBackupProgress(p));
+                                                                showNotification('Backup concluído!', 'success');
+                                                            } catch (error) {
+                                                                showNotification('Erro ao baixar backup', 'error');
+                                                            } finally {
+                                                                setBackupProgress(null);
+                                                            }
+                                                        }}
+                                                        disabled={backupProgress !== null}
+                                                        className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 font-black text-[10px] uppercase transition-all disabled:opacity-50 border border-blue-500/20"
+                                                    >
+                                                        {backupProgress !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                                        {backupProgress !== null ? 'Baixando...' : 'Fazer Backup Completo'}
+                                                    </button>
+                                                    {backupProgress !== null && (
+                                                        <div className="space-y-2 animate-fade-in bg-blue-500/5 p-4 rounded-2xl border border-blue-500/10 text-center">
+                                                            <div className="flex justify-between items-center text-[10px] font-black uppercase mb-1">
+                                                                <span className="text-blue-500/70">Progresso</span>
+                                                                <span className="text-blue-500">{backupProgress}%</span>
+                                                            </div>
+                                                            <div className="w-full h-1.5 bg-blue-500/10 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-blue-500 transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                                                    style={{ width: `${backupProgress}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             {/* Upload Restore */}
-                                            <div className="space-y-4">
-                                                <h3 className="text-sm font-bold text-foreground">Restaurar Sistema</h3>
-                                                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                                                    Carregue um arquivo de backup (.zip) para restaurar o sistema.
-                                                    <span className="block mt-1 text-red-400 font-bold">ATENÇÃO: Substitui todos os dados atuais!</span>
-                                                </p>
-                                                <div className="relative">
-                                                    <input
-                                                        type="file"
-                                                        accept=".zip"
-                                                        onChange={async (e) => {
-                                                            const file = e.target.files?.[0];
-                                                            if (!file) return;
+                                            <div className="flex flex-col h-full bg-white/5 p-8 rounded-3xl border border-border-theme/50 hover:border-emerald-500/30 transition-all group/restore">
+                                                <div className="space-y-4 flex-grow">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2.5 bg-emerald-500/10 rounded-xl">
+                                                            <Upload className="w-5 h-5 text-emerald-500" />
+                                                        </div>
+                                                        <h3 className="text-base font-bold text-foreground">Restaurar Sistema</h3>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                                                            Carregue um arquivo de backup (.zip) para restaurar o sistema.
+                                                        </p>
+                                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg border border-red-500/20 text-[9px] font-black uppercase tracking-wider">
+                                                            <AlertTriangle className="w-3 h-3" />
+                                                            Cuidado: Substitui todos os dados!
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-8 space-y-4">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="file"
+                                                            accept=".zip"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (!file) return;
 
-                                                            const confirmed = await askConfirm({
-                                                                title: 'Confirmar Restauração?',
-                                                                message: 'Todos os dados atuais serão substituídos pelos do backup. Esta ação não pode ser desfeita.',
-                                                                type: 'danger',
-                                                                confirmText: 'RESTAURAR AGORA'
-                                                            });
+                                                                const confirmed = await askConfirm({
+                                                                    title: 'Confirmar Restauração?',
+                                                                    message: 'Todos os dados atuais serão substituídos pelos do backup. Esta ação não pode ser desfeita.',
+                                                                    type: 'danger',
+                                                                    confirmText: 'RESTAURAR AGORA'
+                                                                });
 
-                                                            if (confirmed) {
-                                                                setLoadingRestore(true);
-                                                                try {
-                                                                    await restoreSystem(file);
-                                                                    showNotification('Sistema restaurado com sucesso!', 'success');
-                                                                    setTimeout(() => window.location.reload(), 2000);
-                                                                } catch (error) {
-                                                                    showNotification('Falha na restauração.', 'error');
-                                                                } finally {
-                                                                    setLoadingRestore(false);
+                                                                if (confirmed) {
+                                                                    setLoadingRestore(true);
+                                                                    setRestoreProgress(0);
+                                                                    try {
+                                                                        await restoreSystem(file, (p) => setRestoreProgress(p));
+                                                                        showNotification('Sistema restaurado com sucesso!', 'success');
+                                                                        setTimeout(() => window.location.reload(), 2000);
+                                                                    } catch (error) {
+                                                                        showNotification('Falha na restauração.', 'error');
+                                                                    } finally {
+                                                                        setLoadingRestore(false);
+                                                                        setRestoreProgress(null);
+                                                                        e.target.value = ''; // Reset input
+                                                                    }
+                                                                } else {
                                                                     e.target.value = ''; // Reset input
                                                                 }
-                                                            } else {
-                                                                e.target.value = ''; // Reset input
-                                                            }
-                                                        }}
-                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                                                        disabled={loadingRestore}
-                                                    />
-                                                    <button
-                                                        disabled={loadingRestore}
-                                                        className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border-2 border-dashed border-border-theme hover:border-blue-500/50 hover:bg-blue-500/5 text-[var(--color-text-muted)] hover:text-blue-500 font-black text-[10px] uppercase transition-all"
-                                                    >
-                                                        {loadingRestore ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                                                        {loadingRestore ? 'Restaurando...' : 'Carregar Backup (.zip)'}
-                                                    </button>
+                                                            }}
+                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                                            disabled={loadingRestore}
+                                                        />
+                                                        <button
+                                                            disabled={loadingRestore}
+                                                            className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-2xl border-2 border-dashed border-border-theme hover:border-emerald-500/50 hover:bg-emerald-500/5 text-[var(--color-text-muted)] hover:text-emerald-500 font-black text-[10px] uppercase transition-all"
+                                                        >
+                                                            {loadingRestore ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                            {loadingRestore ? (restoreProgress === 100 ? 'Finalizando...' : 'Restaurando...') : 'Carregar Backup (.zip)'}
+                                                        </button>
+                                                    </div>
+                                                    {restoreProgress !== null && (
+                                                        <div className="space-y-2 animate-fade-in bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10">
+                                                            <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                                                                <span className="text-emerald-500/70">
+                                                                    {restoreProgress === 100 ? 'Processando' : 'Upload'}
+                                                                </span>
+                                                                <span className="text-emerald-500">{restoreProgress}%</span>
+                                                            </div>
+                                                            <div className="w-full h-1.5 bg-emerald-500/10 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-emerald-500 transition-all duration-300 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                                                                    style={{ width: `${restoreProgress}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -1725,7 +1874,7 @@ export default function SettingsPage() {
                             )}
                         </div>
                     </div>
-                </div>
+                </div >
 
                 {/* Modais Consolidados */}
                 {
@@ -1751,19 +1900,29 @@ export default function SettingsPage() {
                                             onClick={async () => {
                                                 setLoadingReset(true);
                                                 try {
-                                                    await resetDatabase(resetEntities, resetConfirmation);
-                                                    showNotification('Dados limpos!', 'success');
+                                                    const res = await resetDatabase(resetEntities, resetConfirmation);
+                                                    showNotification(res.message || 'Dados limpos com sucesso!', 'success');
                                                     setIsResetModalOpen(false);
                                                     setResetConfirmation('');
                                                     setResetEntities([]);
+
+                                                    // Atualiza todas as listas que podem ter sido afetadas
                                                     fetchCategories();
                                                     fetchStatuses();
-                                                } catch (err) { showNotification('Erro ao limpar', 'error'); }
-                                                finally { setLoadingReset(false); }
+                                                    fetchUsers();
+                                                    fetchProfiles();
+                                                    // Se houvesse fetchClientes aqui, deveríamos chamar também
+                                                } catch (err: any) {
+                                                    const msg = err.response?.data?.detail || 'Erro ao realizar limpeza';
+                                                    showNotification(msg, 'error');
+                                                } finally {
+                                                    setLoadingReset(false);
+                                                }
                                             }}
-                                            className="px-6 py-4 rounded-2xl bg-red-500 text-white font-black text-[10px] uppercase disabled:opacity-50"
+                                            className="px-6 py-4 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-black text-[10px] uppercase shadow-xl shadow-red-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
                                         >
-                                            {loadingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
+                                            {loadingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                            {loadingReset ? 'Limpando...' : 'Confirmar'}
                                         </button>
                                     </div>
                                 </div>
@@ -1948,6 +2107,6 @@ export default function SettingsPage() {
                     )
                 }
             </main >
-        </div>
+        </div >
     );
 }

@@ -1,9 +1,15 @@
 import axios from 'axios';
 
 // Determina a BaseURL inicial dinamicamente para suportar acesso remoto
-const getDefaultBaseURL = () => {
+export const getDefaultBaseURL = () => {
   if (typeof window !== 'undefined') {
-    return `http://${window.location.hostname}:8080`;
+    // Se for localhost ou terminal do VSCode/Codespaces, usa 127.0.0.1
+    // Caso contrário, assume que a API está no mesmo IP do frontend (rede local)
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+      return 'http://127.0.0.1:8080';
+    }
+    return `http://${hostname}:8080`;
   }
   return 'http://127.0.0.1:8080';
 };
@@ -42,8 +48,9 @@ api.interceptors.request.use((config) => {
           const isApiLocal = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
 
           if (isRemoteAccess && isApiLocal) {
-            console.log(`[API] Acesso remoto detectado (${currentHost}). Redirecionando API de localhost para o servidor atual.`);
-            apiUrl = apiUrl.replace(/localhost|127\.0\.0\.1/g, currentHost);
+            const newApiUrl = apiUrl.replace(/localhost|127\.0\.0\.1|\[::1\]/g, currentHost);
+            console.log(`[API] Acesso remoto detectado (${currentHost}). Redirecionando API de localhost para o servidor atual: ${newApiUrl}`);
+            apiUrl = newApiUrl;
           }
 
           config.baseURL = apiUrl.replace(/\/$/, "");
@@ -57,6 +64,11 @@ api.interceptors.request.use((config) => {
     const token = localStorage.getItem('auth_token');
     if (token && token !== 'undefined' && token !== 'null') {
       config.headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    // 3. Fallback de Segurança: Se a URL parece inválida ou injetada erroneamente
+    if (config.baseURL && config.baseURL.includes('undefined')) {
+      config.baseURL = getDefaultBaseURL();
     }
   }
 
@@ -76,14 +88,26 @@ api.interceptors.response.use(
     }
 
     // Só loga no console se NÃO for um erro de login esperado (401 no /token)
-    // ou se for um erro crítico (500+)
-    if (!isLoginRequest || (error.response?.status && error.response.status >= 500)) {
+    // ou se for um erro crítico (500+) ou erro de rede (Network Error)
+    const isNetworkError = !error.response && error.message === 'Network Error';
+    const isUnauthorized = error.response?.status === 401;
+
+    if (!isLoginRequest && !isUnauthorized && ((error.response?.status && error.response.status >= 500) || isNetworkError)) {
       console.error('[API Error]', {
         url: error.config?.url,
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message
+        baseURL: error.config?.baseURL,
+        status: error.response?.status || 'NETWORK_ERROR',
+        message: error.message,
+        location: typeof window !== 'undefined' ? window.location.href : 'SSR'
       });
+
+      // Se for erro de rede e estivermos em localhost mas a API não, sugere reset
+      if (isNetworkError && typeof window !== 'undefined') {
+        const currentBaseURL = error.config?.baseURL || '';
+        if (currentBaseURL && !currentBaseURL.includes(window.location.hostname) && !currentBaseURL.includes('127.0.0.1')) {
+          console.warn("[API] Possível dessincronização de IP detectada. Verifique as configurações de conectividade.");
+        }
+      }
     }
 
     return Promise.reject(error);
@@ -182,6 +206,25 @@ export interface KnowledgeDocument {
 export const getClients = async () => {
   const response = await api.get<Client[]>('/clients/');
   return response.data;
+};
+
+export const exportTickets = async (format: string = 'csv') => {
+  const response = await api.get(`/tickets/export`, {
+    params: { format },
+    responseType: 'blob'
+  });
+
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+
+  const extension = format === 'excel' ? 'xlsx' : format;
+  const filename = `relatorio_tickets_${new Date().toISOString().split('T')[0]}.${extension}`;
+
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 };
 
 export const getTickets = async (clientId?: number, unassignedOnly: boolean = false) => {
@@ -408,8 +451,21 @@ export const resetDatabase = async (entities: string[], confirmation: string) =>
   return response.data;
 };
 
-export const downloadBackup = async () => {
-  const response = await api.get('/system/backup', { responseType: 'blob' });
+export const downloadBackup = async (onProgress?: (progress: number) => void) => {
+  // Aumentar o timeout para 10 minutos (600000ms) para backups grandes
+  const response = await api.get('/system/backup', {
+    responseType: 'blob',
+    timeout: 600000,
+    onDownloadProgress: (progressEvent) => {
+      if (onProgress && progressEvent.total) {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onProgress(percentCompleted);
+      } else if (onProgress) {
+        // Se não tiver total (raro com Content-Length), passa o carregado
+        onProgress(progressEvent.loaded);
+      }
+    }
+  });
   const url = window.URL.createObjectURL(new Blob([response.data]));
   const link = document.createElement('a');
   link.href = url;
@@ -424,13 +480,21 @@ export const downloadBackup = async () => {
   link.remove();
 };
 
-export const restoreSystem = async (file: File) => {
+export const restoreSystem = async (file: File, onProgress?: (progress: number) => void) => {
   const formData = new FormData();
   formData.append('file', file);
+  // Aumentar o timeout para 10 minutos (600000ms) para restaurações grandes
   const response = await api.post('/system/restore', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+    timeout: 600000,
+    onUploadProgress: (progressEvent) => {
+      if (onProgress && progressEvent.total) {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onProgress(percentCompleted);
+      }
+    }
   });
   return response.data;
 };

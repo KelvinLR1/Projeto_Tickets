@@ -35,14 +35,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const userData = await getCurrentUser();
             setUser(userData);
         } catch (error: any) {
-            console.error('Failed to load user:', error.response?.status === 401 ? 'Unauthorized (Invalid Token)' : error.message);
-            localStorage.removeItem('auth_token');
-            setUser(null);
+            const isUnauthorized = error.response?.status === 401;
 
-            // Se falhou com 401 num caminho privado, força redirecionamento
-            const publicPaths = ['/login'];
-            if (!publicPaths.includes(pathname)) {
-                router.push('/login');
+            if (isUnauthorized) {
+                console.warn('Session expired or invalid token. Redirecting to login.');
+            } else {
+                console.error('Failed to load user:', error.message);
+            }
+
+            if (isUnauthorized) {
+                localStorage.removeItem('auth_token');
+                setUser(null);
+
+                // Se falhou com 401 num caminho privado, força redirecionamento
+                const publicPaths = ['/login'];
+                if (!publicPaths.includes(pathname)) {
+                    router.push('/login');
+                }
+            } else {
+                // Erro de rede ou servidor - mantemos o estado mas paramos o loading
+                // Isso evita deslogar o usuário em falhas temporárias de conexão
             }
         } finally {
             setLoading(false);

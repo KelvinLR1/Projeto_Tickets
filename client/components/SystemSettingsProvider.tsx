@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from 'react';
-import api from '@/lib/api';
+import api, { getDefaultBaseURL } from '@/lib/api';
 import { useTheme } from './ThemeProvider';
 
 interface SystemSettings {
@@ -49,24 +49,26 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
 
             // Tenta obter a API URL das configurações locais ou do default do axios
             const getBaseURL = () => {
-                let url = api.defaults.baseURL?.replace(/\/$/, "") || "";
+                let url = getDefaultBaseURL();
 
                 if (typeof window !== 'undefined') {
                     const localConfig = localStorage.getItem('system_config');
                     if (localConfig) {
                         try {
                             const configData = JSON.parse(localConfig);
-                            if (configData.apiUrl) url = configData.apiUrl.replace(/\/$/, "");
+                            if (configData.apiUrl) {
+                                url = configData.apiUrl.replace(/\/$/, "");
+
+                                // INTELLIGENT HOSTNAME: Se url for localhost/127.0.0.1 mas estivermos acessando remotamente
+                                const currentHost = window.location.hostname;
+                                const isRemoteAccess = currentHost !== 'localhost' && currentHost !== '127.0.0.1' && currentHost !== '[::1]';
+                                const isApiLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('[::1]');
+
+                                if (isRemoteAccess && isApiLocal) {
+                                    url = url.replace(/localhost|127\.0\.0\.1|\[::1\]/g, currentHost);
+                                }
+                            }
                         } catch (e) { }
-                    }
-
-                    // INTELLIGENT HOSTNAME: Se url for localhost/127.0.0.1 mas estivermos acessando remotamente
-                    const currentHost = window.location.hostname;
-                    const isRemoteAccess = currentHost !== 'localhost' && currentHost !== '127.0.0.1';
-                    const isApiLocal = url.includes('localhost') || url.includes('127.0.0.1');
-
-                    if (isRemoteAccess && isApiLocal) {
-                        url = url.replace(/localhost|127\.0\.0\.1/g, currentHost);
                     }
                 }
                 return url;

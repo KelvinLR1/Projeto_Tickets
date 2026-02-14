@@ -1,0 +1,20 @@
+﻿
+[95m[1m=== ANTIGRAVITY ENVIRONMENT CHECK ===[0m
+[94mEste script verifica o que Ú essencial para o sistema rodar.[0m
+
+[94m[*] Sistema Operacional: Windows 11[0m
+[92m[V] [ESSENCIAL] Python: 3.14.3[0m
+[92m[V] [ESSENCIAL] Node.js: v22.20.0[0m
+[92m[V] [RECOMENDADO] Ollama: ollama version is 0.15.6[0m
+[92m[V] [IA] IA Model 'llama3': Presente[0m
+[92m[V] [IA] IA Model 'llava': Presente[0m
+[92m[V] [ESSENCIAL] Ambiente Virtual (server/.venv): OK[0m
+[92m[V] [ESSENCIAL] DependÛncias (client/node_modules): OK[0m
+[93m[!] [MIGRAÃ├O] Metadados de Tickets (created_by_id, created_at, updated_at): Desatualizado[0m
+   -> [93mAplicando correþÒo: migrate_ticket_meta.py...[0m
+   -> [91mErro ao rodar migrate_ticket_meta.py: Command '['C:\\Users\\kelvi\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe', 'server\\migrate_ticket_meta.py']' returned non-zero exit status 2.[0m
+--------------------------------------------------
+
+[91m[1mBLOQUEIO: O sistema N├O vai rodar corretamente.[0m
+Corrija os itens marcados como [91m[ESSENCIAL][0m acima.
+

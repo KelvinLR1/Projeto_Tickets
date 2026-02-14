@@ -16,13 +16,13 @@ class Colors:
 def print_status(message, status="INFO", category=""):
     cat_str = f"[{category}] " if category else ""
     if status == "OK":
-        print(f"{Colors.GREEN}[✓] {cat_str}{message}{Colors.ENDC}")
+        print(f"{Colors.GREEN}[V] {cat_str}{message}{Colors.ENDC}")
     elif status == "ERROR":
-        print(f"{Colors.RED}[✗] {cat_str}{message}{Colors.ENDC}")
+        print(f"{Colors.RED}[X] {cat_str}{message}{Colors.ENDC}")
     elif status == "WARN":
         print(f"{Colors.YELLOW}[!] {cat_str}{message}{Colors.ENDC}")
     else:
-        print(f"{Colors.BLUE}[•] {cat_str}{message}{Colors.ENDC}")
+        print(f"{Colors.BLUE}[*] {cat_str}{message}{Colors.ENDC}")
 
 def check_command(command, args):
     try:
@@ -100,6 +100,89 @@ def main():
         print_status("Dependências (client/node_modules): Não encontrado", "ERROR", "ESSENCIAL")
         print(f"   -> {Colors.YELLOW}Como resolver: Na pasta 'client', use: npm install{Colors.ENDC}")
         essential_ok = False
+
+    # 6. Banco de Dados e Esquema (SISTEMA AUTO-REPARÁVEL)
+    db_path = os.path.join("server", "tickets_system.db")
+    if os.path.exists(db_path):
+        import sqlite3
+        import subprocess
+
+        def run_migration(script_name):
+            print(f"   -> {Colors.YELLOW}Aplicando correção: {script_name}...{Colors.ENDC}")
+            script_path = os.path.join("server", script_name)
+            try:
+                subprocess.run([sys.executable, script_path], check=True, capture_output=True, cwd="server")
+                return True
+            except Exception as e:
+                print(f"   -> {Colors.RED}Erro ao rodar {script_name}: {e}{Colors.ENDC}")
+                return False
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Lista de veriticações e seus scripts de correção
+            checks = [
+                {
+                    "name": "Coluna 'is_final' em statuses",
+                    "table": "statuses",
+                    "column": "is_final",
+                    "script": "migrate_is_final.py"
+                },
+                {
+                    "name": "Módulo de Setores (coluna sector_id)",
+                    "table": "tickets",
+                    "column": "sector_id",
+                    "script": "migrate_sectors.py"
+                },
+                {
+                    "name": "Módulo de Atribuição (coluna assigned_user_id)",
+                    "table": "tickets",
+                    "column": "assigned_user_id",
+                    "script": "migrate_assignment.py"
+                },
+                {
+                    "name": "Metadados de Tickets (created_by_id, created_at, updated_at)",
+                    "table": "tickets",
+                    "column": "created_by_id",
+                    "script": "migrate_ticket_meta.py"
+                }
+            ]
+
+            all_migrations_ok = True
+            for check in checks:
+                cursor.execute(f"PRAGMA table_info({check['table']})")
+                columns = [info[1] for info in cursor.fetchall()]
+                
+                if check['column'] not in columns:
+                    print_status(f"{check['name']}: Desatualizado", "WARN", "MIGRAÇÃO")
+                    if run_migration(check['script']):
+                        print_status(f"{check['name']}: Corrigido", "OK", "AUTO-FIX")
+                    else:
+                        essential_ok = False
+                        all_migrations_ok = False
+            
+            # Checar tabela de histórico separadamente
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ticket_history'")
+            if not cursor.fetchone():
+                print_status("Tabela de Histórico: Ausente", "WARN", "MIGRAÇÃO")
+                if run_migration("migrate_history.py"):
+                    print_status("Tabela de Histórico: Criada", "OK", "AUTO-FIX")
+                else:
+                    essential_ok = False
+                    all_migrations_ok = False
+
+            conn.close()
+            
+            if all_migrations_ok:
+                print_status("Banco de Dados (Schema): Integridade Confirmada", "OK", "ESSENCIAL")
+
+        except Exception as e:
+            print_status(f"Erro ao verificar Banco de Dados: {e}", "ERROR", "ESSENCIAL")
+            essential_ok = False
+    else:
+        # Se não existe, o SQLAlchemy criará no startup
+        print_status("Banco de Dados: Novo (será criado no primeiro boot)", "INFO", "DB")
 
     # Final result
     print("-" * 50)

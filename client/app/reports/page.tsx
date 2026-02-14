@@ -1,15 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getReportSummary, ReportSummary, getTickets, Ticket } from '@/lib/api';
+import { getReportSummary, ReportSummary, exportTickets, getStatuses, Status } from '@/lib/api';
 import { BarChart3, Download, FileText, Users, Tag, AlertCircle, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
-
-const STATUS_MAP: Record<string, string> = {
-    'open': 'Aberto',
-    'in_progress': 'Em Andamento',
-    'closed': 'Fechado'
-};
 
 const PRIORITY_MAP: Record<string, string> = {
     'low': 'Baixa',
@@ -20,8 +14,11 @@ const PRIORITY_MAP: Record<string, string> = {
 
 export default function ReportsPage() {
     const [summary, setSummary] = useState<ReportSummary | null>(null);
+    const [systemStatuses, setSystemStatuses] = useState<Status[]>([]);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
+
+    const [showExportMenu, setShowExportMenu] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -30,8 +27,12 @@ export default function ReportsPage() {
     const loadData = async () => {
         try {
             setLoading(true);
-            const data = await getReportSummary();
-            setSummary(data);
+            const [reportData, statusesData] = await Promise.all([
+                getReportSummary(),
+                getStatuses()
+            ]);
+            setSummary(reportData);
+            setSystemStatuses(statusesData);
         } catch (error) {
             console.error('Failed to load report data:', error);
         } finally {
@@ -39,30 +40,11 @@ export default function ReportsPage() {
         }
     };
 
-    const handleExportCSV = async () => {
+    const handleExport = async (format: string) => {
         try {
             setExporting(true);
-            const tickets = await getTickets();
-
-            // Gerar CSV
-            const headers = ["ID", "Titulo", "Status", "Prioridade", "Data Criacao"];
-            const rows = tickets.map(t => [
-                t.id,
-                `"${t.title.replace(/"/g, '""')}"`,
-                t.status,
-                t.priority,
-                new Date(t.created_at).toLocaleDateString()
-            ]);
-
-            const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `relatorio_tickets_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            setShowExportMenu(false);
+            await exportTickets(format);
         } catch (error) {
             console.error('Export failed:', error);
         } finally {
@@ -92,14 +74,45 @@ export default function ReportsPage() {
                         <p className="text-[var(--color-text-muted)] text-sm font-medium">Extraia insights e dados consolidados do seu sistema.</p>
                     </div>
 
-                    <button
-                        onClick={handleExportCSV}
-                        disabled={exporting}
-                        className="flex items-center justify-center gap-3 px-10 py-5 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-widest hover:brightness-110 transition-all shadow-2xl shadow-accent-theme/20 active:scale-95 disabled:opacity-50"
-                    >
-                        {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-                        Exportar Tickets (CSV)
-                    </button>
+                    <div className="relative export-container">
+                        <button
+                            onClick={() => setShowExportMenu(!showExportMenu)}
+                            disabled={exporting}
+                            className="flex items-center justify-center gap-3 px-10 py-5 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-widest hover:brightness-110 transition-all shadow-2xl shadow-accent-theme/20 active:scale-95 disabled:opacity-50"
+                        >
+                            {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                            Exportar Tickets
+                        </button>
+
+                        <div className={clsx(
+                            "absolute top-full right-0 mt-4 w-56 glass-card rounded-2xl border border-border-theme shadow-2xl transition-all duration-300 z-50 overflow-hidden",
+                            showExportMenu ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"
+                        )}>
+                            <div className="p-2 space-y-1">
+                                <button
+                                    onClick={() => handleExport('csv')}
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
+                                >
+                                    <FileText className="w-4 h-4" />
+                                    Formato CSV
+                                </button>
+                                <button
+                                    onClick={() => handleExport('excel')}
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Excel (XLSX)
+                                </button>
+                                <button
+                                    onClick={() => handleExport('json')}
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
+                                >
+                                    <FileText className="w-4 h-4" />
+                                    JSON Data
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Grid de Stats Rápidos */}
@@ -188,23 +201,23 @@ export default function ReportsPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border-theme/50">
-                                {Object.keys(STATUS_MAP).map(statusKey => (
-                                    <tr key={statusKey} className="group hover:bg-white/5 transition-colors">
+                                {systemStatuses.map(statusObj => (
+                                    <tr key={statusObj.id} className="group hover:bg-white/5 transition-colors">
                                         <td className="py-6 px-4 font-black uppercase text-[10px] text-[var(--color-text-muted)] group-hover:text-foreground transition-colors tracking-widest">
-                                            {STATUS_MAP[statusKey]}
+                                            {statusObj.name}
                                         </td>
                                         {Object.keys(PRIORITY_MAP).map(priorityKey => {
                                             const cell = summary?.status_priority_matrix.find(m =>
-                                                (m.status === STATUS_MAP[statusKey] || m.status === statusKey) &&
+                                                (m.status === statusObj.name) &&
                                                 (m.priority === PRIORITY_MAP[priorityKey] || m.priority === priorityKey)
                                             );
                                             return (
                                                 <td key={priorityKey} className="py-6 px-4">
                                                     <div className="flex flex-col items-center gap-1">
                                                         <span className={clsx(
-                                                            "text-xs font-mono p-2 rounded-lg min-w-[32px] text-center",
-                                                            cell?.count ? "font-black text-accent-theme bg-accent-theme/5" : "text-gray-300 opacity-20",
-                                                            cell?.is_final && "opacity-40 grayscale"
+                                                            "text-xs font-mono p-2 rounded-lg min-w-[32px] text-center transition-colors",
+                                                            cell?.count ? "font-black text-accent-theme bg-accent-theme/5" : "text-[var(--color-text-muted)] opacity-30",
+                                                            cell?.is_final && "opacity-50 grayscale"
                                                         )}>
                                                             {cell?.count || 0}
                                                         </span>
@@ -219,6 +232,13 @@ export default function ReportsPage() {
                                         })}
                                     </tr>
                                 ))}
+                                {systemStatuses.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="py-12 text-center text-[var(--color-text-muted)] text-[10px] font-black uppercase tracking-widest italic opacity-50">
+                                            Nenhum status configurado no sistema.
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
