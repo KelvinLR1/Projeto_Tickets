@@ -36,7 +36,7 @@ const TimerWidget: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-background text-foreground p-4 font-sans select-none overflow-hidden flex flex-col transition-colors duration-500">
+        <div className="h-full bg-background text-foreground p-4 font-sans select-none overflow-hidden flex flex-col transition-colors duration-500">
             <div className="flex items-center justify-between mb-6 border-b border-border-theme pb-4">
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-accent-theme animate-pulse" />

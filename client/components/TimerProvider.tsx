@@ -6,6 +6,8 @@ import { TimeLog, Ticket, startTimer, stopTimer, getActiveTimers, getTicket } fr
 import { useAuth } from './AuthProvider';
 import { useNotification } from './NotificationProvider';
 import TimerWidget from './TimerWidget';
+import InternalPiP from './InternalPiP';
+import { AnimatePresence } from 'framer-motion';
 
 interface TrackedTicket {
     id: number;
@@ -22,6 +24,7 @@ interface TimerContextType {
     handleStopTimer: (ticketId: number, remove?: boolean) => Promise<void>;
     removeFromWidget: (ticketId: number) => void;
     isPiPOpen: boolean;
+    isInternalPiPOpen: boolean;
     openPiP: () => Promise<void>;
     closePiP: () => void;
 }
@@ -34,6 +37,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [activeTimers, setActiveTimers] = useState<TimeLog[]>([]);
     const [trackedTickets, setTrackedTickets] = useState<TrackedTicket[]>([]);
     const [isPiPOpen, setIsPiPOpen] = useState(false);
+    const [isInternalPiPOpen, setIsInternalPiPOpen] = useState(false);
     const [pipWindow, setPipWindow] = useState<any>(null);
 
     const fetchActiveTimers = useCallback(async () => {
@@ -79,6 +83,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const interval = setInterval(fetchActiveTimers, 10000); // Polling a cada 10s para mais precisão
         return () => clearInterval(interval);
     }, [fetchActiveTimers]);
+
 
     const handleStartTimer = async (ticketId: number) => {
         try {
@@ -142,6 +147,23 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
+    const stopAllTimers = useCallback(async () => {
+        if (activeTimers.length === 0) return;
+
+        try {
+            // Cria uma cópia para evitar problemas de concorrência com o estado
+            const timersToStop = [...activeTimers];
+            for (const timer of timersToStop) {
+                await stopTimer(timer.ticket_id);
+            }
+            setActiveTimers([]);
+            setTrackedTickets([]);
+            console.log('Todos os cronômetros foram parados devido ao encerramento da sessão.');
+        } catch (error) {
+            console.error('Erro ao parar todos os cronômetros:', error);
+        }
+    }, [activeTimers]);
+
     const removeFromWidget = (ticketId: number) => {
         setTrackedTickets(prev => prev.filter(t => t.id !== ticketId));
         // Se houver um timer rodando, para ele
@@ -152,7 +174,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const openPiP = async () => {
         if (!('documentPictureInPicture' in window)) {
-            showNotification('Seu navegador não suporta janelas flutuantes PiP.', 'error');
+            setIsInternalPiPOpen(true);
             return;
         }
 
@@ -206,7 +228,31 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (pipWindow) {
             pipWindow.close();
         }
+        setIsInternalPiPOpen(false);
     };
+
+    // Limpeza ao deslogar
+    useEffect(() => {
+        if (!user && (isPiPOpen || isInternalPiPOpen || activeTimers.length > 0)) {
+            closePiP();
+            stopAllTimers();
+        }
+    }, [user, isPiPOpen, isInternalPiPOpen, activeTimers.length, closePiP, stopAllTimers]);
+
+    // Limpeza ao fechar aba/navegador
+    useEffect(() => {
+        const handleBeforeUnload = () => {
+            if (activeTimers.length > 0) {
+                stopAllTimers();
+            }
+            if (pipWindow) {
+                pipWindow.close();
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [activeTimers, pipWindow, stopAllTimers]);
 
     return (
         <TimerContext.Provider value={{
@@ -216,6 +262,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             handleStopTimer,
             removeFromWidget,
             isPiPOpen,
+            isInternalPiPOpen,
             openPiP,
             closePiP
         }}>
@@ -224,6 +271,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 <TimerWidget />,
                 pipWindow.document.getElementById('pip-root') || pipWindow.document.body
             )}
+            <AnimatePresence>
+                {isInternalPiPOpen && (
+                    <InternalPiP onClose={closePiP} />
+                )}
+            </AnimatePresence>
         </TimerContext.Provider>
     );
 };

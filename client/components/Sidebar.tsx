@@ -29,7 +29,7 @@ import clsx from 'clsx';
 export default function Sidebar() {
     const pathname = usePathname();
     const { user, logout } = useAuth();
-    const { activeTimers, openPiP } = useTimer();
+    const { activeTimers, openPiP, closePiP, isPiPOpen, isInternalPiPOpen } = useTimer();
     const { unreadCount } = useNotification();
     const { systemName, logoUrlOnAccent } = useSystemSettings();
 
@@ -115,16 +115,16 @@ export default function Sidebar() {
                 )}
 
                 <button
-                    onClick={openPiP}
+                    onClick={() => (isPiPOpen || isInternalPiPOpen) ? closePiP() : openPiP()}
                     className={clsx(
                         "w-full p-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 group relative overflow-hidden",
-                        activeTimers.length > 0
+                        (activeTimers.length > 0 || isPiPOpen || isInternalPiPOpen)
                             ? "bg-accent-theme/10 text-accent-theme border border-accent-theme/20 hover:bg-accent-theme/20"
                             : "bg-foreground/5 text-[var(--color-text-muted)] hover:bg-card-hover hover:text-foreground"
                     )}
                 >
-                    <Clock className={clsx("w-4 h-4", activeTimers.length > 0 && "animate-pulse")} />
-                    MODO WIDGET
+                    <Clock className={clsx("w-4 h-4", (activeTimers.length > 0 || isPiPOpen || isInternalPiPOpen) && "animate-pulse")} />
+                    {(isPiPOpen || isInternalPiPOpen) ? 'FECHAR WIDGET' : 'MODO WIDGET'}
                     {activeTimers.length > 0 && (
                         <span className="absolute top-2 right-2 flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-theme opacity-75"></span>
