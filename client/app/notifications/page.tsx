@@ -6,6 +6,7 @@ import { Bell, CheckCircle2, Info, AlertTriangle, Clock, X, Check, Send, User, T
 import clsx from 'clsx';
 import Link from 'next/link';
 import { getUsers, getTickets, sendNotification, User as ApiUser, Ticket as ApiTicket } from '@/lib/api';
+import { formatDateTime } from '@/lib/utils';
 import { useAuth } from '@/components/AuthProvider';
 import CustomSelect from '@/components/CustomSelect';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -268,7 +269,7 @@ export default function NotificationsPage() {
                                                         </div>
                                                         <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-widest opacity-40">
                                                             <Clock className="w-3 h-3" />
-                                                            {new Date(notif.created_at).toLocaleString('pt-BR')}
+                                                            {formatDateTime(notif.created_at)}
                                                         </div>
                                                     </div>
 

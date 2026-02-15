@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile } from '@/lib/api';
+import { formatDateTime } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -471,7 +472,7 @@ export default function TicketDetailsPage() {
                                 className: "text-xs font-bold"
                             }))}
                             placeholder="Status..."
-                            className="w-[180px] !space-y-0"
+                            className="w-[240px] !space-y-0"
                         />
 
                         <CustomSelect
@@ -785,14 +786,17 @@ export default function TicketDetailsPage() {
                                                                                 const map: Record<string, string> = {
                                                                                     'STATUS_CHANGE': 'MUDANÇA DE STATUS',
                                                                                     'PRIORITY_CHANGE': 'MUDANÇA DE PRIORIDADE',
+                                                                                    'CATEGORY_CHANGE': 'MUDANÇA DE CATEGORIA',
                                                                                     'CATEGORY_ID_CHANGE': 'MUDANÇA DE CATEGORIA',
-                                                                                    'ASSIGNED_USER_CHANGE': 'TROCA DE TÉCNICO'
+
+                                                                                    'ASSIGNED_USER_CHANGE': 'TROCA DE TÉCNICO',
+                                                                                    'SECTOR_CHANGE': 'TRANSFERÊNCIA DE SETOR'
                                                                                 };
                                                                                 return map[t] || t.replaceAll('_', ' ');
                                                                             })(event.event_type, event.description)}
                                                                         </span>
                                                                         <span className="text-[10px] font-bold text-gray-500 bg-white/5 px-2.5 py-1 rounded-lg">
-                                                                            {new Date(event.created_at).toLocaleString()}
+                                                                            {formatDateTime(event.created_at)}
                                                                         </span>
                                                                     </div>
                                                                     <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400">
@@ -887,14 +891,14 @@ export default function TicketDetailsPage() {
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-gray-500">Criado em:</span>
-                                    <span className="font-mono text-[var(--color-text-muted)]">{new Date(ticket.created_at).toLocaleString()}</span>
+                                    <span className="font-mono text-[var(--color-text-muted)]">{formatDateTime(ticket.created_at)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-gray-500">Última atualização:</span>
                                     <span className="font-mono text-[var(--color-text-muted)]">
                                         {history.length > 0
-                                            ? new Date(history[0].created_at).toLocaleString()
-                                            : new Date(ticket.updated_at || ticket.created_at).toLocaleString()}
+                                            ? formatDateTime(history[0].created_at)
+                                            : formatDateTime(ticket.updated_at || ticket.created_at)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">

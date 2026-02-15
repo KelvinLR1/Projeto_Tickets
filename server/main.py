@@ -309,12 +309,21 @@ def read_categories(db: Session = Depends(get_db), current_user: models.User = D
 def create_category(cat: schemas.CategoryCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_category(db=db, cat=cat)
 
+@app.put("/categories/{cat_id}", response_model=schemas.Category)
+def update_category(cat_id: int, cat: schemas.CategoryCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    db_cat = crud.update_category(db=db, cat_id=cat_id, cat_update=cat)
+    if not db_cat:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    return db_cat
+
 @app.delete("/categories/{cat_id}")
 def delete_category(cat_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
-    success = crud.delete_category(db=db, cat_id=cat_id)
+    success, message = crud.delete_category(db=db, cat_id=cat_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Categoria não encontrada")
-    return {"message": "Categoria excluída"}
+        if "não encontrada" in message:
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
 
 # --- Status Endpoints ---
 @app.get("/statuses/", response_model=List[schemas.Status])
@@ -327,10 +336,12 @@ def create_status(status: schemas.StatusCreate, db: Session = Depends(get_db), c
 
 @app.delete("/statuses/{status_id}")
 def delete_status(status_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
-    success = crud.delete_status(db=db, status_id=status_id)
+    success, message = crud.delete_status(db=db, status_id=status_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Status não encontrado")
-    return {"message": "Status excluído"}
+        if message == "Status não encontrado":
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
 
 @app.put("/statuses/{status_id}", response_model=schemas.Status)
 def update_status(status_id: int, status: schemas.StatusBase, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):

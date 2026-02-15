@@ -130,10 +130,10 @@ export default function ReportsPage() {
                         icon={<Tag className="w-5 h-5" />}
                     />
                     <StatCard
-                        title="Prioridade Alta"
-                        value={summary?.by_priority['high'] || 0}
+                        title="Prioridade Crítica"
+                        value={summary?.by_priority['critical'] || 0}
                         subtitle="Tickets Pendentes"
-                        icon={<AlertCircle className="w-5 h-5 text-red-500" />}
+                        icon={<AlertCircle className="w-5 h-5 text-red-600" />}
                     />
                     <StatCard
                         title="Total de Tickets"

@@ -79,9 +79,11 @@ api.interceptors.response.use(
   response => response,
   error => {
     const isLoginRequest = error.config?.url?.includes('/token');
+    const isUnauthorized = error.response?.status === 401;
 
     // Se for 401 (Unauthorized), limpa o token local apenas se não for na página de login
-    if (error.response?.status === 401) {
+    // e se o erro não for de uma requisição que já estamos tratando
+    if (isUnauthorized) {
       if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
         localStorage.removeItem('auth_token');
       }
@@ -89,8 +91,8 @@ api.interceptors.response.use(
 
     // Só loga no console se NÃO for um erro de login esperado (401 no /token)
     // ou se for um erro crítico (500+) ou erro de rede (Network Error)
+    // Ignoramos 401 ruidosos aqui para que os Providers tratem se necessário ou fiquem quietos
     const isNetworkError = !error.response && error.message === 'Network Error';
-    const isUnauthorized = error.response?.status === 401;
 
     if (!isLoginRequest && !isUnauthorized && ((error.response?.status && error.response.status >= 500) || isNetworkError)) {
       console.error('[API Error]', {
@@ -157,6 +159,7 @@ export interface Category {
   id: number;
   name: string;
   parent_id?: number;
+  is_active: boolean;
   subcategories?: Category[];
 }
 
@@ -174,6 +177,7 @@ export interface Status {
   name: string;
   color: string;
   is_final: boolean;
+  is_active: boolean;
 }
 
 export interface DashboardStats {

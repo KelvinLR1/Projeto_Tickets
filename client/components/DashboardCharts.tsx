@@ -6,6 +6,7 @@ import {
     PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, Legend
 } from 'recharts';
 import { getDashboardStats, DashboardStats } from '@/lib/api';
+import { formatDateOnly, formatDateTime } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 
 // Mapeamento de Cores e Nomenclatura para Prioridades
@@ -217,7 +218,7 @@ export default function DashboardCharts() {
                         </div>
                     ) : (
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={dateData}>
+                            <AreaChart data={dateData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
                                 <defs>
                                     <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="var(--color-accent-theme)" stopOpacity={0.3} />
@@ -245,6 +246,7 @@ export default function DashboardCharts() {
                                     axisLine={false}
                                     dx={-10}
                                     allowDecimals={false}
+                                    domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.2)]}
                                 />
                                 <Tooltip
                                     contentStyle={{
@@ -267,6 +269,7 @@ export default function DashboardCharts() {
                                     cursor={{ stroke: 'var(--color-accent-theme)', strokeWidth: 1, strokeDasharray: '5 5' }}
                                     formatter={(value: any) => [value, 'Tickets']}
                                     labelStyle={{ color: 'var(--color-accent-theme)', fontWeight: '900', marginBottom: '8px', fontSize: '10px' }}
+                                    labelFormatter={(label) => `Data: ${label}`}
                                 />
                                 <Area
                                     type="monotone"

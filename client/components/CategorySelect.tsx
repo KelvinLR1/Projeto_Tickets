@@ -26,6 +26,7 @@ export default function CategorySelect({
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
+    const [openUpwards, setOpenUpwards] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Close on click outside
@@ -38,6 +39,20 @@ export default function CategorySelect({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Detect if should open upwards
+    useEffect(() => {
+        if (isOpen && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            // If less than 400px below (typical max-height of dropdown + search + padding), open upwards
+            if (spaceBelow < 400) {
+                setOpenUpwards(true);
+            } else {
+                setOpenUpwards(false);
+            }
+        }
+    }, [isOpen]);
 
     // Find selected category for display
     const selectedCategory = useMemo(() => {
@@ -89,7 +104,13 @@ export default function CategorySelect({
     };
 
     const renderCategory = (cat: Category, level = 0) => {
-        const hasSubs = cat.subcategories && cat.subcategories.length > 0;
+        // Only show active categories
+        if (!cat.is_active) return null;
+
+        const allSubs = cat.subcategories || [];
+        const activeSubs = allSubs.filter(s => s.is_active);
+        const hasActiveSubs = activeSubs.length > 0;
+
         const isExpanded = expandedNodes.has(cat.id);
         const isSelected = Number(value) === cat.id;
         const matchesSearch = search === '' || cat.name.toLowerCase().includes(search.toLowerCase());
@@ -98,7 +119,7 @@ export default function CategorySelect({
         const hasMatchingDescendant = (c: Category): boolean => {
             if (!c.subcategories) return false;
             return c.subcategories.some(sub =>
-                sub.name.toLowerCase().includes(search.toLowerCase()) || hasMatchingDescendant(sub)
+                sub.is_active && (sub.name.toLowerCase().includes(search.toLowerCase()) || hasMatchingDescendant(sub))
             );
         };
 
@@ -108,20 +129,26 @@ export default function CategorySelect({
             <div key={cat.id} className="select-none">
                 <button
                     type="button"
-                    onClick={() => {
-                        onChange(cat.id);
-                        setIsOpen(false);
+                    onClick={(e) => {
+                        // Option 1 logic: If has active subcategories, it's just a folder.
+                        // If no active subcategories, it's selectable even if it's a parent.
+                        if (hasActiveSubs) {
+                            toggleExpand(cat.id, e);
+                        } else {
+                            onChange(cat.id);
+                            setIsOpen(false);
+                        }
                     }}
                     className={clsx(
                         "w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-all group",
-                        isSelected ? "bg-accent-theme/10 text-accent-theme" : "hover:bg-white/5 text-gray-400 hover:text-foreground"
+                        isSelected ? "bg-accent-theme/10 text-accent-theme" : "hover:bg-white/5 text-gray-400 hover:text-foreground",
+                        hasActiveSubs && "cursor-default"
                     )}
                 >
                     {/* Indentation with visual connector */}
                     <div className="flex items-center" style={{ marginLeft: `${level * 16}px` }}>
-                        {hasSubs ? (
+                        {hasActiveSubs ? (
                             <div
-                                onClick={(e) => toggleExpand(cat.id, e)}
                                 className="p-1 hover:bg-white/10 rounded-md transition-colors mr-1"
                             >
                                 {isExpanded ? (
@@ -136,22 +163,22 @@ export default function CategorySelect({
                             </div>
                         )}
 
-                        {hasSubs ? (
+                        {hasActiveSubs ? (
                             isExpanded ? <FolderOpen className="w-4 h-4 mr-2 text-accent-theme/60" /> : <Folder className="w-4 h-4 mr-2 text-gray-500" />
                         ) : (
                             <Tag className={clsx("w-3.5 h-3.5 mr-2", isSelected ? "text-accent-theme" : "text-gray-600")} />
                         )}
 
-                        <span className={clsx("text-xs", level === 0 ? "font-black" : "font-medium")}>
+                        <span className={clsx("text-xs", level === 0 ? "font-black" : "font-medium", hasActiveSubs && "opacity-80")}>
                             {cat.name}
                         </span>
                     </div>
 
-                    {isSelected && <Check className="w-3.5 h-3.5 ml-auto text-accent-theme" />}
+                    {!hasActiveSubs && isSelected && <Check className="w-3.5 h-3.5 ml-auto text-accent-theme" />}
                 </button>
 
                 <AnimatePresence initial={false}>
-                    {hasSubs && (isExpanded || search !== '') && (
+                    {hasActiveSubs && (isExpanded || search !== '') && (
                         <motion.div
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
@@ -159,7 +186,7 @@ export default function CategorySelect({
                             transition={{ duration: 0.2, ease: "easeInOut" }}
                             className="overflow-hidden mt-1"
                         >
-                            {cat.subcategories!.map(sub => renderCategory(sub, level + 1))}
+                            {activeSubs.map(sub => renderCategory(sub, level + 1))}
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -193,7 +220,10 @@ export default function CategorySelect({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#1e293b] dark:bg-card border border-border-theme rounded-2xl shadow-2xl z-[1000] overflow-hidden shadow-black/50"
+                        className={clsx(
+                            "absolute left-0 w-full bg-background border border-border-theme rounded-2xl shadow-2xl z-[1000] overflow-hidden shadow-black/50 backdrop-blur-2xl",
+                            openUpwards ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
+                        )}
                     >
                         <div className="p-3 border-b border-border-theme/50 bg-white/5">
                             <div className="relative">

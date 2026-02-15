@@ -426,3 +426,23 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--color-accent-theme);
 }
+
+/* 
+ * Recharts Definitive Focus Reset 
+ * Target all potentially focusable elements inside charts to remove browser outlines
+ */
+.recharts-wrapper,
+.recharts-surface,
+.recharts-wrapper *:focus,
+.recharts-surface *:focus,
+.recharts-rectangle:focus,
+.recharts-layer:focus,
+path:focus,
+rect:focus,
+svg:focus {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline-color: transparent !important;
+  -webkit-tap-highlight-color: transparent;
+}

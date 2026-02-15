@@ -2,17 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import TicketList from '@/components/TicketList';
-import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag } from 'lucide-react';
-import { getCategories, Category, getStatuses, Status } from '@/lib/api';
+import KanbanView from '@/components/KanbanView';
+import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag, LayoutGrid, List } from 'lucide-react';
+import { getCategories, Category, getStatuses, Status, getTickets, Ticket } from '@/lib/api';
 import CustomSelect from '@/components/CustomSelect';
 import CategorySelect from '@/components/CategorySelect';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import Link from 'next/link';
+import { TicketRowSkeleton, KanbanColumnSkeleton } from '@/components/Skeleton';
 
 export default function TicketsPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+    const [loading, setLoading] = useState(true);
+    const [tickets, setTickets] = useState<Ticket[]>([]);
 
     // Filtros
     const [statusFilter, setStatusFilter] = useState('');
@@ -26,15 +31,20 @@ export default function TicketsPage() {
     }, []);
 
     const loadData = async () => {
+        setLoading(true);
         try {
-            const [catsData, statusesData] = await Promise.all([
+            const [catsData, statusesData, ticketsData] = await Promise.all([
                 getCategories(),
-                getStatuses()
+                getStatuses(),
+                getTickets()
             ]);
             setCategories(catsData);
             setStatuses(statusesData);
+            setTickets(ticketsData);
         } catch (error) {
-            console.error('Failed to load filters data:', error);
+            console.error('Failed to load tickets data:', error);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -59,13 +69,43 @@ export default function TicketsPage() {
                         <p className="text-[var(--color-text-muted)] text-sm font-medium mt-1">Monitore e resolva os tickets solicitados pelos clientes.</p>
                     </div>
 
-                    <Link
-                        href="/tickets/new"
-                        className="flex items-center justify-center gap-3 px-10 py-5 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95"
-                    >
-                        <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-                        NOVO TICKET
-                    </Link>
+                    <div className="flex items-center gap-4">
+                        {/* View Mode Toggle */}
+                        <div className="flex bg-card/50 border border-border-theme p-1.5 rounded-2xl backdrop-blur-sm self-end">
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={clsx(
+                                    "flex items-center gap-2 px-4 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
+                                    viewMode === 'list'
+                                        ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20"
+                                        : "text-[var(--color-text-muted)] hover:text-foreground"
+                                )}
+                            >
+                                <List className="w-4 h-4" />
+                                <span className="hidden sm:inline">Lista</span>
+                            </button>
+                            <button
+                                onClick={() => setViewMode('kanban')}
+                                className={clsx(
+                                    "flex items-center gap-2 px-4 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
+                                    viewMode === 'kanban'
+                                        ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20"
+                                        : "text-[var(--color-text-muted)] hover:text-foreground"
+                                )}
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                                <span className="hidden sm:inline">Kanban</span>
+                            </button>
+                        </div>
+
+                        <Link
+                            href="/tickets/new"
+                            className="flex items-center justify-center gap-3 px-10 py-5 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95"
+                        >
+                            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+                            NOVO TICKET
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Filters and Search Bar Container */}
@@ -178,13 +218,80 @@ export default function TicketsPage() {
                     </AnimatePresence>
                 </div>
 
-                {/* Ticket List Component */}
-                <TicketList
-                    searchTerm={searchTerm}
-                    status={statusFilter}
-                    priority={priorityFilter}
-                    categoryId={categoryFilter}
-                />
+                {/* View Switcher */}
+                <div>
+                    <AnimatePresence mode="wait">
+                        {loading ? (
+                            <motion.div
+                                key="loading-skeletons"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.3 }}
+                            >
+                                {viewMode === 'list' ? (
+                                    <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-sm border-collapse">
+                                                <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
+                                                    <tr>
+                                                        <th className="px-8 py-6 w-16">ID</th>
+                                                        <th className="px-8 py-6">Ticket / Cliente</th>
+                                                        <th className="px-8 py-6 w-40 text-center">Status</th>
+                                                        <th className="px-8 py-6 w-36 text-center">Prioridade</th>
+                                                        <th className="px-8 py-6 w-48">Responsável</th>
+                                                        <th className="px-8 py-6 text-right w-24">Ações</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-border-theme/30">
+                                                    {[1, 2, 3, 4, 5].map(i => <TicketRowSkeleton key={i} />)}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-6 overflow-x-auto pb-8 custom-scrollbar min-h-[700px] items-start">
+                                        {[1, 2, 3, 4].map(i => <KanbanColumnSkeleton key={i} />)}
+                                    </div>
+                                )}
+                            </motion.div>
+                        ) : viewMode === 'list' ? (
+                            <motion.div
+                                key="list-view"
+                                initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
+                                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                                exit={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                            >
+                                <TicketList
+                                    tickets={tickets}
+                                    statuses={statuses}
+                                    searchTerm={searchTerm}
+                                    status={statusFilter}
+                                    priority={priorityFilter}
+                                    categoryId={categoryFilter}
+                                />
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key="kanban-view"
+                                initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                                exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
+                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                            >
+                                <KanbanView
+                                    tickets={tickets}
+                                    statuses={statuses}
+                                    searchTerm={searchTerm}
+                                    status={statusFilter}
+                                    priority={priorityFilter}
+                                    categoryId={categoryFilter}
+                                />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </div>
         </main>
     );

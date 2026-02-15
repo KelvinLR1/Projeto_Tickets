@@ -6,6 +6,7 @@ from datetime import datetime
 class CategoryBase(BaseModel):
     name: str
     parent_id: Optional[int] = None
+    is_active: bool = True
 
 class CategoryCreate(CategoryBase):
     pass
@@ -27,6 +28,7 @@ class StatusBase(BaseModel):
     name: str
     color: str = "#3b82f6"
     is_final: bool = False
+    is_active: bool = True
 
 class StatusCreate(StatusBase):
     pass

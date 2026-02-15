@@ -8,13 +8,18 @@ import { useTimer } from './TimerProvider';
 import { useAuth } from './AuthProvider';
 import clsx from 'clsx';
 import Link from 'next/link';
+import { TicketRowSkeleton } from './Skeleton';
 
 export default function TicketList({
+    tickets: initialTickets,
+    statuses: initialStatuses,
     searchTerm,
     status,
     priority,
     categoryId
 }: {
+    tickets?: Ticket[];
+    statuses?: Status[];
     searchTerm?: string;
     status?: string;
     priority?: string;
@@ -23,16 +28,31 @@ export default function TicketList({
     const { showNotification, confirm: askConfirm } = useNotification();
     const { user } = useAuth();
     const { activeTimers, handleStartTimer, handleStopTimer } = useTimer();
-    const [tickets, setTickets] = useState<Ticket[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [tickets, setTickets] = useState<Ticket[]>(initialTickets || []);
+    const [loading, setLoading] = useState(!initialTickets);
     const [actionId, setActionId] = useState<number | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' });
 
     const [categories, setCategories] = useState<Category[]>([]);
-    const [statuses, setStatuses] = useState<Status[]>([]);
+    const [statuses, setStatuses] = useState<Status[]>(initialStatuses || []);
 
     useEffect(() => {
-        loadData();
+        if (initialTickets) {
+            setTickets(initialTickets);
+            setLoading(false);
+        }
+    }, [initialTickets]);
+
+    useEffect(() => {
+        if (initialStatuses) {
+            setStatuses(initialStatuses);
+        }
+    }, [initialStatuses]);
+
+    useEffect(() => {
+        if (!initialTickets || !initialStatuses) {
+            loadData();
+        }
     }, []);
 
     const loadData = async () => {
@@ -179,9 +199,24 @@ export default function TicketList({
 
     if (loading && tickets.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-24 space-y-4">
-                <Loader2 className="w-12 h-12 animate-spin text-accent-theme opacity-20" />
-                <p className="text-gray-500 text-xs font-black uppercase tracking-widest animate-pulse">Carregando Chamados...</p>
+            <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm border-collapse">
+                        <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
+                            <tr>
+                                <th className="px-8 py-6 w-16">ID</th>
+                                <th className="px-8 py-6">Ticket / Cliente</th>
+                                <th className="px-8 py-6 w-40 text-center">Status</th>
+                                <th className="px-8 py-6 w-36 text-center">Prioridade</th>
+                                <th className="px-8 py-6 w-48">Responsável</th>
+                                <th className="px-8 py-6 text-right w-24">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-theme/30">
+                            {[1, 2, 3, 4, 5].map(i => <TicketRowSkeleton key={i} />)}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         );
     }

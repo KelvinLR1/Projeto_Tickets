@@ -32,7 +32,7 @@ interface TimerContextType {
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
 
 export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { user } = useAuth();
+    const { user, loading } = useAuth();
     const { showNotification } = useNotification();
     const [activeTimers, setActiveTimers] = useState<TimeLog[]>([]);
     const [trackedTickets, setTrackedTickets] = useState<TrackedTicket[]>([]);
@@ -41,7 +41,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [pipWindow, setPipWindow] = useState<any>(null);
 
     const fetchActiveTimers = useCallback(async () => {
-        if (!user) return;
+        if (!user || loading) return;
 
         // Verifica se o token está presente antes de fazer a requisição
         if (typeof window !== 'undefined') {
@@ -73,10 +73,13 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     return newTracked;
                 });
             }
-        } catch (error) {
-            console.error('Erro ao buscar timers ativos:', error);
+        } catch (error: any) {
+            // Silencia 401 pois o AuthProvider lida com redirecionamento
+            if (error.response?.status !== 401) {
+                console.error('Erro ao buscar timers ativos:', error);
+            }
         }
-    }, [user]);
+    }, [user, loading]);
 
     useEffect(() => {
         fetchActiveTimers();

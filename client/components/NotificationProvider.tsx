@@ -78,8 +78,11 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
             setNotifications(data);
             const countData = await getUnreadNotificationCount();
             setUnreadCount(countData.count);
-        } catch (error) {
-            console.error('Failed to fetch notifications:', error);
+        } catch (error: any) {
+            // Silencia 401 pois o AuthProvider lida com redirecionamento
+            if (error.response?.status !== 401) {
+                console.error('Failed to fetch notifications:', error);
+            }
         }
     }, [isAuthenticated]);
 

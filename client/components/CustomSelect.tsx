@@ -33,6 +33,7 @@ export default function CustomSelect({
     icon: MainIcon
 }: CustomSelectProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [openUpwards, setOpenUpwards] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
     const selectedOption = options.find(opt => opt.value === value);
@@ -47,6 +48,20 @@ export default function CustomSelect({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Detect if should open upwards
+    useEffect(() => {
+        if (isOpen && containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            // Typical max-height of dropdown is 300px + padding
+            if (spaceBelow < 350) {
+                setOpenUpwards(true);
+            } else {
+                setOpenUpwards(false);
+            }
+        }
+    }, [isOpen]);
 
     return (
         <div className={clsx("space-y-3 relative", isOpen ? "z-50" : "z-10", className)} ref={containerRef}>
@@ -82,7 +97,10 @@ export default function CustomSelect({
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 10 }}
                             transition={{ duration: 0.2, ease: "easeOut" }}
-                            className="absolute top-[calc(100%+8px)] left-0 w-full bg-card/95 backdrop-blur-xl border border-border-theme rounded-2xl shadow-3xl z-[1000] overflow-hidden"
+                            className={clsx(
+                                "absolute left-0 w-full bg-card/95 backdrop-blur-xl border border-border-theme rounded-2xl shadow-3xl z-[1000] overflow-hidden",
+                                openUpwards ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
+                            )}
                         >
                             <div className="max-h-[300px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
                                 {options.map((opt) => (

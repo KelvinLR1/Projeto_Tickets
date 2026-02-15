@@ -47,10 +47,25 @@ def get_detailed_report_stats(db: Session):
         func.count(models.Ticket.id)
     ).filter(models.Ticket.created_at >= seven_days_ago).group_by(func.date(models.Ticket.created_at)).all()
 
+    # Mapeamento para normalizar prioridades para o frontend
+    priority_map = {
+        "Baixa": "low",
+        "Média": "medium",
+        "Alta": "high",
+        "Crítica": "critical"
+    }
+
+    normalized_priority = {}
+    for p_name, count in priority_stats:
+        if p_name:
+            # Tenta mapear o nome exato, se não existir usa o lowercase como fallback
+            key = priority_map.get(p_name, p_name.lower())
+            normalized_priority[key] = count
+
     return {
         "by_client": [{"name": row[0], "count": row[1]} for row in client_stats],
         "by_category": [{"name": row[0] or "Sem Categoria", "count": row[1]} for row in category_stats],
-        "by_priority": dict(priority_stats),
+        "by_priority": normalized_priority,
         "by_status": dict(status_stats),
         "by_date": {str(row[0]): row[1] for row in date_stats},
         "status_priority_matrix": [
@@ -142,11 +157,22 @@ def create_category(db: Session, cat: schemas.CategoryCreate):
 
 def delete_category(db: Session, cat_id: int):
     db_cat = db.query(models.Category).filter(models.Category.id == cat_id).first()
-    if db_cat:
-        db.delete(db_cat)
-        db.commit()
-        return True
-    return False
+    if not db_cat:
+        return False, "Categoria não encontrada"
+    
+    # Verifica se há tickets vinculados
+    if db_cat.tickets:
+        return False, "Não é possível excluir esta categoria porque ela possui chamados vinculados. Tente desativá-la em vez de excluir."
+    
+    # Verifica se há subcategorias com tickets (recursivo simples)
+    if db_cat.subcategories:
+        for sub in db_cat.subcategories:
+            if sub.tickets:
+                return False, f"Não é possível excluir porque a subcategoria '{sub.name}' possui chamados vinculados."
+
+    db.delete(db_cat)
+    db.commit()
+    return True, "Categoria excluída com sucesso"
 
 def update_category(db: Session, cat_id: int, cat_update: schemas.CategoryCreate):
     db_cat = db.query(models.Category).filter(models.Category.id == cat_id).first()
@@ -154,15 +180,24 @@ def update_category(db: Session, cat_id: int, cat_update: schemas.CategoryCreate
         return None
     
     update_data = cat_update.dict(exclude_unset=True)
+    
+    # Se estiver desativando a categoria, desativa todas as subcategorias recursivamente
+    is_deactivating = update_data.get('is_active') is False and db_cat.is_active is True
+    
     for key, value in update_data.items():
         setattr(db_cat, key, value)
     
+    if is_deactivating:
+        def deactivate_recursive(cat):
+            for sub in cat.subcategories:
+                sub.is_active = False
+                deactivate_recursive(sub)
+        deactivate_recursive(db_cat)
+
     db.add(db_cat)
     db.commit()
     db.refresh(db_cat)
     return db_cat
-
-    return False
 
 def get_or_create_default_category(db: Session):
     default_cat_name = "Sem Categoria"
@@ -187,11 +222,16 @@ def create_status(db: Session, status: schemas.StatusCreate):
 
 def delete_status(db: Session, status_id: int):
     db_status = db.query(models.Status).filter(models.Status.id == status_id).first()
-    if db_status:
-        db.delete(db_status)
-        db.commit()
-        return True
-    return False
+    if not db_status:
+        return False, "Status não encontrado"
+    
+    # Verifica se há tickets vinculados
+    if db_status.tickets:
+        return False, "Não é possível excluir este status porque existem chamados vinculados a ele. Tente desativá-lo em vez de excluir."
+        
+    db.delete(db_status)
+    db.commit()
+    return True, "Status excluído com sucesso"
 
 def update_status(db: Session, status_id: int, status_update: schemas.StatusBase):
     db_status = db.query(models.Status).filter(models.Status.id == status_id).first()
@@ -364,9 +404,13 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
         
     # Log de Histórico
     for field, new_value in update_data.items():
+        # Evita log duplicado: se estamos alterando status_id, ignoramos o log do campo 'status' (legado/denormalizado)
+        if field == "status" and "status_id" in update_data:
+            continue
+            
         old_value = getattr(db_ticket, field)
         if old_value != new_value:
-            event_type = f"{field}_change"
+            event_type = "status_change" if field == "status_id" else ("category_change" if field == "category_id" else f"{field}_change")
             desc = f"Alterou {field} de '{old_value}' para '{new_value}'"
             
             # Nomes amigáveis para campos específicos
@@ -377,9 +421,11 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 else:
                     desc = "Descrição do ticket atualizada"
             elif field == "status_id":
+                old_status = db.query(models.Status).filter(models.Status.id == old_value).first()
                 new_status = db.query(models.Status).filter(models.Status.id == new_value).first()
+                old_label = old_status.name if old_status else str(old_value)
                 new_label = new_status.name if new_status else str(new_value)
-                desc = f"Alterou Status para '{new_label}'"
+                desc = f"Alterou status de '{old_label}' para '{new_label}'"
             elif field == "assigned_user_id":
                 new_user = db.query(models.User).filter(models.User.id == new_value).first()
                 new_label = new_user.full_name or new_user.username if new_user else "Ninguém"
@@ -411,9 +457,11 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 new_label = p_labels.get(str(new_value).lower(), new_value)
                 desc = f"Alterou prioridade de '{old_label}' para '{new_label}'"
             elif field == "category_id":
+                old_cat = db.query(models.Category).filter(models.Category.id == old_value).first()
                 new_cat = db.query(models.Category).filter(models.Category.id == new_value).first()
+                old_label = old_cat.name if old_cat else "Sem Categoria"
                 new_label = new_cat.name if new_cat else "Sem Categoria"
-                desc = f"Alterou categoria para '{new_label}'"
+                desc = f"Alterou categoria de '{old_label}' para '{new_label}'"
 
             create_ticket_history(db, schemas.TicketHistoryCreate(
                 ticket_id=ticket_id,
