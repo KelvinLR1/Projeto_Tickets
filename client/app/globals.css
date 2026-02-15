@@ -412,26 +412,43 @@ body {
   }
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar Premium */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-theme);
+  border-radius: 20px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+  transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-theme);
+  border-radius: 20px;
+}
+
+/* Firefox Support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-theme) transparent;
+}
+
+/* Internal Areas Scrollbar Classes */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 .custom-scrollbar {
   scrollbar-gutter: stable;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-border-theme);
-  border-radius: 10px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent-theme);
 }
 
 /* 

@@ -43,9 +43,15 @@ class Status(StatusBase):
 class SectorBase(BaseModel):
     name: str
     description: Optional[str] = None
+    is_active: bool = True
 
 class SectorCreate(SectorBase):
     pass
+
+class SectorUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class Sector(SectorBase):
     id: int
@@ -208,6 +214,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    sector_ids: Optional[List[int]] = []
 
 class UserUpdate(BaseModel):
     email: Optional[str] = None
@@ -216,6 +223,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     is_active: Optional[bool] = None
     profile_id: Optional[int] = None
+    sector_ids: Optional[List[int]] = None
 
 class User(UserBase):
     id: int

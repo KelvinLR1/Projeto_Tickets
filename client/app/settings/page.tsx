@@ -6,7 +6,7 @@ import {
     Plus, Edit2, Trash2, Shield, User as UserIcon, Mail, ShieldCheck,
     Settings as SettingsIcon, Key, UserSquare2, Users, ArrowLeft, ArrowRight,
     Link2, Tag, PlusCircle, HardDrive, FolderPlus, Download, Upload, AlertTriangle,
-    Eye, EyeOff
+    XCircle, Eye, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getOllamaModels } from '@/lib/ollama';
@@ -18,6 +18,7 @@ import api, {
     getUsers, createUser, updateUser, deleteUser, User,
     resetDatabase, downloadBackup, restoreSystem,
     getProfiles, createProfile, updateProfile, deleteProfile, Profile,
+    getSectors, createSector, updateSector, deleteSector, Sector,
     getDefaultBaseURL
 } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
@@ -62,6 +63,26 @@ const AVAILABLE_ACTIONS = [
     { id: 'manage_users', label: 'Gerenciar Usuários' },
     { id: 'manage_profiles', label: 'Gerenciar Perfis' },
     { id: 'view_financial', label: 'Ver Dados Financeiros' },
+];
+
+const THEMES = [
+    { id: 'dark', name: 'Nocturne', bg: 'bg-[#0f172a]', accent: 'bg-blue-600' },
+    { id: 'light', name: 'Alabaster', bg: 'bg-[#f1f5f9]', accent: 'bg-blue-600' },
+    { id: 'cyberpunk', name: 'Neon City', bg: 'bg-[#0d0221]', accent: 'bg-[#ff007f]' },
+    { id: 'matrix', name: 'The Source', bg: 'bg-[#000000]', accent: 'bg-[#00ff41]' },
+    { id: 'antigravity', name: 'Antigravity', bg: 'bg-[#ffffff]', accent: 'bg-[#f59e0b]' },
+    { id: 'sunset', name: 'Solstício', bg: 'bg-[#1a0b2e]', accent: 'bg-[#f06292]' },
+    { id: 'nordic', name: 'Ártico', bg: 'bg-[#242933]', accent: 'bg-[#88c0d0]' },
+    { id: 'gold', name: 'Real Gold', bg: 'bg-[#050505]', accent: 'bg-[#d4af37]' },
+    { id: 'carbon-red', name: 'Carbon Red', bg: 'bg-[#1c1917]', accent: 'bg-[#ef4444]' },
+    { id: 'obsidian-red', name: 'Obsidian Red', bg: 'bg-[#000000]', accent: 'bg-[#991b1b]' },
+    { id: 'office-red', name: 'Office Red', bg: 'bg-[#f8fafc]', accent: 'bg-[#e11d48]' },
+    { id: 'ash-red', name: 'Ash Red', bg: 'bg-[#e2e8f0]', accent: 'bg-[#dc2626]' },
+    { id: 'hub', name: 'HUB', bg: 'bg-[#f8fafc]', accent: 'bg-[#b91c1c]' },
+    { id: 'hub-dark', name: 'HUB Dark', bg: 'bg-[#0d0d0d]', accent: 'bg-[#dc2626]' },
+    { id: 'midnight-purple', name: 'Midnight', bg: 'bg-[#0b061a]', accent: 'bg-[#8b5cf6]' },
+    { id: 'emerald-dark', name: 'Emerald', bg: 'bg-[#021a14]', accent: 'bg-[#10b981]' },
+    { id: 'custom', name: 'Personalizado', bg: 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500', accent: 'bg-white' },
 ];
 
 export default function SettingsPage() {
@@ -122,6 +143,15 @@ export default function SettingsPage() {
 
     // Estado Categorias
     const [categories, setCategories] = useState<Category[]>([]);
+
+    // Estado Perfis
+    const [profiles, setProfiles] = useState<Profile[]>([]);
+
+    // Estado Setores
+    const [sectors, setSectors] = useState<Sector[]>([]);
+
+    // Form States
+    const [newSectorName, setNewSectorName] = useState('');
     const [newCategoryName, setNewCategoryName] = useState('');
     const [parentCategory, setParentCategory] = useState<string>('');
     const [loadingCats, setLoadingCats] = useState(false);
@@ -153,7 +183,6 @@ export default function SettingsPage() {
     const [expandedCategories, setExpandedCategories] = useState<number[]>([]);
 
     // Estado Gestão de Perfis
-    const [profiles, setProfiles] = useState<Profile[]>([]);
     const [loadingProfiles, setLoadingProfiles] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [currentProfile, setCurrentProfile] = useState<Partial<Profile>>({ permissions: { menus: [], actions: [] } });
@@ -170,6 +199,7 @@ export default function SettingsPage() {
     const [logoPreviewLight, setLogoPreviewLight] = useState<string | null>(null);
     const [logoPreviewDark, setLogoPreviewDark] = useState<string | null>(null);
     const [isSavingSystem, setIsSavingSystem] = useState(false);
+    const [editingSector, setEditingSector] = useState<Sector | null>(null);
 
     // Real-time Preview de Cores Customizadas
     useEffect(() => {
@@ -215,6 +245,7 @@ export default function SettingsPage() {
         loadModels();
         fetchCategories();
         fetchStatuses();
+        fetchSectors();
         if (user) {
             fetchUsers();
         }
@@ -411,9 +442,82 @@ export default function SettingsPage() {
             const data = await getProfiles();
             setProfiles(data);
         } catch (error) {
-            console.error('Failed to fetch profiles:', error);
+            console.error('Erro ao buscar perfis:', error);
         } finally {
             setLoadingProfiles(false);
+        }
+    };
+
+    const fetchSectors = async () => {
+        try {
+            const data = await getSectors();
+            setSectors(data);
+        } catch (error) {
+            console.error('Failed to fetch sectors:', error);
+        }
+    };
+
+    const handleCreateSector = async () => {
+        if (!newSectorName.trim()) return;
+        try {
+            if (editingSector) {
+                await updateSector(editingSector.id, {
+                    name: newSectorName,
+                    is_active: editingSector.is_active
+                });
+                showNotification('Setor atualizado!', 'success');
+            } else {
+                await createSector({
+                    name: newSectorName,
+                    is_active: true
+                });
+                showNotification('Setor criado!', 'success');
+            }
+            setNewSectorName('');
+            setEditingSector(null);
+            fetchSectors();
+        } catch (error) {
+            showNotification(editingSector ? 'Erro ao atualizar setor' : 'Erro ao criar setor', 'error');
+        }
+    };
+
+    const handleToggleSectorActive = async (sector: Sector) => {
+        try {
+            await updateSector(sector.id, { is_active: !sector.is_active });
+            showNotification(`Setor ${!sector.is_active ? 'ativado' : 'desativado'}`, 'success');
+            fetchSectors();
+        } catch (error) {
+            showNotification('Erro ao alterar status do setor', 'error');
+        }
+    };
+
+    const handleEditSector = (sector: Sector) => {
+        setEditingSector(sector);
+        setNewSectorName(sector.name);
+    };
+
+    const cancelEditSector = () => {
+        setEditingSector(null);
+        setNewSectorName('');
+    };
+
+    const handleDeleteSector = async (id: number) => {
+        const confirmed = await askConfirm({
+            title: 'Excluir Setor',
+            message: 'Deseja excluir este setor?',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (confirmed) {
+            try {
+                await deleteSector(id);
+                showNotification('Setor removido', 'success');
+                fetchSectors();
+            } catch (error: any) {
+                const detail = error.response?.data?.detail || 'Erro ao excluir setor';
+                showNotification(detail, 'error');
+            }
         }
     };
 
@@ -850,1218 +954,1297 @@ export default function SettingsPage() {
 
                         {/* Área de Conteúdo Dinâmico */}
                         <div className="flex-1 w-full space-y-10">
-                            <AnimatePresence mode="wait">
-                                {activeTab === 'general' && (
-                                    <motion.div
-                                        key="general"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="glass-card p-8 rounded-3xl space-y-8 relative group transition-all z-10"
-                                    >
-                                        <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
-                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                <Globe className="w-20 h-20" />
+
+                            {activeTab === 'general' && (
+                                <motion.div
+                                    key="general"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="glass-card p-8 rounded-3xl space-y-8 relative group transition-all z-10"
+                                >
+                                    <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                            <Globe className="w-20 h-20" />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-accent-theme relative z-10">
+                                        <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                            <Globe className="w-6 h-6" />
+                                        </div>
+                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Conectividade</h2>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Servidor Central (API)</label>
+                                            <input
+                                                className="w-full bg-[var(--color-input)] border border-border-theme rounded-2xl p-4 text-foreground focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all placeholder-[var(--color-text-muted)] font-mono text-sm shadow-inner"
+                                                type="text"
+                                                placeholder="Ex: http://192.168.1.50:8000"
+                                                value={config.apiUrl}
+                                                onChange={(e) => setConfig({ ...config, apiUrl: e.target.value })}
+                                            />
+                                            <div className="mt-4 flex items-center justify-between">
+                                                <p className="text-[10px] text-[var(--color-text-muted)] font-mono italic">Backend FastAPI na rede local (Porta 8080).</p>
+                                                <button
+                                                    onClick={handleTestConnection}
+                                                    disabled={testingConnection}
+                                                    className={clsx(
+                                                        "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                                                        connectionStatus === 'success' ? "bg-green-500/20 text-green-400 border border-green-500/30" :
+                                                            connectionStatus === 'error' ? "bg-red-500/20 text-red-400 border border-red-500/30" :
+                                                                "bg-white/5 hover:bg-white/10 text-foreground border border-white/10"
+                                                    )}
+                                                >
+                                                    {testingConnection ? (
+                                                        <>
+                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                            Testando...
+                                                        </>
+                                                    ) : connectionStatus === 'success' ? (
+                                                        <>
+                                                            <CheckCircle2 className="w-3 h-3" />
+                                                            Conectado
+                                                        </>
+                                                    ) : connectionStatus === 'error' ? (
+                                                        <>
+                                                            <AlertTriangle className="w-3 h-3" />
+                                                            Falha na Conexão
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Globe className="w-3 h-3" />
+                                                            Testar Conexão
+                                                        </>
+                                                    )}
+                                                </button>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-3 text-accent-theme relative z-10">
-                                            <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                                <Globe className="w-6 h-6" />
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Ollama Local (URL)</label>
+                                            <input
+                                                className="w-full bg-[var(--color-input)] border border-border-theme rounded-2xl p-4 text-foreground focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all font-mono text-sm shadow-inner"
+                                                type="text"
+                                                value={config.ollamaUrl}
+                                                onChange={(e) => setConfig({ ...config, ollamaUrl: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            {/* Aba: Motores IA */}
+                            {activeTab === 'ai' && (
+                                <motion.div
+                                    key="ai"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="glass-card p-8 rounded-3xl space-y-8 relative group transition-all z-10"
+                                >
+                                    <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                            <Cpu className="w-20 h-20" />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-accent-theme relative z-10">
+                                        <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                            <Cpu className="w-6 h-6" />
+                                        </div>
+                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Motores de IA</h2>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                        <CustomSelect
+                                            label="Modelo de Texto"
+                                            value={config.textModel}
+                                            onChange={val => setConfig({ ...config, textModel: val })}
+                                            icon={loadingModels ? <Loader2 className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />}
+                                            options={textModels.map(m => ({
+                                                value: m.name,
+                                                label: m.name,
+                                                icon: <Cpu className="w-4 h-4" />,
+                                                subtitle: getModelTip(m.name).label
+                                            }))}
+                                        />
+                                        {config.textModel && (
+                                            <div className="mt-1 flex items-center justify-between px-2">
+                                                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full bg-accent-theme/10 ${getModelTip(config.textModel).color}`}>
+                                                    {getModelTip(config.textModel).label}
+                                                </span>
+                                                <span className="text-[8px] text-[var(--color-text-muted)] font-mono font-bold">
+                                                    V: {getModelTip(config.textModel).speed} | Q: {getModelTip(config.textModel).quality}
+                                                </span>
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Conectividade</h2>
+                                        )}
+
+                                        <CustomSelect
+                                            label="Visão (Multimodal)"
+                                            value={config.visionModel}
+                                            onChange={val => setConfig({ ...config, visionModel: val })}
+                                            icon={<HardDrive className="w-3 h-3" />}
+                                            options={visionModels.length > 0 ? visionModels.map(m => ({
+                                                value: m.name,
+                                                label: m.name,
+                                                icon: <HardDrive className="w-4 h-4" />
+                                            })) : [{ value: '', label: 'Nenhum modelo detectado', className: 'opacity-50' }]}
+                                        />
+                                        {visionModels.length === 0 && (
+                                            <p className="mt-1 text-[8px] text-orange-500 font-mono font-bold px-2">⚠️ Nenhum modelo CLIP detectado.</p>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            {/* Aba: Organização */}
+                            {activeTab === 'org' && (
+                                <motion.div
+                                    key="org"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="space-y-10"
+                                >
+                                    {/* Gestão de Status */}
+                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden group transition-all">
+                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                            <CheckCircle2 className="w-24 h-24" />
+                                        </div>
+                                        <div className="flex items-center gap-3 text-blue-500">
+                                            <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                <CheckCircle2 className="w-6 h-6" />
+                                            </div>
+                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Fluxo e Status de Chamado</h2>
                                         </div>
 
-                                        <div className="space-y-6">
-                                            <div>
-                                                <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Servidor Central (API)</label>
-                                                <input
-                                                    className="w-full bg-[var(--color-input)] border border-border-theme rounded-2xl p-4 text-foreground focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all placeholder-[var(--color-text-muted)] font-mono text-sm shadow-inner"
-                                                    type="text"
-                                                    placeholder="Ex: http://192.168.1.50:8000"
-                                                    value={config.apiUrl}
-                                                    onChange={(e) => setConfig({ ...config, apiUrl: e.target.value })}
-                                                />
-                                                <div className="mt-4 flex items-center justify-between">
-                                                    <p className="text-[10px] text-[var(--color-text-muted)] font-mono italic">Backend FastAPI na rede local (Porta 8080).</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                            {/* Formulário */}
+                                            <div className="space-y-6">
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">
+                                                        {editingStatus ? 'Editar Estado' : 'Novo Estado'}
+                                                    </h3>
+                                                    {editingStatus && (
+                                                        <button onClick={cancelEditStatus} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
+                                                    <div>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Status</label>
+                                                        <input
+                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-blue-500/30 outline-none transition-all shadow-sm"
+                                                            placeholder="Ex: Em Teste, Aguardando Cliente..."
+                                                            value={newStatusName}
+                                                            onChange={e => setNewStatusName(e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-3 border-l-2 border-blue-500/50 pl-2">Representação Visual (Cor)</label>
+                                                        <div className="flex items-center gap-4 bg-background/40 p-3 rounded-2xl border border-border-theme group/color">
+                                                            <div className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
+                                                                <input
+                                                                    type="color"
+                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                                    value={newStatusColor}
+                                                                    onChange={e => setNewStatusColor(e.target.value)}
+                                                                />
+                                                                <div
+                                                                    className="w-12 h-12 rounded-xl border border-white/20 shadow-lg flex items-center justify-center relative overflow-hidden transition-all duration-500"
+                                                                    style={{
+                                                                        backgroundColor: newStatusColor,
+                                                                        boxShadow: `0 8px 20px -6px ${newStatusColor}66`
+                                                                    }}
+                                                                >
+                                                                    <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent pointer-events-none" />
+                                                                    <Palette className="w-5 h-5 text-white/80 drop-shadow-md relative z-0" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 space-y-1">
+                                                                <div className="flex items-center justify-between px-1">
+                                                                    <span className="text-[8px] font-black uppercase text-[var(--color-text-muted)] tracking-tighter">Hex Code</span>
+                                                                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: newStatusColor }} />
+                                                                </div>
+                                                                <input
+                                                                    className="w-full bg-white/5 border border-border-theme rounded-xl p-2.5 text-xs font-mono outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all uppercase"
+                                                                    value={newStatusColor}
+                                                                    maxLength={7}
+                                                                    onChange={e => {
+                                                                        let val = e.target.value;
+                                                                        if (!val.startsWith('#') && val.length > 0) val = '#' + val;
+                                                                        setNewStatusColor(val);
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3 bg-background/40 p-3 rounded-xl border border-border-theme">
+                                                        <input
+                                                            type="checkbox"
+                                                            id="isFinal"
+                                                            checked={newStatusIsFinal}
+                                                            onChange={e => setNewStatusIsFinal(e.target.checked)}
+                                                            className="w-5 h-5 rounded-md border-border-theme bg-[var(--color-input)] text-blue-500 focus:ring-blue-500/30 cursor-pointer"
+                                                        />
+                                                        <label htmlFor="isFinal" className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest cursor-pointer">Status Finalizador (Gera encerramento)</label>
+                                                    </div>
                                                     <button
-                                                        onClick={handleTestConnection}
-                                                        disabled={testingConnection}
-                                                        className={clsx(
-                                                            "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                                                            connectionStatus === 'success' ? "bg-green-500/20 text-green-400 border border-green-500/30" :
-                                                                connectionStatus === 'error' ? "bg-red-500/20 text-red-400 border border-red-500/30" :
-                                                                    "bg-white/5 hover:bg-white/10 text-foreground border border-white/10"
-                                                        )}
+                                                        onClick={handleCreateStatus}
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
                                                     >
-                                                        {testingConnection ? (
-                                                            <>
-                                                                <Loader2 className="w-3 h-3 animate-spin" />
-                                                                Testando...
-                                                            </>
-                                                        ) : connectionStatus === 'success' ? (
-                                                            <>
-                                                                <CheckCircle2 className="w-3 h-3" />
-                                                                Conectado
-                                                            </>
-                                                        ) : connectionStatus === 'error' ? (
-                                                            <>
-                                                                <AlertTriangle className="w-3 h-3" />
-                                                                Falha na Conexão
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Globe className="w-3 h-3" />
-                                                                Testar Conexão
-                                                            </>
-                                                        )}
+                                                        <PlusCircle className="w-4 h-4" />
+                                                        Adicionar ao Fluxo
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Ollama Local (URL)</label>
-                                                <input
-                                                    className="w-full bg-[var(--color-input)] border border-border-theme rounded-2xl p-4 text-foreground focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all font-mono text-sm shadow-inner"
-                                                    type="text"
-                                                    value={config.ollamaUrl}
-                                                    onChange={(e) => setConfig({ ...config, ollamaUrl: e.target.value })}
-                                                />
+
+                                            {/* Listagem */}
+                                            <div className="space-y-6">
+                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Lista de Estados Ativos</h3>
+                                                <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
+                                                    {loadingStatuses ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></div> :
+                                                        statuses.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum status customizado.</div> :
+                                                            statuses.map(st => (
+                                                                <div key={st.id} className={clsx(
+                                                                    "flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm",
+                                                                    !st.is_active && "opacity-50 grayscale-[0.5]"
+                                                                )}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-4 h-4 rounded-full border border-white/10 shadow-sm" style={{ backgroundColor: st.color }} />
+                                                                        <span className={clsx(
+                                                                            "text-sm font-bold tracking-tight",
+                                                                            !st.is_active && "line-through"
+                                                                        )}>{st.name}</span>
+                                                                        {st.is_final && (
+                                                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">Finalizado</span>
+                                                                        )}
+                                                                        {!st.is_active && (
+                                                                            <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/20">Inativo</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                                                                        <button
+                                                                            onClick={() => handleToggleStatusActivation(st)}
+                                                                            className={clsx(
+                                                                                "p-2 rounded-xl transition-all",
+                                                                                st.is_active ? "text-blue-500 hover:bg-blue-500/10" : "text-gray-400 hover:text-blue-500 hover:bg-blue-500/10"
+                                                                            )}
+                                                                            title={st.is_active ? "Desativar" : "Ativar"}
+                                                                        >
+                                                                            {st.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                                                        </button>
+                                                                        <button onClick={() => handleEditStatus(st)} className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl transition-all">
+                                                                            <Edit2 className="w-4 h-4" />
+                                                                        </button>
+                                                                        <button onClick={() => handleDeleteStatus(st.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                </div>
                                             </div>
                                         </div>
-                                    </motion.div>
-                                )}
+                                    </div>
 
-                                {/* Aba: Motores IA */}
-                                {activeTab === 'ai' && (
-                                    <motion.div
-                                        key="ai"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="glass-card p-8 rounded-3xl space-y-8 relative group transition-all z-10"
-                                    >
+                                    {/* Gestão de Categorias */}
+                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative group transition-all z-10">
                                         <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
                                             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                <Cpu className="w-20 h-20" />
+                                                <FolderPlus className="w-24 h-24" />
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3 text-accent-theme relative z-10">
                                             <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                                <Cpu className="w-6 h-6" />
+                                                <Tag className="w-6 h-6" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Motores de IA</h2>
+                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Organização de Categorias</h2>
                                         </div>
 
-                                        <div className="space-y-6">
-                                            <CustomSelect
-                                                label="Modelo de Texto"
-                                                value={config.textModel}
-                                                onChange={val => setConfig({ ...config, textModel: val })}
-                                                icon={loadingModels ? <Loader2 className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />}
-                                                options={textModels.map(m => ({
-                                                    value: m.name,
-                                                    label: m.name,
-                                                    icon: <Cpu className="w-4 h-4" />,
-                                                    subtitle: getModelTip(m.name).label
-                                                }))}
-                                            />
-                                            {config.textModel && (
-                                                <div className="mt-1 flex items-center justify-between px-2">
-                                                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full bg-accent-theme/10 ${getModelTip(config.textModel).color}`}>
-                                                        {getModelTip(config.textModel).label}
-                                                    </span>
-                                                    <span className="text-[8px] text-[var(--color-text-muted)] font-mono font-bold">
-                                                        V: {getModelTip(config.textModel).speed} | Q: {getModelTip(config.textModel).quality}
-                                                    </span>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                            {/* Formulário */}
+                                            <div className="space-y-6">
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">
+                                                        {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
+                                                    </h3>
+                                                    {editingCategory && (
+                                                        <button onClick={cancelEditCategory} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
+                                                    )}
                                                 </div>
-                                            )}
-
-                                            <CustomSelect
-                                                label="Visão (Multimodal)"
-                                                value={config.visionModel}
-                                                onChange={val => setConfig({ ...config, visionModel: val })}
-                                                icon={<HardDrive className="w-3 h-3" />}
-                                                options={visionModels.length > 0 ? visionModels.map(m => ({
-                                                    value: m.name,
-                                                    label: m.name,
-                                                    icon: <HardDrive className="w-4 h-4" />
-                                                })) : [{ value: '', label: 'Nenhum modelo detectado', className: 'opacity-50' }]}
-                                            />
-                                            {visionModels.length === 0 && (
-                                                <p className="mt-1 text-[8px] text-orange-500 font-mono font-bold px-2">⚠️ Nenhum modelo CLIP detectado.</p>
-                                            )}
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {/* Aba: Organização */}
-                                {activeTab === 'org' && (
-                                    <motion.div
-                                        key="org"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="space-y-10"
-                                    >
-                                        {/* Gestão de Status */}
-                                        <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden group transition-all">
-                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                <CheckCircle2 className="w-24 h-24" />
-                                            </div>
-                                            <div className="flex items-center gap-3 text-blue-500">
-                                                <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                                                    <CheckCircle2 className="w-6 h-6" />
-                                                </div>
-                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Fluxo e Status de Chamado</h2>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                                                {/* Formulário */}
-                                                <div className="space-y-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">
-                                                            {editingStatus ? 'Editar Estado' : 'Novo Estado'}
-                                                        </h3>
-                                                        {editingStatus && (
-                                                            <button onClick={cancelEditStatus} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
-                                                        )}
-                                                    </div>
-                                                    <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
-                                                        <div>
-                                                            <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Status</label>
-                                                            <input
-                                                                className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-blue-500/30 outline-none transition-all shadow-sm"
-                                                                placeholder="Ex: Em Teste, Aguardando Cliente..."
-                                                                value={newStatusName}
-                                                                onChange={e => setNewStatusName(e.target.value)}
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-3 border-l-2 border-blue-500/50 pl-2">Representação Visual (Cor)</label>
-                                                            <div className="flex items-center gap-4 bg-background/40 p-3 rounded-2xl border border-border-theme group/color">
-                                                                <div className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
-                                                                    <input
-                                                                        type="color"
-                                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                                                        value={newStatusColor}
-                                                                        onChange={e => setNewStatusColor(e.target.value)}
-                                                                    />
-                                                                    <div
-                                                                        className="w-12 h-12 rounded-xl border border-white/20 shadow-lg flex items-center justify-center relative overflow-hidden transition-all duration-500"
-                                                                        style={{
-                                                                            backgroundColor: newStatusColor,
-                                                                            boxShadow: `0 8px 20px -6px ${newStatusColor}66`
-                                                                        }}
-                                                                    >
-                                                                        <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent pointer-events-none" />
-                                                                        <Palette className="w-5 h-5 text-white/80 drop-shadow-md relative z-0" />
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex-1 space-y-1">
-                                                                    <div className="flex items-center justify-between px-1">
-                                                                        <span className="text-[8px] font-black uppercase text-[var(--color-text-muted)] tracking-tighter">Hex Code</span>
-                                                                        <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: newStatusColor }} />
-                                                                    </div>
-                                                                    <input
-                                                                        className="w-full bg-white/5 border border-border-theme rounded-xl p-2.5 text-xs font-mono outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all uppercase"
-                                                                        value={newStatusColor}
-                                                                        maxLength={7}
-                                                                        onChange={e => {
-                                                                            let val = e.target.value;
-                                                                            if (!val.startsWith('#') && val.length > 0) val = '#' + val;
-                                                                            setNewStatusColor(val);
-                                                                        }}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-3 bg-background/40 p-3 rounded-xl border border-border-theme">
-                                                            <input
-                                                                type="checkbox"
-                                                                id="isFinal"
-                                                                checked={newStatusIsFinal}
-                                                                onChange={e => setNewStatusIsFinal(e.target.checked)}
-                                                                className="w-5 h-5 rounded-md border-border-theme bg-[var(--color-input)] text-blue-500 focus:ring-blue-500/30 cursor-pointer"
-                                                            />
-                                                            <label htmlFor="isFinal" className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest cursor-pointer">Status Finalizador (Gera encerramento)</label>
-                                                        </div>
-                                                        <button
-                                                            onClick={handleCreateStatus}
-                                                            className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
-                                                        >
-                                                            <PlusCircle className="w-4 h-4" />
-                                                            Adicionar ao Fluxo
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Listagem */}
-                                                <div className="space-y-6">
-                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Lista de Estados Ativos</h3>
-                                                    <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
-                                                        {loadingStatuses ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></div> :
-                                                            statuses.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum status customizado.</div> :
-                                                                statuses.map(st => (
-                                                                    <div key={st.id} className={clsx(
-                                                                        "flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm",
-                                                                        !st.is_active && "opacity-50 grayscale-[0.5]"
-                                                                    )}>
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className="w-4 h-4 rounded-full border border-white/10 shadow-sm" style={{ backgroundColor: st.color }} />
-                                                                            <span className={clsx(
-                                                                                "text-sm font-bold tracking-tight",
-                                                                                !st.is_active && "line-through"
-                                                                            )}>{st.name}</span>
-                                                                            {st.is_final && (
-                                                                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">Finalizado</span>
-                                                                            )}
-                                                                            {!st.is_active && (
-                                                                                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/20">Inativo</span>
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
-                                                                            <button
-                                                                                onClick={() => handleToggleStatusActivation(st)}
-                                                                                className={clsx(
-                                                                                    "p-2 rounded-xl transition-all",
-                                                                                    st.is_active ? "text-blue-500 hover:bg-blue-500/10" : "text-gray-400 hover:text-blue-500 hover:bg-blue-500/10"
-                                                                                )}
-                                                                                title={st.is_active ? "Desativar" : "Ativar"}
-                                                                            >
-                                                                                {st.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                                                                            </button>
-                                                                            <button onClick={() => handleEditStatus(st)} className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl transition-all">
-                                                                                <Edit2 className="w-4 h-4" />
-                                                                            </button>
-                                                                            <button onClick={() => handleDeleteStatus(st.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
-                                                                                <Trash2 className="w-4 h-4" />
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Gestão de Categorias */}
-                                        <div className="glass-card p-10 rounded-3xl space-y-10 relative group transition-all z-10">
-                                            <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
-                                                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                    <FolderPlus className="w-24 h-24" />
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3 text-accent-theme relative z-10">
-                                                <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                                    <Tag className="w-6 h-6" />
-                                                </div>
-                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Organização de Categorias</h2>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                                                {/* Formulário */}
-                                                <div className="space-y-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">
-                                                            {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
-                                                        </h3>
-                                                        {editingCategory && (
-                                                            <button onClick={cancelEditCategory} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
-                                                        )}
-                                                    </div>
-                                                    <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
-                                                        <div>
-                                                            <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome da Categoria</label>
-                                                            <input
-                                                                className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all shadow-sm"
-                                                                placeholder="Ex: Hardware, Software, Financeiro..."
-                                                                value={newCategoryName}
-                                                                onChange={e => setNewCategoryName(e.target.value)}
-                                                            />
-                                                        </div>
-                                                        <CustomSelect
-                                                            label="Categoria Pai (Opcional)"
-                                                            value={parentCategory}
-                                                            onChange={setParentCategory}
-                                                            options={[
-                                                                { value: '', label: 'Nenhuma (Categoria Principal)', icon: <Tag className="w-4 h-4 opacity-50" /> },
-                                                                ...categories.filter(c => !c.parent_id).map(cat => ({
-                                                                    value: cat.id,
-                                                                    label: cat.name,
-                                                                    icon: <Tag className="w-4 h-4 text-accent-theme" />
-                                                                }))
-                                                            ]}
+                                                <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
+                                                    <div>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome da Categoria</label>
+                                                        <input
+                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all shadow-sm"
+                                                            placeholder="Ex: Hardware, Software, Financeiro..."
+                                                            value={newCategoryName}
+                                                            onChange={e => setNewCategoryName(e.target.value)}
                                                         />
-                                                        <button
-                                                            onClick={handleCreateCategory}
-                                                            className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
-                                                        >
-                                                            {editingCategory ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
-                                                            {editingCategory ? 'Salvar Alterações' : 'Criar Categoria'}
-                                                        </button>
                                                     </div>
+                                                    <CustomSelect
+                                                        label="Categoria Pai (Opcional)"
+                                                        value={parentCategory}
+                                                        onChange={setParentCategory}
+                                                        options={[
+                                                            { value: '', label: 'Nenhuma (Categoria Principal)', icon: <Tag className="w-4 h-4 opacity-50" /> },
+                                                            ...categories.filter(c => !c.parent_id).map(cat => ({
+                                                                value: cat.id,
+                                                                label: cat.name,
+                                                                icon: <Tag className="w-4 h-4 text-accent-theme" />
+                                                            }))
+                                                        ]}
+                                                    />
+                                                    <button
+                                                        onClick={handleCreateCategory}
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
+                                                    >
+                                                        {editingCategory ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
+                                                        {editingCategory ? 'Salvar Alterações' : 'Criar Categoria'}
+                                                    </button>
                                                 </div>
+                                            </div>
 
-                                                {/* Listagem */}
-                                                <div className="space-y-6">
-                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">Categorias Ativas</h3>
-                                                    <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
-                                                        {loadingCats ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-accent-theme" /></div> :
-                                                            categories.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhuma categoria cadastrada.</div> :
-                                                                categories.filter(c => !c.parent_id).map(cat => {
-                                                                    const isExpanded = expandedCategories.includes(cat.id);
-                                                                    const subcats = cat.subcategories || [];
-                                                                    const hasSubcats = subcats.length > 0;
+                                            {/* Listagem */}
+                                            <div className="space-y-6">
+                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">Categorias Ativas</h3>
+                                                <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
+                                                    {loadingCats ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-accent-theme" /></div> :
+                                                        categories.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhuma categoria cadastrada.</div> :
+                                                            categories.filter(c => !c.parent_id).map(cat => {
+                                                                const isExpanded = expandedCategories.includes(cat.id);
+                                                                const subcats = cat.subcategories || [];
+                                                                const hasSubcats = subcats.length > 0;
 
-                                                                    return (
-                                                                        <div key={cat.id} className="space-y-1">
-                                                                            <div
-                                                                                onClick={() => hasSubcats && toggleCategory(cat.id)}
-                                                                                className={clsx(
-                                                                                    "flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm",
-                                                                                    hasSubcats && "cursor-pointer"
+                                                                return (
+                                                                    <div key={cat.id} className="space-y-1">
+                                                                        <div
+                                                                            onClick={() => hasSubcats && toggleCategory(cat.id)}
+                                                                            className={clsx(
+                                                                                "flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm",
+                                                                                hasSubcats && "cursor-pointer"
+                                                                            )}
+                                                                        >
+                                                                            <div className="flex items-center gap-3">
+                                                                                <Tag className={clsx("w-4 h-4", cat.is_active ? "text-accent-theme" : "text-gray-500")} />
+                                                                                <span className={clsx("text-sm font-bold tracking-tight", !cat.is_active && "text-gray-500 line-through opacity-50")}>{cat.name}</span>
+                                                                                {hasSubcats && (
+                                                                                    <span className="px-2 py-0.5 bg-accent-theme/10 text-accent-theme rounded-full text-[9px] font-black">
+                                                                                        {subcats.length} sub
+                                                                                    </span>
                                                                                 )}
-                                                                            >
-                                                                                <div className="flex items-center gap-3">
-                                                                                    <Tag className={clsx("w-4 h-4", cat.is_active ? "text-accent-theme" : "text-gray-500")} />
-                                                                                    <span className={clsx("text-sm font-bold tracking-tight", !cat.is_active && "text-gray-500 line-through opacity-50")}>{cat.name}</span>
-                                                                                    {hasSubcats && (
-                                                                                        <span className="px-2 py-0.5 bg-accent-theme/10 text-accent-theme rounded-full text-[9px] font-black">
-                                                                                            {subcats.length} sub
-                                                                                        </span>
+                                                                                {!cat.is_active && (
+                                                                                    <span className="px-2 py-0.5 bg-red-500/10 text-red-500 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                                                                        Inativa
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleUpdateCategory(cat.id, { ...cat, is_active: !cat.is_active });
+                                                                                    }}
+                                                                                    title={cat.is_active ? "Desativar" : "Ativar"}
+                                                                                    className={clsx(
+                                                                                        "p-2 rounded-xl transition-colors",
+                                                                                        cat.is_active ? "text-gray-500 hover:text-orange-500 hover:bg-orange-500/10" : "text-green-500 hover:bg-green-500/10"
                                                                                     )}
-                                                                                    {!cat.is_active && (
-                                                                                        <span className="px-2 py-0.5 bg-red-500/10 text-red-500 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                                                                >
+                                                                                    {cat.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                                                </button>
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); handleEditCategory(cat); }}
+                                                                                    className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
+                                                                                >
+                                                                                    <Edit2 className="w-4 h-4" />
+                                                                                </button>
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
+                                                                                    className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                                                                                >
+                                                                                    <Trash2 className="w-4 h-4" />
+                                                                                </button>
+                                                                                {hasSubcats && (
+                                                                                    <div className={clsx("p-1.5 transition-transform duration-300", isExpanded ? "rotate-180" : "rotate-0")}>
+                                                                                        <ChevronDown className="w-4 h-4 opacity-50" />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        {/* Subcategorias com Animação */}
+                                                                        {isExpanded && subcats.map((sub, index) => (
+                                                                            <div
+                                                                                key={sub.id}
+                                                                                className="flex items-center justify-between p-3 ml-8 bg-card/20 rounded-xl border border-dashed border-border-theme group/sub hover:bg-card/40 transition-all"
+                                                                            >
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className={clsx("w-2 h-2 rounded-full", sub.is_active ? "bg-accent-theme/40" : "bg-gray-500/40")} />
+                                                                                    <span className={clsx("text-xs font-medium", !sub.is_active && "text-gray-500 line-through opacity-50")}>{sub.name}</span>
+                                                                                    {!sub.is_active && (
+                                                                                        <span className="px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded-full text-[8px] font-black uppercase tracking-wider">
                                                                                             Inativa
                                                                                         </span>
                                                                                     )}
                                                                                 </div>
-                                                                                <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                                                                                <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-all">
                                                                                     <button
                                                                                         onClick={(e) => {
                                                                                             e.stopPropagation();
-                                                                                            handleUpdateCategory(cat.id, { ...cat, is_active: !cat.is_active });
+                                                                                            handleUpdateCategory(sub.id, { ...sub, is_active: !sub.is_active });
                                                                                         }}
-                                                                                        title={cat.is_active ? "Desativar" : "Ativar"}
+                                                                                        title={sub.is_active ? "Desativar" : "Ativar"}
                                                                                         className={clsx(
                                                                                             "p-2 rounded-xl transition-colors",
-                                                                                            cat.is_active ? "text-gray-500 hover:text-orange-500 hover:bg-orange-500/10" : "text-green-500 hover:bg-green-500/10"
+                                                                                            sub.is_active ? "text-gray-500 hover:text-orange-500 hover:bg-orange-500/10" : "text-green-500 hover:bg-green-500/10"
                                                                                         )}
                                                                                     >
-                                                                                        {cat.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                                                        {sub.is_active ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                                                                                     </button>
                                                                                     <button
-                                                                                        onClick={(e) => { e.stopPropagation(); handleEditCategory(cat); }}
+                                                                                        onClick={() => handleEditCategory(sub)}
                                                                                         className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
                                                                                     >
-                                                                                        <Edit2 className="w-4 h-4" />
+                                                                                        <Edit2 className="w-3 h-3" />
                                                                                     </button>
                                                                                     <button
-                                                                                        onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
+                                                                                        onClick={() => handleDeleteCategory(sub.id)}
                                                                                         className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
                                                                                     >
-                                                                                        <Trash2 className="w-4 h-4" />
+                                                                                        <Trash2 className="w-3 h-3" />
                                                                                     </button>
-                                                                                    {hasSubcats && (
-                                                                                        <div className={clsx("p-1.5 transition-transform duration-300", isExpanded ? "rotate-180" : "rotate-0")}>
-                                                                                            <ChevronDown className="w-4 h-4 opacity-50" />
-                                                                                        </div>
-                                                                                    )}
                                                                                 </div>
                                                                             </div>
-                                                                            {/* Subcategorias com Animação */}
-                                                                            {isExpanded && subcats.map((sub, index) => (
-                                                                                <div
-                                                                                    key={sub.id}
-                                                                                    className="flex items-center justify-between p-3 ml-8 bg-card/20 rounded-xl border border-dashed border-border-theme group/sub hover:bg-card/40 transition-all"
-                                                                                >
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        <div className={clsx("w-2 h-2 rounded-full", sub.is_active ? "bg-accent-theme/40" : "bg-gray-500/40")} />
-                                                                                        <span className={clsx("text-xs font-medium", !sub.is_active && "text-gray-500 line-through opacity-50")}>{sub.name}</span>
-                                                                                        {!sub.is_active && (
-                                                                                            <span className="px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded-full text-[8px] font-black uppercase tracking-wider">
-                                                                                                Inativa
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                    <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-all">
-                                                                                        <button
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleUpdateCategory(sub.id, { ...sub, is_active: !sub.is_active });
-                                                                                            }}
-                                                                                            title={sub.is_active ? "Desativar" : "Ativar"}
-                                                                                            className={clsx(
-                                                                                                "p-2 rounded-xl transition-colors",
-                                                                                                sub.is_active ? "text-gray-500 hover:text-orange-500 hover:bg-orange-500/10" : "text-green-500 hover:bg-green-500/10"
-                                                                                            )}
-                                                                                        >
-                                                                                            {sub.is_active ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleEditCategory(sub)}
-                                                                                            className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
-                                                                                        >
-                                                                                            <Edit2 className="w-3 h-3" />
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleDeleteCategory(sub.id)}
-                                                                                            className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
-                                                                                        >
-                                                                                            <Trash2 className="w-3 h-3" />
-                                                                                        </button>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                    </div>
+                                                                        ))}
+                                                                    </div>
+                                                                );
+                                                            })}
                                                 </div>
                                             </div>
                                         </div>
-                                    </motion.div>
-                                )}
+                                    </div>
 
-                                {/* Aba: Usuários */}
-                                {activeTab === 'users' && (user?.role === 'ADMIN' || user?.role === 'ROOT') && (
-                                    <motion.div
-                                        key="users"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="space-y-8"
-                                    >
-                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                            <div className="space-y-1">
-                                                <h2 className="text-2xl font-black italic uppercase tracking-tight">Gestão de Equipe</h2>
-                                                <p className="text-[var(--color-text-muted)] text-[10px] font-black uppercase tracking-widest pl-1">Controle de acesso granular e perfis de permissão.</p>
-                                            </div>
-                                            <button
-                                                onClick={() => {
-                                                    setCurrentUser({ role: 'AGENT', is_active: true });
-                                                    setIsEditingUser(false);
-                                                    setIsUserModalOpen(true);
-                                                }}
-                                                className="group flex items-center justify-center gap-3 px-8 py-4 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95"
-                                            >
-                                                <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-                                                Novo Usuário
-                                            </button>
-                                        </div>
-
-                                        <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-visible relative group">
-                                            <div className="overflow-x-auto custom-scrollbar">
-                                                <table className="w-full text-left border-collapse">
-                                                    <thead>
-                                                        <tr className="border-b border-border-theme/50">
-                                                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)]">Usuário</th>
-                                                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)]">Acesso</th>
-                                                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)]">Status</th>
-                                                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] text-right">Ações</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-border-theme/30">
-                                                        {users.map((u) => (
-                                                            <tr key={u.id} className="group/row hover:bg-white/5 transition-all duration-300">
-                                                                <td className="px-8 py-6">
-                                                                    <div className="flex items-center gap-4">
-                                                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-theme/20 to-primary-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme font-black shadow-inner group-hover/row:scale-105 transition-transform">
-                                                                            {u.username[0].toUpperCase()}
-                                                                        </div>
-                                                                        <div>
-                                                                            <div className="font-bold text-sm text-foreground">{u.full_name || u.username}</div>
-                                                                            <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] opacity-60">{u.email}</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-8 py-6">
-                                                                    <div className={clsx(
-                                                                        "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border",
-                                                                        u.role === 'ROOT' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
-                                                                            u.role === 'ADMIN' ? "bg-accent-theme/10 border-accent-theme/20 text-accent-theme" :
-                                                                                "bg-white/5 border-white/10 text-[var(--color-text-muted)]"
-                                                                    )}>
-                                                                        <Shield className="w-2.5 h-2.5" />
-                                                                        {u.role}
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-8 py-6">
-                                                                    <div className={clsx(
-                                                                        "flex items-center gap-2 text-[9px] font-black uppercase tracking-widest",
-                                                                        u.is_active ? "text-emerald-500" : "text-red-500"
-                                                                    )}>
-                                                                        <div className={clsx("w-1.5 h-1.5 rounded-full", u.is_active ? "bg-emerald-500" : "bg-red-500")} />
-                                                                        {u.is_active ? 'Ativo' : 'Bloqueado'}
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-8 py-6 text-right">
-                                                                    <div className="flex justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setCurrentUser(u);
-                                                                                setIsEditingUser(true);
-                                                                                setIsUserModalOpen(true);
-                                                                            }}
-                                                                            className="p-2.5 bg-white/5 hover:bg-accent-theme/20 text-[var(--color-text-muted)] hover:text-accent-theme rounded-lg border border-white/5 hover:border-accent-theme/30 transition-all"
-                                                                        >
-                                                                            <Edit2 className="w-3.5 h-3.5" />
-                                                                        </button>
-                                                                        {user?.id !== u.id && u.role !== 'ROOT' && (
-                                                                            <button
-                                                                                onClick={() => handleDeleteUser(u.id)}
-                                                                                className="p-2.5 bg-white/5 hover:bg-red-500/20 text-[var(--color-text-muted)] hover:text-red-500 rounded-lg border border-white/5 hover:border-red-500/30 transition-all"
-                                                                            >
-                                                                                <Trash2 className="w-3.5 h-3.5" />
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
+                                    {/* Gestão de Setores */}
+                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative group transition-all z-0">
+                                        <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                <FolderPlus className="w-24 h-24" />
                                             </div>
                                         </div>
-                                    </motion.div>
-                                )}
-
-                                {/* Aba: Identidade do Sistema */}
-                                {activeTab === 'system' && (
-                                    <motion.div
-                                        key="system"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden transition-all"
-                                    >
-                                        <div className="flex items-center gap-3 text-accent-theme">
-                                            <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                                <ShieldCheck className="w-6 h-6" />
+                                        <div className="flex items-center gap-3 text-emerald-500 relative z-10">
+                                            <div className="p-2.5 bg-emerald-500/10 rounded-xl">
+                                                <Tag className="w-6 h-6" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Identidade do Sistema</h2>
+                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Gestão de Setores</h2>
                                         </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                            {/* Formulário */}
+                                            {/* Formulário */}
                                             <div className="space-y-6">
-                                                <div className="space-y-3">
-                                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">
-                                                        Nome do Projeto
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        value={systemSettings.system_name}
-                                                        onChange={(e) => setSystemSettings({ ...systemSettings, system_name: e.target.value })}
-                                                        className="w-full bg-background/40 border border-border-theme rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:border-accent-theme/50 transition-all"
-                                                        placeholder="Ex: MyTicket Portal"
-                                                    />
-                                                    <p className="text-[9px] text-[var(--color-text-muted)] italic px-1">
-                                                        Este nome será exibido na barra lateral, navegação e tela de login.
-                                                    </p>
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">
+                                                        {editingSector ? 'Editar Setor' : 'Novo Setor'}
+                                                    </h3>
+                                                    {editingSector && (
+                                                        <button
+                                                            onClick={cancelEditSector}
+                                                            className="text-[10px] font-bold text-red-500 hover:text-red-400 uppercase tracking-wider flex items-center gap-1"
+                                                        >
+                                                            <RotateCcw className="w-3 h-3" /> Cancelar
+                                                        </button>
+                                                    )}
                                                 </div>
-
-                                                <div className="pt-4">
+                                                <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
+                                                    <div>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Setor</label>
+                                                        <input
+                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-emerald-500/30 outline-none transition-all shadow-sm"
+                                                            placeholder="Ex: Comercial, Administrativo, Suporte..."
+                                                            value={newSectorName}
+                                                            onChange={e => setNewSectorName(e.target.value)}
+                                                        />
+                                                    </div>
                                                     <button
-                                                        onClick={handleSaveSystemSettings}
-                                                        disabled={isSavingSystem}
-                                                        className="premium-gradient text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-accent-theme/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
+                                                        onClick={handleCreateSector}
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/20 active:scale-95"
                                                     >
-                                                        {isSavingSystem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                                        Salvar Alterações
+                                                        {editingSector ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
+                                                        {editingSector ? 'Salvar Alterações' : 'Criar Setor'}
                                                     </button>
                                                 </div>
                                             </div>
 
+                                            {/* Listagem */}
                                             <div className="space-y-6">
-                                                <div className="space-y-3">
-                                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">
-                                                        Logos do Sistema
-                                                    </h3>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                                        {/* Logo Tema Claro */}
-                                                        <div className="space-y-3">
-                                                            <label className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                                                Tema Claro
-                                                            </label>
-                                                            <div className="flex flex-col gap-4">
-                                                                <div className="w-full aspect-video rounded-3xl bg-slate-200 border-2 border-dashed border-slate-400 flex items-center justify-center overflow-hidden group relative">
-                                                                    {logoPreviewLight || systemSettings.logo_url_light ? (
-                                                                        <img
-                                                                            src={logoPreviewLight || systemSettings.logo_url_light}
-                                                                            alt="Logo Light Preview"
-                                                                            className="w-full h-full object-contain p-4"
-                                                                        />
-                                                                    ) : (
-                                                                        <Ticket className="w-8 h-8 text-slate-400 opacity-50" />
-                                                                    )}
-
-                                                                    <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
-                                                                        <input
-                                                                            type="file"
-                                                                            className="hidden"
-                                                                            accept="image/*"
-                                                                            onChange={(e) => handleLogoUpload(e, 'light')}
-                                                                        />
-                                                                        <Edit2 className="w-5 h-5 text-white" />
-                                                                    </label>
-                                                                </div>
-                                                                <div className="flex flex-col gap-2">
-                                                                    {(logoPreviewLight || systemSettings.logo_url_light) && (
-                                                                        <button
-                                                                            onClick={() => handleRemoveLogo('light')}
-                                                                            className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 hover:underline"
-                                                                        >
-                                                                            <Trash2 className="w-3 h-3" /> Remover logo claro
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Logo Tema Escuro */}
-                                                        <div className="space-y-3">
-                                                            <label className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                                                Tema Escuro
-                                                            </label>
-                                                            <div className="flex flex-col gap-4">
-                                                                <div className="w-full aspect-video rounded-3xl bg-slate-900 border-2 border-dashed border-slate-700 flex items-center justify-center overflow-hidden group relative">
-                                                                    {logoPreviewDark || systemSettings.logo_url_dark ? (
-                                                                        <img
-                                                                            src={logoPreviewDark || systemSettings.logo_url_dark}
-                                                                            alt="Logo Dark Preview"
-                                                                            className="w-full h-full object-contain p-4"
-                                                                        />
-                                                                    ) : (
-                                                                        <Ticket className="w-8 h-8 text-slate-700 opacity-50" />
-                                                                    )}
-
-                                                                    <label className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
-                                                                        <input
-                                                                            type="file"
-                                                                            className="hidden"
-                                                                            accept="image/*"
-                                                                            onChange={(e) => handleLogoUpload(e, 'dark')}
-                                                                        />
-                                                                        <Edit2 className="w-5 h-5 text-white" />
-                                                                    </label>
-                                                                </div>
-                                                                <div className="flex flex-col gap-2">
-                                                                    {(logoPreviewDark || systemSettings.logo_url_dark) && (
-                                                                        <button
-                                                                            onClick={() => handleRemoveLogo('dark')}
-                                                                            className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 hover:underline"
-                                                                        >
-                                                                            <Trash2 className="w-3 h-3" /> Remover logo escuro
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <p className="text-[9px] text-[var(--color-text-muted)] italic pt-2">
-                                                        Recomendado: PNG ou SVG transparente. O sistema alternará automaticamente entre os logos baseado no seu tema.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {/* Aba: Aparência */}
-                                {activeTab === 'appearance' && (
-                                    <motion.div
-                                        key="appearance"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden transition-all"
-                                    >
-                                        <div className="flex items-center gap-3 text-pink-500">
-                                            <div className="p-2.5 bg-pink-500/10 rounded-xl">
-                                                <Palette className="w-6 h-6" />
-                                            </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Identidade Visual</h2>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-                                            {[
-                                                { id: 'dark', name: 'Nocturne', bg: 'bg-[#0f172a]', accent: 'bg-blue-600' },
-                                                { id: 'light', name: 'Alabaster', bg: 'bg-[#f1f5f9]', accent: 'bg-blue-600' },
-                                                { id: 'cyberpunk', name: 'Neon City', bg: 'bg-[#0d0221]', accent: 'bg-[#ff007f]' },
-                                                { id: 'matrix', name: 'The Source', bg: 'bg-[#000000]', accent: 'bg-[#00ff41]' },
-                                                { id: 'antigravity', name: 'Antigravity', bg: 'bg-[#ffffff]', accent: 'bg-[#f59e0b]' },
-                                                { id: 'sunset', name: 'Solstício', bg: 'bg-[#1a0b2e]', accent: 'bg-[#f06292]' },
-                                                { id: 'nordic', name: 'Ártico', bg: 'bg-[#242933]', accent: 'bg-[#88c0d0]' },
-                                                { id: 'gold', name: 'Real Gold', bg: 'bg-[#050505]', accent: 'bg-[#d4af37]' },
-                                                { id: 'carbon-red', name: 'Carbon Red', bg: 'bg-[#1c1917]', accent: 'bg-[#ef4444]' },
-                                                { id: 'obsidian-red', name: 'Obsidian Red', bg: 'bg-[#000000]', accent: 'bg-[#991b1b]' },
-                                                { id: 'office-red', name: 'Office Red', bg: 'bg-[#f8fafc]', accent: 'bg-[#e11d48]' },
-                                                { id: 'ash-red', name: 'Ash Red', bg: 'bg-[#e2e8f0]', accent: 'bg-[#dc2626]' },
-                                                { id: 'hub', name: 'HUB', bg: 'bg-[#f8fafc]', accent: 'bg-[#b91c1c]' },
-                                                { id: 'hub-dark', name: 'HUB Dark', bg: 'bg-[#0d0d0d]', accent: 'bg-[#dc2626]' },
-                                                { id: 'midnight-purple', name: 'Midnight', bg: 'bg-[#0b061a]', accent: 'bg-[#8b5cf6]' },
-                                                { id: 'emerald-dark', name: 'Emerald', bg: 'bg-[#021a14]', accent: 'bg-[#10b981]' },
-                                                { id: 'custom', name: 'Personalizado', bg: 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500', accent: 'bg-white' },
-                                            ].map((theme) => (
-                                                <button
-                                                    key={theme.id}
-                                                    onClick={() => changeThemePreview(theme.id)}
-                                                    className={clsx(
-                                                        "group relative p-6 rounded-3xl border-2 transition-all text-left overflow-hidden",
-                                                        config.theme === theme.id
-                                                            ? "border-accent-theme bg-accent-theme/5 ring-4 ring-accent-theme/10 shadow-2xl shadow-accent-theme/20 scale-[1.02]"
-                                                            : "border-border-theme bg-background/40 hover:border-[var(--color-text-muted)] hover:bg-card"
-                                                    )}
-                                                >
-                                                    <div className="space-y-4">
-                                                        <div className="flex gap-2 items-center">
-                                                            {theme.id === 'custom' ? (
-                                                                <div className={`w-20 h-10 rounded-2xl ${theme.bg} border border-white/20 shadow-lg flex items-center justify-center relative group-hover:scale-105 transition-transform`}>
-                                                                    <div className="absolute inset-0 bg-white/10 backdrop-blur-sm rounded-[inherit]" />
-                                                                    <Palette className="w-5 h-5 text-white z-10 drop-shadow-md" />
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <div className={`w-10 h-10 rounded-2xl ${theme.bg} border border-border-theme shadow-md group-hover:scale-105 transition-transform`} />
-                                                                    <div className={`w-10 h-10 rounded-2xl ${theme.accent} shadow-md group-hover:scale-105 transition-transform`} />
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex flex-col">
-                                                            <span className={clsx(
-                                                                "text-[10px] font-black uppercase tracking-widest transition-colors",
-                                                                config.theme === theme.id ? "text-accent-theme" : "text-[var(--color-text-muted)] group-hover:text-foreground"
+                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">Setores Ativos</h3>
+                                                <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
+                                                    {sectors.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum setor cadastrado.</div> :
+                                                        sectors.map(sector => (
+                                                            <div key={sector.id} className={clsx(
+                                                                "flex items-center justify-between p-4 rounded-2xl border border-border-theme group/item transition-all shadow-sm",
+                                                                sector.is_active ? "bg-card/40 hover:bg-card/60" : "bg-card/20 opacity-60 hover:opacity-100"
                                                             )}>
-                                                                {theme.name}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    {config.theme === theme.id && (
-                                                        <div className="absolute top-4 right-4 animate-zoom-in">
-                                                            <div className="bg-accent-theme text-white rounded-full p-1 shadow-lg shadow-accent-theme/30">
-                                                                <CheckCircle2 className="w-3 h-3" />
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        {config.theme === 'custom' && (
-                                            <div className="pt-10 border-t border-border-theme space-y-8 animate-slide-in-bottom">
-                                                <div className="flex items-center gap-3 text-accent-theme">
-                                                    <div className="p-2 bg-accent-theme/10 rounded-lg">
-                                                        <Palette className="w-4 h-4" />
-                                                    </div>
-                                                    <h3 className="font-bold text-sm uppercase tracking-widest text-foreground">Ajustar Cores Personalizadas</h3>
-                                                </div>
-
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                                                    {[
-                                                        { label: 'Fundo', key: 'bg', description: 'Cor principal do plano de fundo' },
-                                                        { label: 'Texto', key: 'fg', description: 'Cor principal das fontes' },
-                                                        { label: 'Primária', key: 'primary', description: 'Cor para botões e destaque principal' },
-                                                        { label: 'Destaque (Accent)', key: 'accent', description: 'Cor secundária e ícones da lateral' },
-                                                        { label: 'Cards', key: 'card', description: 'Cor de fundo dos cartões' },
-                                                        { label: 'Hover dos Cards', key: 'card-hover', description: 'Cor ao passar o mouse nos cards' },
-                                                        { label: 'Bordas', key: 'border', description: 'Cor das linhas divisórias' },
-                                                        { label: 'Texto Mudo', key: 'muted', description: 'Cor para textos secundários' },
-                                                    ].map((color) => (
-                                                        <div key={color.key} className="glass-card p-6 rounded-[2rem] border border-white/5 space-y-4 hover:border-accent-theme/20 transition-all group">
-                                                            <div className="flex justify-between items-start">
-                                                                <div className="space-y-1">
-                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-foreground opacity-90">
-                                                                        {color.label}
-                                                                    </p>
-                                                                    <p className="text-[8px] font-medium text-[var(--color-text-muted)] uppercase tracking-tight">
-                                                                        {color.description}
-                                                                    </p>
+                                                                <div className="flex items-center gap-3">
+                                                                    <Tag className={clsx("w-4 h-4", sector.is_active ? "text-emerald-500" : "text-gray-500")} />
+                                                                    <span className={clsx("text-sm font-bold tracking-tight", !sector.is_active && "line-through text-gray-500")}>
+                                                                        {sector.name}
+                                                                    </span>
                                                                 </div>
-                                                                <div
-                                                                    className="w-8 h-8 rounded-full shadow-inner border border-white/10"
-                                                                    style={{ backgroundColor: systemSettings.custom_colors[color.key] || '#000000' }}
-                                                                ></div>
+                                                                <div className="flex items-center gap-1 opacity-100">
+                                                                    <button
+                                                                        onClick={() => handleToggleSectorActive(sector)}
+                                                                        title={sector.is_active ? "Desativar" : "Ativar"}
+                                                                        className={clsx(
+                                                                            "p-2 rounded-xl transition-colors",
+                                                                            sector.is_active ? "text-gray-500 hover:text-orange-500 hover:bg-orange-500/10" : "text-green-500 hover:bg-green-500/10"
+                                                                        )}
+                                                                    >
+                                                                        {sector.is_active ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleEditSector(sector)}
+                                                                        className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
+                                                                    >
+                                                                        <Edit2 className="w-3 h-3" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteSector(sector.id)}
+                                                                        className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
+                                                        ))
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
 
-                                                            <div className="flex gap-2 items-center">
-                                                                <div className="relative flex-shrink-0">
-                                                                    <input
-                                                                        type="color"
-                                                                        value={systemSettings.custom_colors[color.key] || '#000000'}
-                                                                        onChange={(e) => {
-                                                                            const val = e.target.value;
-                                                                            setSystemSettings({
-                                                                                ...systemSettings,
-                                                                                custom_colors: { ...systemSettings.custom_colors, [color.key]: val }
-                                                                            });
-                                                                        }}
-                                                                        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-20"
-                                                                    />
-                                                                    <div className="w-10 h-10 rounded-xl bg-background border border-border-theme flex items-center justify-center group-hover:border-accent-theme/50 transition-all shadow-inner">
-                                                                        <Palette className="w-4 h-4 text-accent-theme" />
+                            {/* Aba: Usuários */}
+                            {activeTab === 'users' && (user?.role === 'ADMIN' || user?.role === 'ROOT') && (
+                                <motion.div
+                                    key="users"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="space-y-8"
+                                >
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                        <div className="space-y-1">
+                                            <h2 className="text-2xl font-black italic uppercase tracking-tight">Gestão de Equipe</h2>
+                                            <p className="text-[var(--color-text-muted)] text-[10px] font-black uppercase tracking-widest pl-1">Controle de acesso granular e perfis de permissão.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                setCurrentUser({ role: 'AGENT', is_active: true });
+                                                setIsEditingUser(false);
+                                                setIsUserModalOpen(true);
+                                            }}
+                                            className="group flex items-center justify-center gap-3 px-8 py-4 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95"
+                                        >
+                                            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+                                            Novo Usuário
+                                        </button>
+                                    </div>
+
+                                    <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-visible relative group">
+                                        <div className="overflow-x-auto custom-scrollbar">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="border-b border-border-theme/50">
+                                                        <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)]">Usuário</th>
+                                                        <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)]">Acesso</th>
+                                                        <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)]">Status</th>
+                                                        <th className="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] text-right">Ações</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-border-theme/30">
+                                                    {users.map((u) => (
+                                                        <tr key={u.id} className="group/row hover:bg-white/5 transition-all duration-300">
+                                                            <td className="px-8 py-6">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-theme/20 to-primary-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme font-black shadow-inner group-hover/row:scale-105 transition-transform">
+                                                                        {u.username[0].toUpperCase()}
+                                                                    </div>
+                                                                    <div>
+                                                                        <div className="font-bold text-sm text-foreground">{u.full_name || u.username}</div>
+                                                                        <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] opacity-60">{u.email}</div>
                                                                     </div>
                                                                 </div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className={clsx(
+                                                                    "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border",
+                                                                    u.role === 'ROOT' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
+                                                                        u.role === 'ADMIN' ? "bg-accent-theme/10 border-accent-theme/20 text-accent-theme" :
+                                                                            "bg-white/5 border-white/10 text-[var(--color-text-muted)]"
+                                                                )}>
+                                                                    <Shield className="w-2.5 h-2.5" />
+                                                                    {u.role}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className={clsx(
+                                                                    "flex items-center gap-2 text-[9px] font-black uppercase tracking-widest",
+                                                                    u.is_active ? "text-emerald-500" : "text-red-500"
+                                                                )}>
+                                                                    <div className={clsx("w-1.5 h-1.5 rounded-full", u.is_active ? "bg-emerald-500" : "bg-red-500")} />
+                                                                    {u.is_active ? 'Ativo' : 'Bloqueado'}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-6 text-right">
+                                                                <div className="flex justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setCurrentUser(u);
+                                                                            setIsEditingUser(true);
+                                                                            setIsUserModalOpen(true);
+                                                                        }}
+                                                                        className="p-2.5 bg-white/5 hover:bg-accent-theme/20 text-[var(--color-text-muted)] hover:text-accent-theme rounded-lg border border-white/5 hover:border-accent-theme/30 transition-all"
+                                                                    >
+                                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    {user?.id !== u.id && u.role !== 'ROOT' && (
+                                                                        <button
+                                                                            onClick={() => handleDeleteUser(u.id)}
+                                                                            className="p-2.5 bg-white/5 hover:bg-red-500/20 text-[var(--color-text-muted)] hover:text-red-500 rounded-lg border border-white/5 hover:border-red-500/30 transition-all"
+                                                                        >
+                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            {/* Aba: Identidade do Sistema */}
+                            {activeTab === 'system' && (
+                                <motion.div
+                                    key="system"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden transition-all"
+                                >
+                                    <div className="flex items-center gap-3 text-accent-theme">
+                                        <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                            <ShieldCheck className="w-6 h-6" />
+                                        </div>
+                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Identidade do Sistema</h2>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                        <div className="space-y-6">
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">
+                                                    Nome do Projeto
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={systemSettings.system_name}
+                                                    onChange={(e) => setSystemSettings({ ...systemSettings, system_name: e.target.value })}
+                                                    className="w-full bg-background/40 border border-border-theme rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:border-accent-theme/50 transition-all"
+                                                    placeholder="Ex: MyTicket Portal"
+                                                />
+                                                <p className="text-[9px] text-[var(--color-text-muted)] italic px-1">
+                                                    Este nome será exibido na barra lateral, navegação e tela de login.
+                                                </p>
+                                            </div>
+
+                                            <div className="pt-4">
+                                                <button
+                                                    onClick={handleSaveSystemSettings}
+                                                    disabled={isSavingSystem}
+                                                    className="premium-gradient text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-accent-theme/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
+                                                >
+                                                    {isSavingSystem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                    Salvar Alterações
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-6">
+                                            <div className="space-y-3">
+                                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">
+                                                    Logos do Sistema
+                                                </h3>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                    {/* Logo Tema Claro */}
+                                                    <div className="space-y-3">
+                                                        <label className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                            Tema Claro
+                                                        </label>
+                                                        <div className="flex flex-col gap-4">
+                                                            <div className="w-full aspect-video rounded-3xl bg-slate-200 border-2 border-dashed border-slate-400 flex items-center justify-center overflow-hidden group relative">
+                                                                {logoPreviewLight || systemSettings.logo_url_light ? (
+                                                                    <img
+                                                                        src={logoPreviewLight || systemSettings.logo_url_light}
+                                                                        alt="Logo Light Preview"
+                                                                        className="w-full h-full object-contain p-4"
+                                                                    />
+                                                                ) : (
+                                                                    <Ticket className="w-8 h-8 text-slate-400 opacity-50" />
+                                                                )}
+
+                                                                <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                                                                    <input
+                                                                        type="file"
+                                                                        className="hidden"
+                                                                        accept="image/*"
+                                                                        onChange={(e) => handleLogoUpload(e, 'light')}
+                                                                    />
+                                                                    <Edit2 className="w-5 h-5 text-white" />
+                                                                </label>
+                                                            </div>
+                                                            <div className="flex flex-col gap-2">
+                                                                {(logoPreviewLight || systemSettings.logo_url_light) && (
+                                                                    <button
+                                                                        onClick={() => handleRemoveLogo('light')}
+                                                                        className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 hover:underline"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" /> Remover logo claro
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Logo Tema Escuro */}
+                                                    <div className="space-y-3">
+                                                        <label className="text-[9px] font-bold uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                            Tema Escuro
+                                                        </label>
+                                                        <div className="flex flex-col gap-4">
+                                                            <div className="w-full aspect-video rounded-3xl bg-slate-900 border-2 border-dashed border-slate-700 flex items-center justify-center overflow-hidden group relative">
+                                                                {logoPreviewDark || systemSettings.logo_url_dark ? (
+                                                                    <img
+                                                                        src={logoPreviewDark || systemSettings.logo_url_dark}
+                                                                        alt="Logo Dark Preview"
+                                                                        className="w-full h-full object-contain p-4"
+                                                                    />
+                                                                ) : (
+                                                                    <Ticket className="w-8 h-8 text-slate-700 opacity-50" />
+                                                                )}
+
+                                                                <label className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                                                                    <input
+                                                                        type="file"
+                                                                        className="hidden"
+                                                                        accept="image/*"
+                                                                        onChange={(e) => handleLogoUpload(e, 'dark')}
+                                                                    />
+                                                                    <Edit2 className="w-5 h-5 text-white" />
+                                                                </label>
+                                                            </div>
+                                                            <div className="flex flex-col gap-2">
+                                                                {(logoPreviewDark || systemSettings.logo_url_dark) && (
+                                                                    <button
+                                                                        onClick={() => handleRemoveLogo('dark')}
+                                                                        className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 hover:underline"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" /> Remover logo escuro
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <p className="text-[9px] text-[var(--color-text-muted)] italic pt-2">
+                                                    Recomendado: PNG ou SVG transparente. O sistema alternará automaticamente entre os logos baseado no seu tema.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            {/* Aba: Aparência */}
+                            {activeTab === 'appearance' && (
+                                <motion.div
+                                    key="appearance"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden transition-all"
+                                >
+                                    <div className="flex items-center gap-3 text-pink-500">
+                                        <div className="p-2.5 bg-pink-500/10 rounded-xl">
+                                            <Palette className="w-6 h-6" />
+                                        </div>
+                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Identidade Visual</h2>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                                        {THEMES.map((theme) => (
+                                            <button
+                                                key={theme.id}
+                                                onClick={() => changeThemePreview(theme.id)}
+                                                className={clsx(
+                                                    "group relative p-6 rounded-3xl border-2 transition-all text-left overflow-hidden",
+                                                    config.theme === theme.id
+                                                        ? "border-accent-theme bg-accent-theme/5 ring-4 ring-accent-theme/10 shadow-2xl shadow-accent-theme/20 scale-[1.02]"
+                                                        : "border-border-theme bg-background/40 hover:border-[var(--color-text-muted)] hover:bg-card"
+                                                )}
+                                            >
+                                                <div className="space-y-4">
+                                                    <div className="flex gap-2 items-center">
+                                                        {theme.id === 'custom' ? (
+                                                            <div className={`w-20 h-10 rounded-2xl ${theme.bg} border border-white/20 shadow-lg flex items-center justify-center relative group-hover:scale-105 transition-transform`}>
+                                                                <div className="absolute inset-0 bg-white/10 backdrop-blur-sm rounded-[inherit]" />
+                                                                <Palette className="w-5 h-5 text-white z-10 drop-shadow-md" />
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <div className={`w-10 h-10 rounded-2xl ${theme.bg} border border-border-theme shadow-md group-hover:scale-105 transition-transform`} />
+                                                                <div className={`w-10 h-10 rounded-2xl ${theme.accent} shadow-md group-hover:scale-105 transition-transform`} />
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className={clsx(
+                                                            "text-[10px] font-black uppercase tracking-widest transition-colors",
+                                                            config.theme === theme.id ? "text-accent-theme" : "text-[var(--color-text-muted)] group-hover:text-foreground"
+                                                        )}>
+                                                            {theme.name}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {config.theme === theme.id && (
+                                                    <div className="absolute top-4 right-4 animate-zoom-in">
+                                                        <div className="bg-accent-theme text-white rounded-full p-1 shadow-lg shadow-accent-theme/30">
+                                                            <CheckCircle2 className="w-3 h-3" />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {config.theme === 'custom' && (
+                                        <div className="pt-10 border-t border-border-theme space-y-8 animate-slide-in-bottom">
+                                            <div className="flex items-center gap-3 text-accent-theme">
+                                                <div className="p-2 bg-accent-theme/10 rounded-lg">
+                                                    <Palette className="w-4 h-4" />
+                                                </div>
+                                                <h3 className="font-bold text-sm uppercase tracking-widest text-foreground">Ajustar Cores Personalizadas</h3>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                                                {[
+                                                    { label: 'Fundo', key: 'bg', description: 'Cor principal do plano de fundo' },
+                                                    { label: 'Texto', key: 'fg', description: 'Cor principal das fontes' },
+                                                    { label: 'Primária', key: 'primary', description: 'Cor para botões e destaque principal' },
+                                                    { label: 'Destaque (Accent)', key: 'accent', description: 'Cor secundária e ícones da lateral' },
+                                                    { label: 'Cards', key: 'card', description: 'Cor de fundo dos cartões' },
+                                                    { label: 'Hover dos Cards', key: 'card-hover', description: 'Cor ao passar o mouse nos cards' },
+                                                    { label: 'Bordas', key: 'border', description: 'Cor das linhas divisórias' },
+                                                    { label: 'Texto Mudo', key: 'muted', description: 'Cor para textos secundários' },
+                                                ].map((color) => (
+                                                    <div key={color.key} className="glass-card p-6 rounded-[2rem] border border-white/5 space-y-4 hover:border-accent-theme/20 transition-all group">
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="space-y-1">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-foreground opacity-90">
+                                                                    {color.label}
+                                                                </p>
+                                                                <p className="text-[8px] font-medium text-[var(--color-text-muted)] uppercase tracking-tight">
+                                                                    {color.description}
+                                                                </p>
+                                                            </div>
+                                                            <div
+                                                                className="w-8 h-8 rounded-full shadow-inner border border-white/10"
+                                                                style={{ backgroundColor: systemSettings.custom_colors[color.key] || '#000000' }}
+                                                            ></div>
+                                                        </div>
+
+                                                        <div className="flex gap-2 items-center">
+                                                            <div className="relative flex-shrink-0">
                                                                 <input
-                                                                    type="text"
-                                                                    value={systemSettings.custom_colors[color.key] || ''}
-                                                                    maxLength={7}
+                                                                    type="color"
+                                                                    value={systemSettings.custom_colors[color.key] || '#000000'}
                                                                     onChange={(e) => {
-                                                                        let val = e.target.value;
-                                                                        if (!val.startsWith('#') && val.length > 0) val = '#' + val;
+                                                                        const val = e.target.value;
                                                                         setSystemSettings({
                                                                             ...systemSettings,
                                                                             custom_colors: { ...systemSettings.custom_colors, [color.key]: val }
                                                                         });
                                                                     }}
-                                                                    className="w-full min-w-0 bg-background/50 border border-border-theme rounded-xl px-3 py-2 text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-accent-theme/20 transition-all uppercase placeholder:opacity-30"
-                                                                    placeholder="#000000"
+                                                                    className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-20"
                                                                 />
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-
-                                                <div className="flex justify-start pt-4">
-                                                    <button
-                                                        onClick={handleSaveSystemSettings}
-                                                        disabled={isSavingSystem}
-                                                        className="premium-gradient text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-accent-theme/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
-                                                    >
-                                                        {isSavingSystem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                                        Salvar Cores Customizadas
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                )}
-
-                                {/* Aba: Perfis de Acesso */}
-                                {activeTab === 'profiles' && (user?.role === 'ADMIN' || user?.role === 'ROOT') && (
-                                    <motion.div
-                                        key="profiles"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="space-y-8"
-                                    >
-                                        <div className="flex justify-between items-center">
-                                            <div className="space-y-1">
-                                                <h2 className="text-2xl font-black italic uppercase tracking-tight">Perfis de Acesso</h2>
-                                                <p className="text-[var(--color-text-muted)] text-[10px] font-black uppercase tracking-widest pl-1">Defina permissões granulares.</p>
-                                            </div>
-                                            <button
-                                                onClick={() => {
-                                                    setCurrentProfile({ permissions: { menus: [], actions: [] } });
-                                                    setIsProfileModalOpen(true);
-                                                }}
-                                                className="group flex items-center justify-center gap-3 px-8 py-4 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95"
-                                            >
-                                                <PlusCircle className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-                                                Novo Perfil
-                                            </button>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            {profiles.map(profile => (
-                                                <div key={profile.id} className="glass-card p-6 rounded-3xl border border-border-theme relative group hover:border-accent-theme/30 transition-all hover:scale-[1.02]">
-                                                    <div className="flex justify-between items-start mb-4">
-                                                        <div className="p-3 bg-orange-500/10 rounded-xl">
-                                                            <ShieldCheck className="w-6 h-6 text-orange-500" />
-                                                        </div>
-                                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <button
-                                                                onClick={() => {
-                                                                    setCurrentProfile(profile);
-                                                                    setIsProfileModalOpen(true);
-                                                                }}
-                                                                className="p-2 hover:bg-white/5 rounded-lg text-blue-400 transition-colors"
-                                                            >
-                                                                <Edit2 className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDeleteProfile(profile.id)}
-                                                                className="p-2 hover:bg-white/5 rounded-lg text-red-400 transition-colors"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <h3 className="font-bold text-lg mb-1 text-foreground">{profile.name}</h3>
-                                                    <p className="text-xs text-[var(--color-text-muted)] mb-6 h-8 line-clamp-2 leading-relaxed">
-                                                        {profile.description || 'Sem descrição definida.'}
-                                                    </p>
-                                                    <div className="flex gap-2 text-[9px] font-mono uppercase tracking-wider">
-                                                        <span className="px-3 py-1 bg-white/5 rounded-lg border border-white/10">
-                                                            {profile.permissions?.menus?.length || 0} Menus
-                                                        </span>
-                                                        <span className="px-3 py-1 bg-white/5 rounded-lg border border-white/10">
-                                                            {profile.permissions?.actions?.length || 0} Ações
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            {profiles.length === 0 && (
-                                                <div className="col-span-full py-12 text-center text-[var(--color-text-muted)] text-sm italic opacity-50">
-                                                    Nenhum perfil encontrado. Crie um para começar.
-                                                </div>
-                                            )}
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {/* Aba: Avançado */}
-                                {activeTab === 'advanced' && user?.role === 'ROOT' && (
-                                    <motion.div
-                                        key="advanced"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.3 }}
-                                        className="lg:col-span-3 space-y-8"
-                                    >
-                                        {/* Backup & Restore */}
-                                        <div className="glass-card p-10 rounded-3xl space-y-8 relative overflow-hidden border border-blue-500/20 bg-blue-500/[0.02] group transition-all">
-                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                <HardDrive className="w-24 h-24 text-blue-500" />
-                                            </div>
-                                            <div className="flex items-center gap-3 text-blue-500">
-                                                <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                                                    <HardDrive className="w-6 h-6" />
-                                                </div>
-                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Backup & Restauração</h2>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                                {/* Download Backup */}
-                                                <div className="flex flex-col h-full bg-white/5 p-8 rounded-3xl border border-border-theme/50 hover:border-blue-500/30 transition-all group/backup">
-                                                    <div className="space-y-4 flex-grow">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                                                                <Download className="w-5 h-5 text-blue-500" />
-                                                            </div>
-                                                            <h3 className="text-base font-bold text-foreground">Exportar Dados</h3>
-                                                        </div>
-                                                        <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                                                            Baixe um arquivo ZIP contendo todo o banco de dados, uploads e memória da IA.
-                                                            Ideal para migração ou segurança.
-                                                        </p>
-                                                    </div>
-                                                    <div className="mt-8 space-y-4">
-                                                        <button
-                                                            onClick={async () => {
-                                                                try {
-                                                                    setBackupProgress(0);
-                                                                    await downloadBackup((p) => setBackupProgress(p));
-                                                                    showNotification('Backup concluído!', 'success');
-                                                                } catch (error) {
-                                                                    showNotification('Erro ao baixar backup', 'error');
-                                                                } finally {
-                                                                    setBackupProgress(null);
-                                                                }
-                                                            }}
-                                                            disabled={backupProgress !== null}
-                                                            className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 font-black text-[10px] uppercase transition-all disabled:opacity-50 border border-blue-500/20"
-                                                        >
-                                                            {backupProgress !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                                                            {backupProgress !== null ? 'Baixando...' : 'Fazer Backup Completo'}
-                                                        </button>
-                                                        {backupProgress !== null && (
-                                                            <div className="space-y-2 animate-fade-in bg-blue-500/5 p-4 rounded-2xl border border-blue-500/10 text-center">
-                                                                <div className="flex justify-between items-center text-[10px] font-black uppercase mb-1">
-                                                                    <span className="text-blue-500/70">Progresso</span>
-                                                                    <span className="text-blue-500">{backupProgress}%</span>
-                                                                </div>
-                                                                <div className="w-full h-1.5 bg-blue-500/10 rounded-full overflow-hidden">
-                                                                    <div
-                                                                        className="h-full bg-blue-500 transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                                                                        style={{ width: `${backupProgress}%` }}
-                                                                    />
+                                                                <div className="w-10 h-10 rounded-xl bg-background border border-border-theme flex items-center justify-center group-hover:border-accent-theme/50 transition-all shadow-inner">
+                                                                    <Palette className="w-4 h-4 text-accent-theme" />
                                                                 </div>
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {/* Upload Restore */}
-                                                <div className="flex flex-col h-full bg-white/5 p-8 rounded-3xl border border-border-theme/50 hover:border-emerald-500/30 transition-all group/restore">
-                                                    <div className="space-y-4 flex-grow">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="p-2.5 bg-emerald-500/10 rounded-xl">
-                                                                <Upload className="w-5 h-5 text-emerald-500" />
-                                                            </div>
-                                                            <h3 className="text-base font-bold text-foreground">Restaurar Sistema</h3>
-                                                        </div>
-                                                        <div className="space-y-3">
-                                                            <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                                                                Carregue um arquivo de backup (.zip) para restaurar o sistema.
-                                                            </p>
-                                                            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg border border-red-500/20 text-[9px] font-black uppercase tracking-wider">
-                                                                <AlertTriangle className="w-3 h-3" />
-                                                                Cuidado: Substitui todos os dados!
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="mt-8 space-y-4">
-                                                        <div className="relative">
                                                             <input
-                                                                type="file"
-                                                                accept=".zip"
-                                                                onChange={async (e) => {
-                                                                    const file = e.target.files?.[0];
-                                                                    if (!file) return;
-
-                                                                    const confirmed = await askConfirm({
-                                                                        title: 'Confirmar Restauração?',
-                                                                        message: 'Todos os dados atuais serão substituídos pelos do backup. Esta ação não pode ser desfeita.',
-                                                                        type: 'danger',
-                                                                        confirmText: 'RESTAURAR AGORA'
+                                                                type="text"
+                                                                value={systemSettings.custom_colors[color.key] || ''}
+                                                                maxLength={7}
+                                                                onChange={(e) => {
+                                                                    let val = e.target.value;
+                                                                    if (!val.startsWith('#') && val.length > 0) val = '#' + val;
+                                                                    setSystemSettings({
+                                                                        ...systemSettings,
+                                                                        custom_colors: { ...systemSettings.custom_colors, [color.key]: val }
                                                                     });
-
-                                                                    if (confirmed) {
-                                                                        setLoadingRestore(true);
-                                                                        setRestoreProgress(0);
-                                                                        try {
-                                                                            await restoreSystem(file, (p) => setRestoreProgress(p));
-                                                                            showNotification('Sistema restaurado com sucesso!', 'success');
-                                                                            setTimeout(() => window.location.reload(), 2000);
-                                                                        } catch (error) {
-                                                                            showNotification('Falha na restauração.', 'error');
-                                                                        } finally {
-                                                                            setLoadingRestore(false);
-                                                                            setRestoreProgress(null);
-                                                                            e.target.value = ''; // Reset input
-                                                                        }
-                                                                    } else {
-                                                                        e.target.value = ''; // Reset input
-                                                                    }
                                                                 }}
-                                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                                                                disabled={loadingRestore}
+                                                                className="w-full min-w-0 bg-background/50 border border-border-theme rounded-xl px-3 py-2 text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-accent-theme/20 transition-all uppercase placeholder:opacity-30"
+                                                                placeholder="#000000"
                                                             />
-                                                            <button
-                                                                disabled={loadingRestore}
-                                                                className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-2xl border-2 border-dashed border-border-theme hover:border-emerald-500/50 hover:bg-emerald-500/5 text-[var(--color-text-muted)] hover:text-emerald-500 font-black text-[10px] uppercase transition-all"
-                                                            >
-                                                                {loadingRestore ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                                                                {loadingRestore ? (restoreProgress === 100 ? 'Finalizando...' : 'Restaurando...') : 'Carregar Backup (.zip)'}
-                                                            </button>
                                                         </div>
-                                                        {restoreProgress !== null && (
-                                                            <div className="space-y-2 animate-fade-in bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10">
-                                                                <div className="flex justify-between items-center text-[10px] font-black uppercase">
-                                                                    <span className="text-emerald-500/70">
-                                                                        {restoreProgress === 100 ? 'Processando' : 'Upload'}
-                                                                    </span>
-                                                                    <span className="text-emerald-500">{restoreProgress}%</span>
-                                                                </div>
-                                                                <div className="w-full h-1.5 bg-emerald-500/10 rounded-full overflow-hidden">
-                                                                    <div
-                                                                        className="h-full bg-emerald-500 transition-all duration-300 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-                                                                        style={{ width: `${restoreProgress}%` }}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        )}
                                                     </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="glass-card p-10 rounded-3xl space-y-6 relative border border-border-theme/50">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2.5 bg-white/5 rounded-xl">
-                                                    <RotateCcw className="w-6 h-6" />
-                                                </div>
-                                                <h2 className="font-bold text-lg uppercase tracking-widest">Ações do Sistema</h2>
-                                            </div>
-                                            <p className="text-xs text-[var(--color-text-muted)]">Restaura as configurações de fábrica (Conectividade e Aparência).</p>
-                                            <button
-                                                onClick={handleReset}
-                                                className="flex items-center gap-3 px-10 py-5 rounded-2xl border border-border-theme text-[var(--color-text-muted)] hover:bg-white/5 transition-all font-black text-[10px] uppercase shadow-sm"
-                                            >
-                                                <RotateCcw className="w-4 h-4" />
-                                                Restaurar Padrões
-                                            </button>
-                                        </div>
-
-                                        {/* Danger Zone */}
-                                        <div className="glass-card rounded-3xl p-10 relative overflow-hidden group border border-border-theme/50">
-                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                <Trash2 className="w-24 h-24 text-red-500" />
-                                            </div>
-                                            <div className="flex items-center gap-3 text-red-500 mb-6">
-                                                <div className="p-2.5 bg-red-500/10 rounded-xl">
-                                                    <Trash2 className="w-6 h-6" />
-                                                </div>
-                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Zona de Perigo: Limpeza</h2>
-                                            </div>
-
-                                            <p className="text-sm text-[var(--color-text-muted)] max-w-2xl leading-relaxed mb-8 font-medium">
-                                                Selecione os módulos que deseja deletar permanentemente.
-                                                Esta ação afetará o banco de dados e a base vetorial.
-                                            </p>
-
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                {[
-                                                    { id: 'tickets', label: 'Tickets & Mensagens', icon: <Tag className="w-4 h-4" /> },
-                                                    { id: 'clients', label: 'Lista de Clientes', icon: <Users className="w-4 h-4" /> },
-                                                    { id: 'knowledge', label: 'Base de Conhecimento (RAG)', icon: <HardDrive className="w-4 h-4" /> },
-                                                    { id: 'settings', label: 'Categorias & Status', icon: <FolderPlus className="w-4 h-4" /> },
-                                                    { id: 'users', label: 'Usuários (Exceto Root)', icon: <Users className="w-4 h-4" /> },
-                                                ].map(item => (
-                                                    <button
-                                                        key={item.id}
-                                                        onClick={() => {
-                                                            const current = resetEntities.includes(item.id)
-                                                                ? resetEntities.filter((id: string) => id !== item.id)
-                                                                : [...resetEntities, item.id];
-                                                            setResetEntities(current);
-                                                        }}
-                                                        className={clsx(
-                                                            "flex items-center gap-3 p-4 rounded-2xl border transition-all text-left",
-                                                            resetEntities.includes(item.id)
-                                                                ? "bg-red-500/10 border-red-500/30 text-red-500 shadow-xl"
-                                                                : "bg-background/40 border-border-theme text-[var(--color-text-muted)] hover:border-red-500/30"
-                                                        )}
-                                                    >
-                                                        <div className={clsx(
-                                                            "p-2 rounded-lg",
-                                                            resetEntities.includes(item.id) ? "bg-red-500 text-white" : "bg-white/5"
-                                                        )}>
-                                                            {item.icon}
-                                                        </div>
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
-                                                    </button>
                                                 ))}
                                             </div>
 
-                                            <div className="pt-4">
+                                            <div className="flex justify-start pt-4">
                                                 <button
-                                                    disabled={resetEntities.length === 0}
-                                                    onClick={() => setIsResetModalOpen(true)}
-                                                    className="w-full sm:w-auto flex items-center justify-center gap-3 px-12 py-5 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-2xl shadow-red-500/20 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                                                    onClick={handleSaveSystemSettings}
+                                                    disabled={isSavingSystem}
+                                                    className="premium-gradient text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-accent-theme/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
                                                 >
-                                                    <Trash2 className="w-5 h-5" />
-                                                    Executar Limpeza
+                                                    {isSavingSystem ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                    Salvar Cores Customizadas
                                                 </button>
                                             </div>
                                         </div>
+                                    )}
+                                </motion.div>
+                            )}
 
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
+                            {/* Aba: Perfis de Acesso */}
+                            {activeTab === 'profiles' && (user?.role === 'ADMIN' || user?.role === 'ROOT') && (
+                                <motion.div
+                                    key="profiles"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="space-y-8"
+                                >
+                                    <div className="flex justify-between items-center">
+                                        <div className="space-y-1">
+                                            <h2 className="text-2xl font-black italic uppercase tracking-tight">Perfis de Acesso</h2>
+                                            <p className="text-[var(--color-text-muted)] text-[10px] font-black uppercase tracking-widest pl-1">Defina permissões granulares.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                setCurrentProfile({ permissions: { menus: [], actions: [] } });
+                                                setIsProfileModalOpen(true);
+                                            }}
+                                            className="group flex items-center justify-center gap-3 px-8 py-4 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95"
+                                        >
+                                            <PlusCircle className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+                                            Novo Perfil
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {profiles.map(profile => (
+                                            <div key={profile.id} className="glass-card p-6 rounded-3xl border border-border-theme relative group hover:border-accent-theme/30 transition-all hover:scale-[1.02]">
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <div className="p-3 bg-orange-500/10 rounded-xl">
+                                                        <ShieldCheck className="w-6 h-6 text-orange-500" />
+                                                    </div>
+                                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => {
+                                                                setCurrentProfile(profile);
+                                                                setIsProfileModalOpen(true);
+                                                            }}
+                                                            className="p-2 hover:bg-white/5 rounded-lg text-blue-400 transition-colors"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteProfile(profile.id)}
+                                                            className="p-2 hover:bg-white/5 rounded-lg text-red-400 transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <h3 className="font-bold text-lg mb-1 text-foreground">{profile.name}</h3>
+                                                <p className="text-xs text-[var(--color-text-muted)] mb-6 h-8 line-clamp-2 leading-relaxed">
+                                                    {profile.description || 'Sem descrição definida.'}
+                                                </p>
+                                                <div className="flex gap-2 text-[9px] font-mono uppercase tracking-wider">
+                                                    <span className="px-3 py-1 bg-white/5 rounded-lg border border-white/10">
+                                                        {profile.permissions?.menus?.length || 0} Menus
+                                                    </span>
+                                                    <span className="px-3 py-1 bg-white/5 rounded-lg border border-white/10">
+                                                        {profile.permissions?.actions?.length || 0} Ações
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {profiles.length === 0 && (
+                                            <div className="col-span-full py-12 text-center text-[var(--color-text-muted)] text-sm italic opacity-50">
+                                                Nenhum perfil encontrado. Crie um para começar.
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            {/* Aba: Avançado */}
+                            {activeTab === 'advanced' && user?.role === 'ROOT' && (
+                                <motion.div
+                                    key="advanced"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="lg:col-span-3 space-y-8"
+                                >
+                                    {/* Backup & Restore */}
+                                    <div className="glass-card p-10 rounded-3xl space-y-8 relative overflow-hidden border border-blue-500/20 bg-blue-500/[0.02] group transition-all">
+                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                            <HardDrive className="w-24 h-24 text-blue-500" />
+                                        </div>
+                                        <div className="flex items-center gap-3 text-blue-500">
+                                            <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                <HardDrive className="w-6 h-6" />
+                                            </div>
+                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Backup & Restauração</h2>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            {/* Download Backup */}
+                                            <div className="flex flex-col h-full bg-white/5 p-8 rounded-3xl border border-border-theme/50 hover:border-blue-500/30 transition-all group/backup">
+                                                <div className="space-y-4 flex-grow">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                            <Download className="w-5 h-5 text-blue-500" />
+                                                        </div>
+                                                        <h3 className="text-base font-bold text-foreground">Exportar Dados</h3>
+                                                    </div>
+                                                    <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                                                        Baixe um arquivo ZIP contendo todo o banco de dados, uploads e memória da IA.
+                                                        Ideal para migração ou segurança.
+                                                    </p>
+                                                </div>
+                                                <div className="mt-8 space-y-4">
+                                                    <button
+                                                        onClick={async () => {
+                                                            try {
+                                                                setBackupProgress(0);
+                                                                await downloadBackup((p) => setBackupProgress(p));
+                                                                showNotification('Backup concluído!', 'success');
+                                                            } catch (error) {
+                                                                showNotification('Erro ao baixar backup', 'error');
+                                                            } finally {
+                                                                setBackupProgress(null);
+                                                            }
+                                                        }}
+                                                        disabled={backupProgress !== null}
+                                                        className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 font-black text-[10px] uppercase transition-all disabled:opacity-50 border border-blue-500/20"
+                                                    >
+                                                        {backupProgress !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                                        {backupProgress !== null ? 'Baixando...' : 'Fazer Backup Completo'}
+                                                    </button>
+                                                    {backupProgress !== null && (
+                                                        <div className="space-y-2 animate-fade-in bg-blue-500/5 p-4 rounded-2xl border border-blue-500/10 text-center">
+                                                            <div className="flex justify-between items-center text-[10px] font-black uppercase mb-1">
+                                                                <span className="text-blue-500/70">Progresso</span>
+                                                                <span className="text-blue-500">{backupProgress}%</span>
+                                                            </div>
+                                                            <div className="w-full h-1.5 bg-blue-500/10 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-blue-500 transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                                                    style={{ width: `${backupProgress}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Upload Restore */}
+                                            <div className="flex flex-col h-full bg-white/5 p-8 rounded-3xl border border-border-theme/50 hover:border-emerald-500/30 transition-all group/restore">
+                                                <div className="space-y-4 flex-grow">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2.5 bg-emerald-500/10 rounded-xl">
+                                                            <Upload className="w-5 h-5 text-emerald-500" />
+                                                        </div>
+                                                        <h3 className="text-base font-bold text-foreground">Restaurar Sistema</h3>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                                                            Carregue um arquivo de backup (.zip) para restaurar o sistema.
+                                                        </p>
+                                                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg border border-red-500/20 text-[9px] font-black uppercase tracking-wider">
+                                                            <AlertTriangle className="w-3 h-3" />
+                                                            Cuidado: Substitui todos os dados!
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-8 space-y-4">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="file"
+                                                            accept=".zip"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (!file) return;
+
+                                                                const confirmed = await askConfirm({
+                                                                    title: 'Confirmar Restauração?',
+                                                                    message: 'Todos os dados atuais serão substituídos pelos do backup. Esta ação não pode ser desfeita.',
+                                                                    type: 'danger',
+                                                                    confirmText: 'RESTAURAR AGORA'
+                                                                });
+
+                                                                if (confirmed) {
+                                                                    setLoadingRestore(true);
+                                                                    setRestoreProgress(0);
+                                                                    try {
+                                                                        await restoreSystem(file, (p) => setRestoreProgress(p));
+                                                                        showNotification('Sistema restaurado com sucesso!', 'success');
+                                                                        setTimeout(() => window.location.reload(), 2000);
+                                                                    } catch (error) {
+                                                                        showNotification('Falha na restauração.', 'error');
+                                                                    } finally {
+                                                                        setLoadingRestore(false);
+                                                                        setRestoreProgress(null);
+                                                                        e.target.value = ''; // Reset input
+                                                                    }
+                                                                } else {
+                                                                    e.target.value = ''; // Reset input
+                                                                }
+                                                            }}
+                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                                            disabled={loadingRestore}
+                                                        />
+                                                        <button
+                                                            disabled={loadingRestore}
+                                                            className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-2xl border-2 border-dashed border-border-theme hover:border-emerald-500/50 hover:bg-emerald-500/5 text-[var(--color-text-muted)] hover:text-emerald-500 font-black text-[10px] uppercase transition-all"
+                                                        >
+                                                            {loadingRestore ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                            {loadingRestore ? (restoreProgress === 100 ? 'Finalizando...' : 'Restaurando...') : 'Carregar Backup (.zip)'}
+                                                        </button>
+                                                    </div>
+                                                    {restoreProgress !== null && (
+                                                        <div className="space-y-2 animate-fade-in bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10">
+                                                            <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                                                                <span className="text-emerald-500/70">
+                                                                    {restoreProgress === 100 ? 'Processando' : 'Upload'}
+                                                                </span>
+                                                                <span className="text-emerald-500">{restoreProgress}%</span>
+                                                            </div>
+                                                            <div className="w-full h-1.5 bg-emerald-500/10 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-emerald-500 transition-all duration-300 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                                                                    style={{ width: `${restoreProgress}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="glass-card p-10 rounded-3xl space-y-6 relative border border-border-theme/50">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2.5 bg-white/5 rounded-xl">
+                                                <RotateCcw className="w-6 h-6" />
+                                            </div>
+                                            <h2 className="font-bold text-lg uppercase tracking-widest">Ações do Sistema</h2>
+                                        </div>
+                                        <p className="text-xs text-[var(--color-text-muted)]">Restaura as configurações de fábrica (Conectividade e Aparência).</p>
+                                        <button
+                                            onClick={handleReset}
+                                            className="flex items-center gap-3 px-10 py-5 rounded-2xl border border-border-theme text-[var(--color-text-muted)] hover:bg-white/5 transition-all font-black text-[10px] uppercase shadow-sm"
+                                        >
+                                            <RotateCcw className="w-4 h-4" />
+                                            Restaurar Padrões
+                                        </button>
+                                    </div>
+
+                                    {/* Danger Zone */}
+                                    <div className="glass-card rounded-3xl p-10 relative overflow-hidden group border border-border-theme/50">
+                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                            <Trash2 className="w-24 h-24 text-red-500" />
+                                        </div>
+                                        <div className="flex items-center gap-3 text-red-500 mb-6">
+                                            <div className="p-2.5 bg-red-500/10 rounded-xl">
+                                                <Trash2 className="w-6 h-6" />
+                                            </div>
+                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Zona de Perigo: Limpeza</h2>
+                                        </div>
+
+                                        <p className="text-sm text-[var(--color-text-muted)] max-w-2xl leading-relaxed mb-8 font-medium">
+                                            Selecione os módulos que deseja deletar permanentemente.
+                                            Esta ação afetará o banco de dados e a base vetorial.
+                                        </p>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {[
+                                                { id: 'tickets', label: 'Tickets & Mensagens', icon: <Tag className="w-4 h-4" /> },
+                                                { id: 'clients', label: 'Lista de Clientes', icon: <Users className="w-4 h-4" /> },
+                                                { id: 'knowledge', label: 'Base de Conhecimento (RAG)', icon: <HardDrive className="w-4 h-4" /> },
+                                                { id: 'settings', label: 'Categorias & Status', icon: <FolderPlus className="w-4 h-4" /> },
+                                                { id: 'users', label: 'Usuários (Exceto Root)', icon: <Users className="w-4 h-4" /> },
+                                            ].map(item => (
+                                                <button
+                                                    key={item.id}
+                                                    onClick={() => {
+                                                        const current = resetEntities.includes(item.id)
+                                                            ? resetEntities.filter((id: string) => id !== item.id)
+                                                            : [...resetEntities, item.id];
+                                                        setResetEntities(current);
+                                                    }}
+                                                    className={clsx(
+                                                        "flex items-center gap-3 p-4 rounded-2xl border transition-all text-left",
+                                                        resetEntities.includes(item.id)
+                                                            ? "bg-red-500/10 border-red-500/30 text-red-500 shadow-xl"
+                                                            : "bg-background/40 border-border-theme text-[var(--color-text-muted)] hover:border-red-500/30"
+                                                    )}
+                                                >
+                                                    <div className={clsx(
+                                                        "p-2 rounded-lg",
+                                                        resetEntities.includes(item.id) ? "bg-red-500 text-white" : "bg-white/5"
+                                                    )}>
+                                                        {item.icon}
+                                                    </div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="pt-4">
+                                            <button
+                                                disabled={resetEntities.length === 0}
+                                                onClick={() => setIsResetModalOpen(true)}
+                                                className="w-full sm:w-auto flex items-center justify-center gap-3 px-12 py-5 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-black text-[10px] uppercase tracking-widest transition-all shadow-2xl shadow-red-500/20 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                                Executar Limpeza
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                </motion.div>
+                            )}
+
 
                             {/* Botão Salvar (Visível em abas de config global) */}
-                            {['general', 'ai', 'org', 'appearance'].includes(activeTab) && (
+                            {['general', 'ai', 'appearance'].includes(activeTab) && (
                                 <div className="flex justify-end pt-12 border-t border-border-theme">
                                     <button
                                         onClick={handleSave}
@@ -2134,65 +2317,135 @@ export default function SettingsPage() {
                 {
                     isUserModalOpen && (
                         <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
-                            <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in">
-                                <div className="p-10 border-b border-border-theme/50">
+                            <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] flex flex-col">
+                                <div className="p-10 border-b border-border-theme/50 flex-shrink-0">
                                     <h2 className="text-3xl font-black italic uppercase tracking-tight">
                                         {isEditingUser ? 'Editar' : 'Novo'} <span className="text-accent-theme">Usuário</span>
                                     </h2>
                                 </div>
-                                <form onSubmit={handleSaveUser} className="p-10 space-y-6">
-                                    <div className="grid grid-cols-2 gap-6">
-                                        <div className="col-span-2 space-y-2">
+                                <form onSubmit={handleSaveUser} className="p-10 space-y-6 overflow-y-auto custom-scrollbar">
+                                    <div className="space-y-6">
+                                        <div className="space-y-2">
                                             <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome Completo</label>
-                                            <input type="text" required value={currentUser.full_name || ''} onChange={e => setCurrentUser({ ...currentUser, full_name: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
+                                            <input type="text" required value={currentUser.full_name || ''} onChange={e => setCurrentUser({ ...currentUser, full_name: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Username</label>
-                                            <input type="text" required disabled={isEditingUser} value={currentUser.username || ''} onChange={e => setCurrentUser({ ...currentUser, username: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none disabled:opacity-50" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <CustomSelect
-                                                label="Nível"
-                                                value={currentUser.role || 'AGENT'}
-                                                onChange={val => setCurrentUser({ ...currentUser, role: val })}
-                                                icon={<Shield className="w-3 h-3" />}
-                                                options={[
-                                                    { value: 'AGENT', label: 'Agente', icon: <UserIcon className="w-4 h-4" /> },
-                                                    { value: 'ADMIN', label: 'Admin', icon: <ShieldCheck className="w-4 h-4 text-accent-theme" /> },
-                                                    ...(user?.role === 'ROOT' ? [{ value: 'ROOT', label: 'Root', icon: <SettingsIcon className="w-4 h-4 text-purple-500" /> }] : [])
-                                                ]}
-                                            />
-                                            <div className="pt-4">
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Username</label>
+                                                <input type="text" required disabled={isEditingUser} value={currentUser.username || ''} onChange={e => setCurrentUser({ ...currentUser, username: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none disabled:opacity-50 focus:border-accent-theme/50 transition-all" />
+                                            </div>
+                                            <div className="space-y-2">
                                                 <CustomSelect
-                                                    label="Perfil de Acesso (RBAC)"
-                                                    value={currentUser.profile_id || ''}
-                                                    onChange={val => setCurrentUser({ ...currentUser, profile_id: Number(val) || undefined })}
-                                                    icon={<ShieldCheck className="w-3 h-3 text-orange-400" />}
+                                                    label="Nível de Acesso"
+                                                    value={currentUser.role || 'AGENT'}
+                                                    onChange={val => setCurrentUser({ ...currentUser, role: val })}
+                                                    icon={<Shield className="w-3 h-3" />}
                                                     options={[
-                                                        { value: '', label: 'Nenhum (Usar Role Padrão)', icon: <UserIcon className="w-4 h-4 opacity-50" /> },
-                                                        ...profiles.map(p => ({
-                                                            value: p.id,
-                                                            label: p.name,
-                                                            icon: <ShieldCheck className="w-4 h-4 text-orange-400" />
-                                                        }))
+                                                        { value: 'AGENT', label: 'Agente', icon: <UserIcon className="w-4 h-4" /> },
+                                                        { value: 'ADMIN', label: 'Admin', icon: <ShieldCheck className="w-4 h-4 text-accent-theme" /> },
+                                                        ...(user?.role === 'ROOT' ? [{ value: 'ROOT', label: 'Root', icon: <SettingsIcon className="w-4 h-4 text-purple-500" /> }] : [])
                                                     ]}
-                                                    placeholder="Selecione um perfil customizado..."
                                                 />
-                                                <p className="text-[9px] text-[var(--color-text-muted)] mt-1 ml-1">* Perfis sobrescrevem permissões padrão da role.</p>
                                             </div>
                                         </div>
-                                        <div className="col-span-2 space-y-2">
-                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Email</label>
-                                            <input type="email" required value={currentUser.email || ''} onChange={e => setCurrentUser({ ...currentUser, email: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
+
+                                        <div className="space-y-2 pt-2">
+                                            <CustomSelect
+                                                label="Perfil de Acesso (RBAC)"
+                                                value={currentUser.profile_id || ''}
+                                                onChange={val => setCurrentUser({ ...currentUser, profile_id: Number(val) || undefined })}
+                                                icon={<ShieldCheck className="w-3 h-3 text-orange-400" />}
+                                                options={[
+                                                    { value: '', label: 'Nenhum (Usar Role Padrão)', icon: <UserIcon className="w-4 h-4 opacity-50" /> },
+                                                    ...profiles.map(p => ({
+                                                        value: p.id,
+                                                        label: p.name,
+                                                        icon: <ShieldCheck className="w-4 h-4 text-orange-400" />
+                                                    }))
+                                                ]}
+                                                placeholder="Selecione um perfil customizado..."
+                                            />
+                                            <p className="text-[9px] text-[var(--color-text-muted)] ml-1">* Perfis sobrescrevem permissões padrão da role.</p>
                                         </div>
-                                        <div className="col-span-2 space-y-2">
-                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">{isEditingUser ? 'Nova Senha (Opcional)' : 'Senha'}</label>
-                                            <input type="password" required={!isEditingUser} value={currentUser.password || ''} onChange={e => setCurrentUser({ ...currentUser, password: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none" />
+
+                                        <div className="space-y-3 pt-2">
+                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Setores de Atuação</label>
+                                            <div className="flex flex-col gap-2 p-4 bg-background/30 rounded-2xl border border-border-theme/50 max-h-[200px] overflow-y-auto custom-scrollbar">
+                                                {sectors.map(sector => {
+                                                    const isSelected = (currentUser.sectors || []).some(s => s.id === sector.id) || (currentUser as any).sector_ids?.includes(sector.id);
+                                                    return (
+                                                        <button
+                                                            key={sector.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const currentSectors = currentUser.sectors || [];
+                                                                // @ts-ignore
+                                                                const currentIds = (currentUser as any).sector_ids || currentSectors.map(s => s.id);
+
+                                                                let newIds;
+                                                                if (currentIds.includes(sector.id)) {
+                                                                    newIds = currentIds.filter((id: number) => id !== sector.id);
+                                                                } else {
+                                                                    newIds = [...currentIds, sector.id];
+                                                                }
+
+                                                                setCurrentUser({
+                                                                    ...currentUser,
+                                                                    // @ts-ignore
+                                                                    sector_ids: newIds,
+                                                                    // Update sectors object array for UI feedback while editing (optimistic)
+                                                                    sectors: sectors.filter(s => newIds.includes(s.id))
+                                                                });
+                                                            }}
+                                                            className={clsx(
+                                                                "group flex items-center justify-start gap-3 px-4 py-3 rounded-xl text-[10px] font-bold uppercase transition-all border shadow-sm relative overflow-hidden",
+                                                                isSelected
+                                                                    ? "bg-emerald-500/10 border-emerald-500 text-emerald-500 shadow-emerald-500/10"
+                                                                    : "bg-background border-border-theme text-[var(--color-text-muted)] hover:border-emerald-500/30 hover:bg-background/60 hover:text-foreground"
+                                                            )}
+                                                        >
+                                                            <div className={clsx(
+                                                                "w-4 h-4 rounded-md flex items-center justify-center border transition-all flex-shrink-0",
+                                                                isSelected ? "bg-emerald-500 border-emerald-500" : "border-gray-500/30 group-hover:border-emerald-500/50"
+                                                            )}>
+                                                                {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                                            </div>
+                                                            <span className="text-left leading-relaxed">{sector.name}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                                {sectors.length === 0 && (
+                                                    <div className="col-span-full text-center text-[10px] text-gray-500 italic py-2">
+                                                        Nenhum setor disponível.
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="col-span-2 flex items-center justify-between p-4 bg-white/5 rounded-2xl">
-                                            <span className="text-[10px] font-black uppercase">Ativo</span>
-                                            <button type="button" onClick={() => setCurrentUser({ ...currentUser, is_active: !currentUser.is_active })} className={clsx("w-10 h-5 rounded-full relative transition-all", currentUser.is_active ? "bg-accent-theme" : "bg-white/10")}>
-                                                <div className={clsx("w-3 h-3 bg-white rounded-full absolute top-1 transition-all", currentUser.is_active ? "left-6" : "left-1")} />
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Email</label>
+                                                <input type="email" required value={currentUser.email || ''} onChange={e => setCurrentUser({ ...currentUser, email: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">{isEditingUser ? 'Nova Senha (Opcional)' : 'Senha'}</label>
+                                                <input type="password" required={!isEditingUser} value={currentUser.password || ''} onChange={e => setCurrentUser({ ...currentUser, password: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between p-5 bg-background/30 rounded-2xl border border-border-theme/50">
+                                            <div className="flex items-center gap-3">
+                                                <div className={clsx("p-2 rounded-xl transition-colors", currentUser.is_active ? "bg-emerald-500/10 text-emerald-500" : "bg-gray-500/10 text-gray-500")}>
+                                                    {currentUser.is_active ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-black uppercase tracking-wider">Status da Conta</div>
+                                                    <div className="text-[10px] text-[var(--color-text-muted)]">{currentUser.is_active ? 'Usuário pode acessar o sistema' : 'Acesso bloqueado'}</div>
+                                                </div>
+                                            </div>
+                                            <button type="button" onClick={() => setCurrentUser({ ...currentUser, is_active: !currentUser.is_active })} className={clsx("w-12 h-7 rounded-full relative transition-all shadow-inner", currentUser.is_active ? "bg-emerald-500" : "bg-gray-600/30")}>
+                                                <div className={clsx("w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-sm", currentUser.is_active ? "left-6" : "left-1")} />
                                             </button>
                                         </div>
                                     </div>

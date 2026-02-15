@@ -151,11 +151,21 @@ async def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 async def create_sector(sector: schemas.SectorCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_sector(db=db, sector=sector)
 
+@app.put("/sectors/{sector_id}", response_model=schemas.Sector)
+async def update_sector(sector_id: int, sector: schemas.SectorUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    db_sector = crud.update_sector(db=db, sector_id=sector_id, sector_update=sector)
+    if not db_sector:
+        raise HTTPException(status_code=404, detail="Setor não encontrado")
+    return db_sector
+
 @app.delete("/sectors/{sector_id}")
 async def delete_sector(sector_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
-    if not crud.delete_sector(db, sector_id):
-        raise HTTPException(status_code=404, detail="Setor não encontrado")
-    return {"status": "ok"}
+    success, message = crud.delete_sector(db, sector_id)
+    if not success:
+        if "não encontrado" in message:
+            raise HTTPException(status_code=404, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
 
 @app.post("/users/", response_model=schemas.User)
 async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):

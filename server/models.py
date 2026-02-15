@@ -25,6 +25,7 @@ class Sector(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, unique=True)
     description = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
 
     tickets = relationship("Ticket", back_populates="sector")
     users = relationship("User", secondary="user_sectors", back_populates="sectors")

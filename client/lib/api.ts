@@ -163,6 +163,32 @@ export interface Category {
   subcategories?: Category[];
 }
 
+export interface Sector {
+  id: number;
+  name: string;
+  description?: string;
+  is_active: boolean;
+}
+
+export const getSectors = async () => {
+  const response = await api.get<Sector[]>('/sectors/');
+  return response.data;
+};
+
+export const createSector = async (sector: Omit<Sector, 'id'>) => {
+  const response = await api.post<Sector>('/sectors/', sector);
+  return response.data;
+};
+
+export const updateSector = async (id: number, sector: Partial<Sector>) => {
+  const response = await api.put<Sector>(`/sectors/${id}`, sector);
+  return response.data;
+};
+
+export const deleteSector = async (id: number) => {
+  await api.delete(`/sectors/${id}`);
+};
+
 export interface Client {
   id: number;
   name: string;
@@ -374,6 +400,7 @@ export interface User {
   created_at: string;
   profile_id?: number;
   profile?: Profile;
+  sectors?: Sector[];
 }
 
 export interface Profile {

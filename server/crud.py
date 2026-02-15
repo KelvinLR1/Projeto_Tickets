@@ -524,13 +524,34 @@ def create_sector(db: Session, sector: schemas.SectorCreate):
     db.refresh(db_sector)
     return db_sector
 
-def delete_sector(db: Session, sector_id: int):
+def update_sector(db: Session, sector_id: int, sector_update: schemas.SectorUpdate):
     db_sector = get_sector(db, sector_id)
     if db_sector:
-        db.delete(db_sector)
+        update_data = sector_update.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_sector, key, value)
         db.commit()
-        return True
-    return False
+        db.refresh(db_sector)
+    return db_sector
+
+def delete_sector(db: Session, sector_id: int):
+    db_sector = get_sector(db, sector_id)
+    if not db_sector:
+        return False, "Setor não encontrado"
+        
+    # Verificar se há usuários ou tickets vinculados
+    if db_sector.tickets:
+        return False, "Impossível excluir: Existem tickets vinculados a este setor."
+        
+    # Verificar usuários (relação many-to-many)
+    # A verificação direta db.query(models.User).filter(models.User.sectors.any(id=sector_id)).count() é mais segura
+    users_count = db.query(models.User).filter(models.User.sectors.any(id=sector_id)).count()
+    if users_count > 0:
+        return False, f"Impossível excluir: Existem {users_count} usuários vinculados a este setor."
+        
+    db.delete(db_sector)
+    db.commit()
+    return True, "Setor excluído com sucesso"
 
 def add_user_to_sector(db: Session, user_id: int, sector_id: int):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -670,20 +691,20 @@ def delete_profile(db: Session, profile_id: int):
 
 # --- User CRUD ---
 def get_user(db: Session, user_id: int):
-    return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.id == user_id).first()
+    return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.id == user_id).first()
 
 def get_user_by_username(db: Session, username: str):
-    return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.username == username).first()
+    return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.username == username).first()
 
 def get_users_short(db: Session):
     # Retorna uma lista de tuplas (id, full_name, username)
     return db.query(models.User.id, models.User.full_name, models.User.username).filter(models.User.is_active == True).all()
 
 def get_user_by_email(db: Session, email: str):
-    return db.query(models.User).options(joinedload(models.User.profile)).filter(models.User.email == email).first()
+    return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.email == email).first()
 
 def get_users(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.User).options(joinedload(models.User.profile)).offset(skip).limit(limit).all()
+    return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).offset(skip).limit(limit).all()
 
 def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
     db_user = models.User(
@@ -694,6 +715,12 @@ def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
         role=user.role,
         profile_id=user.profile_id
     )
+    
+    # Adicionar setores
+    if user.sector_ids:
+        sectors = db.query(models.Sector).filter(models.Sector.id.in_(user.sector_ids)).all()
+        db_user.sectors = sectors
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -707,6 +734,13 @@ def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate, hash
             db_user.hashed_password = hashed_password
             update_data.pop("password", None)
         
+        # Atualizar setores se fornecido
+        if "sector_ids" in update_data:
+            sector_ids = update_data.pop("sector_ids")
+            if sector_ids is not None:
+                sectors = db.query(models.Sector).filter(models.Sector.id.in_(sector_ids)).all()
+                db_user.sectors = sectors
+
         for key, value in update_data.items():
             if key != "password":
                 setattr(db_user, key, value)
