@@ -15,10 +15,34 @@ export default function MonitorPage() {
 
     const fetchTickets = async () => {
         try {
-            const data = await getTickets(undefined, true); // true for unassignedOnly
-            // Filtrar apenas tickets que não estão em status final (resolvidos/cancelados)
-            const openTickets = data.filter(t => !t.status_obj?.is_final);
-            setTickets(openTickets);
+            const data = await getTickets(undefined, true, true); // unassignedOnly: true, excludeFinalized: true
+
+            // Define weights for each priority level
+            const priorityWeights: Record<string, number> = {
+                'crítica': 1,
+                'critical': 1,
+                'alta': 2,
+                'high': 2,
+                'média': 3,
+                'medium': 3,
+                'baixa': 4,
+                'low': 4
+            };
+
+            // Sorting by priority weight
+            const sortedData = data.sort((a, b) => {
+                const weightA = priorityWeights[a.priority?.toLowerCase()] || 99;
+                const weightB = priorityWeights[b.priority?.toLowerCase()] || 99;
+
+                if (weightA !== weightB) {
+                    return weightA - weightB;
+                }
+
+                // Secondary sort: oldest first (to keep FIFO within same priority)
+                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            });
+
+            setTickets(sortedData);
         } catch (error) {
             console.error('Erro ao buscar tickets:', error);
         } finally {
@@ -84,7 +108,7 @@ export default function MonitorPage() {
 
     if (loading && tickets.length === 0) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="h-screen bg-background flex items-center justify-center">
                 <div className="text-accent-theme animate-pulse flex flex-col items-center gap-4">
                     <Monitor className="w-12 h-12" />
                     <p className="font-black uppercase tracking-[0.3em] text-sm">Carregando Fila...</p>
@@ -94,9 +118,9 @@ export default function MonitorPage() {
     }
 
     return (
-        <main className="min-h-screen bg-background text-foreground p-10 overflow-hidden flex flex-col gap-10">
+        <main className="h-screen bg-background text-foreground p-10 overflow-hidden flex flex-col gap-10">
             {/* Header / Top Bar */}
-            <div className="flex items-center justify-between border-b border-border-theme pb-10">
+            <div className="flex items-center justify-between border-b border-border-theme pb-10 flex-shrink-0">
                 <div className="flex items-center gap-6">
                     <Link
                         href="/"
@@ -155,7 +179,7 @@ export default function MonitorPage() {
                                             {ticket.priority}
                                         </div>
                                         <div className="text-[var(--color-text-muted)] font-mono text-sm opacity-50">
-                                            #{ticket.id}
+                                            {ticket.id}
                                         </div>
                                     </div>
 
@@ -198,7 +222,7 @@ export default function MonitorPage() {
             </div>
 
             {/* Footer / Stats */}
-            <div className="glass-card flex items-center justify-between py-6 px-10 rounded-[2rem] border-white/5 shadow-2xl">
+            <div className="glass-card flex items-center justify-between py-6 px-10 rounded-[2rem] border-white/5 shadow-2xl flex-shrink-0">
                 <div className="flex flex-wrap gap-8 md:gap-12">
                     <div className="flex flex-col">
                         <span className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest">Aguardando</span>

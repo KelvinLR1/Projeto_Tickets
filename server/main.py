@@ -360,8 +360,8 @@ def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depen
     return crud.create_ticket_simple(db=db, ticket=ticket)
 
 @app.get("/tickets/", response_model=List[schemas.Ticket])
-def read_tickets(skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, db: Session = Depends(get_db)):
-    tickets = crud.get_tickets(db, skip=skip, limit=limit, status=status, client_id=client_id, unassigned_only=unassigned_only)
+def read_tickets(skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db)):
+    tickets = crud.get_tickets(db, skip=skip, limit=limit, status=status, client_id=client_id, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
     return tickets
 
 @app.get("/dashboard/stats")

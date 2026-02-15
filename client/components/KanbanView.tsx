@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { getTickets, updateTicket, getStatuses, Ticket, Status } from '@/lib/api';
 import {
     Loader2,
@@ -277,119 +278,121 @@ export default function KanbanView({
                                                 draggableId={ticket.id.toString()}
                                                 index={index}
                                             >
-                                                {(provided, snapshot) => (
-                                                    <div
-                                                        ref={provided.innerRef}
-                                                        {...provided.draggableProps}
-                                                        {...provided.dragHandleProps}
-                                                    >
-                                                        <motion.div
-                                                            initial={{ opacity: 0, y: 10 }}
-                                                            animate={{ opacity: 1, y: 0 }}
-                                                            className={clsx(
-                                                                "glass-card p-5 rounded-3xl border transition-colors border-border-theme/50 shadow-xl group/card relative overflow-hidden",
-                                                                snapshot.isDragging ? "border-accent-theme shadow-2xl scale-105 rotate-1 z-50 bg-background/80" : "hover:border-accent-theme/40",
-                                                                updatingId === ticket.id && "animate-pulse border-accent-theme opacity-50"
-                                                            )}
+                                                {(provided, snapshot) => {
+                                                    const content = (
+                                                        <div
+                                                            ref={provided.innerRef}
+                                                            {...provided.draggableProps}
+                                                            {...provided.dragHandleProps}
+                                                            style={{
+                                                                ...provided.draggableProps.style,
+                                                                zIndex: snapshot.isDragging ? 9999 : 1
+                                                            }}
                                                         >
-                                                            {/* Priority Indicator Line */}
-                                                            <div
-                                                                className="absolute top-0 left-0 right-0 h-1 opacity-50"
-                                                                style={{ backgroundColor: statusObj.color }}
-                                                            />
+                                                            <motion.div
+                                                                initial={{ opacity: 0, y: 10 }}
+                                                                animate={{ opacity: 1, y: 0 }}
+                                                                className={clsx(
+                                                                    "glass-card p-5 rounded-3xl border transition-colors border-border-theme/50 shadow-xl group/card relative overflow-hidden",
+                                                                    snapshot.isDragging ? "border-accent-theme shadow-2xl scale-105 rotate-1 bg-background/95" : "hover:border-accent-theme/40",
+                                                                    updatingId === ticket.id && "animate-pulse border-accent-theme opacity-50"
+                                                                )}
+                                                            >
+                                                                {/* Priority Indicator Line */}
+                                                                <div
+                                                                    className="absolute top-0 left-0 right-0 h-1 opacity-50"
+                                                                    style={{ backgroundColor: statusObj.color }}
+                                                                />
 
-                                                            <div className="flex items-start justify-between gap-3 mb-4">
-                                                                <div className="flex flex-col gap-1 flex-1">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[9px] font-mono font-black text-accent-theme/50 tracking-tighter">#{ticket.id}</span>
-                                                                        <span className={clsx(
-                                                                            "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
-                                                                            priorityColor(ticket.priority)
-                                                                        )}>
-                                                                            {ticket.priority}
-                                                                        </span>
+                                                                <div className="flex items-start justify-between gap-3 mb-4">
+                                                                    <div className="flex flex-col gap-1 flex-1">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[9px] font-mono font-black text-accent-theme/50 tracking-tighter">{ticket.id}</span>
+                                                                            <span className={clsx(
+                                                                                "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
+                                                                                priorityColor(ticket.priority)
+                                                                            )}>
+                                                                                {ticket.priority}
+                                                                            </span>
+                                                                        </div>
+                                                                        <Link href={`/tickets/${ticket.id}`} onMouseDown={e => e.stopPropagation()}>
+                                                                            <h4 className="text-xs font-bold text-foreground leading-tight line-clamp-2 mt-1 group-hover/card:text-accent-theme transition-colors uppercase tracking-tight">
+                                                                                {ticket.title}
+                                                                            </h4>
+                                                                        </Link>
                                                                     </div>
-                                                                    <Link href={`/tickets/${ticket.id}`} onMouseDown={e => e.stopPropagation()}>
-                                                                        <h4 className="text-xs font-bold text-foreground leading-tight line-clamp-2 mt-1 group-hover/card:text-accent-theme transition-colors">
-                                                                            {ticket.title}
-                                                                        </h4>
-                                                                    </Link>
-                                                                </div>
 
-                                                                {/* Actions Container */}
-                                                                <div className="flex flex-col gap-2 shrink-0">
-                                                                    {/* Timer Toggle */}
-                                                                    <div onMouseDown={e => e.stopPropagation()}>
-                                                                        {activeTimers.find(t => t.ticket_id === ticket.id) ? (
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    handleStopTimer(ticket.id);
-                                                                                }}
-                                                                                className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 transition-all shadow-lg shadow-red-500/10"
-                                                                                title="Parar Cronômetro"
-                                                                            >
-                                                                                <div className="w-2.5 h-2.5 bg-red-500 rounded-[2px] animate-pulse" />
-                                                                            </button>
-                                                                        ) : (
-                                                                            ticket.status !== 'Finalizado' && (
+                                                                    {/* Actions Container */}
+                                                                    <div className="flex flex-col gap-2 shrink-0">
+                                                                        {/* Timer Toggle */}
+                                                                        <div onMouseDown={e => e.stopPropagation()}>
+                                                                            {activeTimers.find(t => t.ticket_id === ticket.id) ? (
                                                                                 <button
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
-                                                                                        handleStartTimer(ticket.id);
+                                                                                        handleStopTimer(ticket.id);
                                                                                     }}
-                                                                                    className="p-2 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-xl transition-all opacity-0 group-hover/card:opacity-100"
-                                                                                    title="Iniciar Cronômetro"
+                                                                                    className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 transition-all shadow-lg shadow-red-500/10"
+                                                                                    title="Parar Cronômetro"
                                                                                 >
-                                                                                    <Play className="w-2.5 h-2.5 fill-current" />
+                                                                                    <div className="w-2.5 h-2.5 bg-red-500 rounded-[2px] animate-pulse" />
                                                                                 </button>
-                                                                            )
-                                                                        )}
-                                                                    </div>
+                                                                            ) : (
+                                                                                ticket.status !== 'Finalizado' && (
+                                                                                    <button
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            handleStartTimer(ticket.id);
+                                                                                        }}
+                                                                                        className="p-2 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-xl transition-all opacity-0 group-hover/card:opacity-100"
+                                                                                        title="Iniciar Cronômetro"
+                                                                                    >
+                                                                                        <Play className="w-2.5 h-2.5 fill-current" />
+                                                                                    </button>
+                                                                                )
+                                                                            )}
+                                                                        </div>
 
-                                                                    {/* Status Cycle */}
-                                                                    <button
-                                                                        onMouseDown={e => e.stopPropagation()}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleStatusChange(ticket.id, ticket.status);
-                                                                        }}
-                                                                        disabled={updatingId === ticket.id}
-                                                                        className="p-2 bg-background/50 hover:bg-accent-theme/10 text-[var(--color-text-muted)] hover:text-accent-theme rounded-xl transition-all opacity-0 group-hover/card:opacity-100"
-                                                                        title="Próximo Status"
-                                                                    >
-                                                                        <RefreshCw className={clsx("w-2.5 h-2.5", updatingId === ticket.id && "animate-spin")} />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="flex items-center justify-between pt-4 border-t border-border-theme/30 mt-auto">
-                                                                <div className="flex items-center gap-2 overflow-hidden">
-                                                                    <div className="w-6 h-6 rounded-full bg-accent-theme/10 flex items-center justify-center text-accent-theme shrink-0 border border-accent-theme/20">
-                                                                        <User className="w-3 h-3" />
-                                                                    </div>
-                                                                    <div className="flex flex-col truncate">
-                                                                        <span className="text-[9px] font-black uppercase text-foreground/80 truncate">
-                                                                            {ticket.client?.name || 'Desconhecido'}
-                                                                        </span>
-                                                                        <span className="text-[7px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
-                                                                            Cliente
-                                                                        </span>
+                                                                        {/* Status Cycle */}
+                                                                        <button
+                                                                            onMouseDown={e => e.stopPropagation()}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleStatusChange(ticket.id, ticket.status);
+                                                                            }}
+                                                                            disabled={updatingId === ticket.id}
+                                                                            className="p-2 bg-background/50 hover:bg-accent-theme/10 text-[var(--color-text-muted)] hover:text-accent-theme rounded-xl transition-all opacity-0 group-hover/card:opacity-100"
+                                                                            title="Próximo Status"
+                                                                        >
+                                                                            <RefreshCw className={clsx("w-2.5 h-2.5", updatingId === ticket.id && "animate-spin")} />
+                                                                        </button>
                                                                     </div>
                                                                 </div>
 
-                                                                {/* View Button */}
-                                                                <Link
-                                                                    href={`/tickets/${ticket.id}`}
-                                                                    onMouseDown={e => e.stopPropagation()}
-                                                                    className="p-2 bg-background/50 hover:bg-accent-theme/10 text-[var(--color-text-muted)] hover:text-accent-theme rounded-lg transition-all"
-                                                                >
-                                                                    <ExternalLink className="w-3.5 h-3.5" />
-                                                                </Link>
-                                                            </div>
-                                                        </motion.div>
-                                                    </div>
-                                                )}
+                                                                <div className="flex items-center justify-between pt-4 border-t border-border-theme/30 mt-auto">
+                                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                                        <div className="w-6 h-6 rounded-full bg-accent-theme/10 flex items-center justify-center text-accent-theme shrink-0 border border-accent-theme/20">
+                                                                            <User className="w-3 h-3" />
+                                                                        </div>
+                                                                        <div className="flex flex-col truncate">
+                                                                            <span className="text-[9px] font-black uppercase text-foreground/80 truncate">
+                                                                                {ticket.client?.name || 'Desconhecido'}
+                                                                            </span>
+                                                                            <span className="text-[7px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                                                Cliente
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </motion.div>
+                                                        </div>
+                                                    );
+
+                                                    if (snapshot.isDragging) {
+                                                        return createPortal(content, document.body);
+                                                    }
+                                                    return content;
+                                                }}
                                             </Draggable>
                                         ))}
                                         {provided.placeholder}

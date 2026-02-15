@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 
-html {
+html,
+body {
   /* Fluid root scaling: 14px on small/high-DPI screens, scale up to 16px on large desktops */
   font-size: clamp(14px, 1.2vw, 16px);
+  /* Prevent layout shift when scrollbar appears/disappears */
+  scrollbar-gutter: stable;
 }
 
 :root {
@@ -412,6 +415,10 @@ body {
 /* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
+}
+
+.custom-scrollbar {
+  scrollbar-gutter: stable;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {

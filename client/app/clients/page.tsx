@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { getClients, createClient, updateClient, deleteClient, importClientsExcel, importClientsDB, Client } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
 import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ClientRowSkeleton } from '@/components/Skeleton';
 import clsx from 'clsx';
 
 export default function ClientsPage() {
@@ -219,31 +221,39 @@ export default function ClientsPage() {
                                 <ChevronDown className={clsx("w-4 h-4 transition-transform", isImportMenuOpen && "rotate-180")} />
                             </button>
 
-                            {isImportMenuOpen && (
-                                <div className="absolute top-full right-0 mt-4 w-64 glass-card rounded-2xl border border-border-theme shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
-                                    <button
-                                        onClick={() => { setIsExcelModalOpen(true); setIsImportMenuOpen(false); }}
-                                        className="w-full flex items-center gap-4 px-6 py-5 hover:bg-white/5 transition-all text-left group"
+                            <AnimatePresence>
+                                {isImportMenuOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                        transition={{ duration: 0.2, ease: "easeOut" }}
+                                        className="absolute top-full right-0 mt-4 w-64 glass-card rounded-2xl border border-border-theme shadow-2xl z-50 overflow-hidden"
                                     >
-                                        <FileSpreadsheet className="w-5 h-5 text-green-500" />
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] font-black uppercase tracking-widest">Excel / CSV</span>
-                                            <span className="text-[9px] text-[var(--color-text-muted)] font-bold">Arquivos locais</span>
-                                        </div>
-                                    </button>
-                                    <div className="h-px bg-border-theme/30" />
-                                    <button
-                                        onClick={() => { setIsDBModalOpen(true); setIsImportMenuOpen(false); }}
-                                        className="w-full flex items-center gap-4 px-6 py-5 hover:bg-white/5 transition-all text-left group"
-                                    >
-                                        <Database className="w-5 h-5 text-blue-500" />
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] font-black uppercase tracking-widest">Base Externa</span>
-                                            <span className="text-[9px] text-[var(--color-text-muted)] font-bold">SQL Server, MySQL, PG</span>
-                                        </div>
-                                    </button>
-                                </div>
-                            )}
+                                        <button
+                                            onClick={() => { setIsExcelModalOpen(true); setIsImportMenuOpen(false); }}
+                                            className="w-full flex items-center gap-4 px-6 py-5 hover:bg-white/5 transition-all text-left group"
+                                        >
+                                            <FileSpreadsheet className="w-5 h-5 text-green-500" />
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-black uppercase tracking-widest">Excel / CSV</span>
+                                                <span className="text-[9px] text-[var(--color-text-muted)] font-bold">Arquivos locais</span>
+                                            </div>
+                                        </button>
+                                        <div className="h-px bg-border-theme/30" />
+                                        <button
+                                            onClick={() => { setIsDBModalOpen(true); setIsImportMenuOpen(false); }}
+                                            className="w-full flex items-center gap-4 px-6 py-5 hover:bg-white/5 transition-all text-left group"
+                                        >
+                                            <Database className="w-5 h-5 text-blue-500" />
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-black uppercase tracking-widest">Base Externa</span>
+                                                <span className="text-[9px] text-[var(--color-text-muted)] font-bold">SQL Server, MySQL, PG</span>
+                                            </div>
+                                        </button>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
 
                         <button
@@ -296,156 +306,219 @@ export default function ClientsPage() {
                     </div>
 
                     {/* Advanced Filters Panel */}
-                    {showAdvancedFilters && (
-                        <div className="mt-8 pt-8 border-t border-border-theme/30 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-in slide-in-from-top-4 duration-300">
-                            <div className="space-y-3">
-                                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Data Inicial</label>
-                                <div className="relative">
-                                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-theme/50" />
-                                    <input
-                                        type="date"
-                                        className="w-full bg-background/50 border border-border-theme rounded-xl pl-12 pr-4 py-3 text-xs font-bold focus:outline-none"
-                                        value={filters.startDate}
-                                        onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                                    />
+                    <AnimatePresence>
+                        {showAdvancedFilters && (
+                            <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.3, ease: "easeInOut" }}
+                                className="overflow-hidden"
+                            >
+                                <div className="mt-8 pt-8 border-t border-border-theme/30 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <div className="space-y-3">
+                                        <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Data Inicial</label>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-theme/50" />
+                                            <input
+                                                type="date"
+                                                className="w-full bg-background/50 border border-border-theme rounded-xl pl-12 pr-4 py-3 text-xs font-bold focus:outline-none"
+                                                value={filters.startDate}
+                                                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Data Final</label>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-theme/50" />
+                                            <input
+                                                type="date"
+                                                className="w-full bg-background/50 border border-border-theme rounded-xl pl-12 pr-4 py-3 text-xs font-bold focus:outline-none"
+                                                value={filters.endDate}
+                                                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Tipo de Documento</label>
+                                        <select
+                                            className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-xs font-bold focus:outline-none appearance-none"
+                                            value={filters.docType}
+                                            onChange={(e) => setFilters({ ...filters, docType: e.target.value })}
+                                        >
+                                            <option value="all">Todos os tipos</option>
+                                            <option value="cpf">Apenas CPF</option>
+                                            <option value="cnpj">Apenas CNPJ</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Contato Telefônico</label>
+                                        <select
+                                            className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-xs font-bold focus:outline-none appearance-none"
+                                            value={filters.hasPhone}
+                                            onChange={(e) => setFilters({ ...filters, hasPhone: e.target.value })}
+                                        >
+                                            <option value="all">Todos os registros</option>
+                                            <option value="yes">Apenas com telefone</option>
+                                            <option value="no">Sem telefone</option>
+                                        </select>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="space-y-3">
-                                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Data Final</label>
-                                <div className="relative">
-                                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-theme/50" />
-                                    <input
-                                        type="date"
-                                        className="w-full bg-background/50 border border-border-theme rounded-xl pl-12 pr-4 py-3 text-xs font-bold focus:outline-none"
-                                        value={filters.endDate}
-                                        onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-                            <div className="space-y-3">
-                                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Tipo de Documento</label>
-                                <select
-                                    className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-xs font-bold focus:outline-none appearance-none"
-                                    value={filters.docType}
-                                    onChange={(e) => setFilters({ ...filters, docType: e.target.value })}
-                                >
-                                    <option value="all">Todos os tipos</option>
-                                    <option value="cpf">Apenas CPF</option>
-                                    <option value="cnpj">Apenas CNPJ</option>
-                                </select>
-                            </div>
-                            <div className="space-y-3">
-                                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Contato Telefônico</label>
-                                <select
-                                    className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-xs font-bold focus:outline-none appearance-none"
-                                    value={filters.hasPhone}
-                                    onChange={(e) => setFilters({ ...filters, hasPhone: e.target.value })}
-                                >
-                                    <option value="all">Todos</option>
-                                    <option value="yes">Com telefone</option>
-                                    <option value="no">Sem telefone</option>
-                                </select>
-                            </div>
-                        </div>
-                    )}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
 
-                {/* Clients Table */}
-                {loading && clients.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-24 space-y-4">
-                        <Loader2 className="w-12 h-12 animate-spin text-accent-theme opacity-20" />
-                        <p className="text-[var(--color-text-muted)] text-xs font-bold uppercase tracking-widest animate-pulse">Carregando Cooperadores...</p>
-                    </div>
-                ) : (
-                    <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl transition-all duration-500">
-                        <div className="overflow-x-auto custom-scrollbar">
-                            <table className="w-full text-left text-sm border-collapse">
-                                <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
-                                    <tr>
-                                        <th className="px-8 py-6">Parceiro / Cliente</th>
-                                        <th className="px-8 py-6 hidden md:table-cell">Identificação</th>
-                                        <th className="px-8 py-6 hidden md:table-cell">Comunicação</th>
-                                        <th className="px-8 py-6 hidden lg:table-cell">Integração</th>
-                                        <th className="px-8 py-6 text-right">Controle</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-border-theme/30">
-                                    {filteredClients.map((client) => (
-                                        <tr key={client.id} className="group hover:bg-background/50 transition-all duration-300 cursor-default">
-                                            <td className="px-8 py-5">
-                                                <div className="flex items-center gap-5">
-                                                    <div className="w-12 h-12 rounded-[1rem] bg-accent-theme/10 flex items-center justify-center text-accent-theme group-hover:scale-110 transition-transform flex-shrink-0 shadow-inner border border-accent-theme/10">
-                                                        <User className="w-6 h-6" />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-black text-foreground group-hover:text-accent-theme transition-colors font-display uppercase tracking-tight italic">{client.name}</div>
-                                                        <div className="text-[10px] text-[var(--color-text-muted)] md:hidden font-mono">#{client.id} | {client.cpf_cnpj}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5 hidden md:table-cell">
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="text-[12px] font-black font-mono text-accent-theme/80">{client.cpf_cnpj}</div>
-                                                    <div className="text-[9px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">Documento ID</div>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5 hidden md:table-cell">
-                                                <div className="flex flex-col gap-1.5">
-                                                    <div className="flex items-center gap-3 text-foreground font-bold text-[13px]">
-                                                        <Mail className="w-3.5 h-3.5 text-accent-theme/60" />
-                                                        {client.email}
-                                                    </div>
-                                                    {client.phone && (
-                                                        <div className="flex items-center gap-3 text-[11px] text-[var(--color-text-muted)] font-medium">
-                                                            <Phone className="w-3 h-3" />
-                                                            {client.phone}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5 hidden lg:table-cell">
-                                                <div className="flex items-center gap-3 text-[var(--color-text-muted)] font-mono text-[11px] uppercase tracking-widest">
-                                                    <Calendar className="w-3.5 h-3.5" />
-                                                    {client.created_at ? new Date(client.created_at).toLocaleDateString() : 'LEGACY'}
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5">
-                                                <div className="flex items-center justify-end gap-3">
-                                                    <button
-                                                        onClick={() => handleOpenModal(client)}
-                                                        className="p-3 bg-background/50 hover:bg-accent-theme/10 rounded-2xl transition-all text-[var(--color-text-muted)] hover:text-accent-theme shadow-sm"
-                                                        title="Editar Cliente"
+                {/* Content Area with Loading Logic */}
+                <div className="min-h-[400px]">
+                    <AnimatePresence mode="wait">
+                        {loading && clients.length === 0 ? (
+                            <motion.div
+                                key="loading-skeletons"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl"
+                            >
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm border-collapse">
+                                        <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
+                                            <tr>
+                                                <th className="px-8 py-6">Parceiro / Cliente</th>
+                                                <th className="px-8 py-6 hidden md:table-cell">Identificação</th>
+                                                <th className="px-8 py-6 hidden md:table-cell">Comunicação</th>
+                                                <th className="px-8 py-6 hidden lg:table-cell">Integração</th>
+                                                <th className="px-8 py-6 text-right">Controle</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-border-theme/30">
+                                            {[1, 2, 3, 4, 5].map(i => <ClientRowSkeleton key={i} />)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key="clients-content"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                            >
+                                <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl transition-all duration-500">
+                                    <div className="overflow-x-auto custom-scrollbar">
+                                        <table className="w-full text-left text-sm border-collapse">
+                                            <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
+                                                <tr>
+                                                    <th className="px-8 py-6">Parceiro / Cliente</th>
+                                                    <th className="px-8 py-6 hidden md:table-cell">Identificação</th>
+                                                    <th className="px-8 py-6 hidden md:table-cell">Comunicação</th>
+                                                    <th className="px-8 py-6 hidden lg:table-cell">Integração</th>
+                                                    <th className="px-8 py-6 text-right">Controle</th>
+                                                </tr>
+                                            </thead>
+                                            <motion.tbody
+                                                variants={{
+                                                    show: {
+                                                        transition: {
+                                                            staggerChildren: 0.05
+                                                        }
+                                                    }
+                                                }}
+                                                initial="hidden"
+                                                animate="show"
+                                                className="divide-y divide-border-theme/30"
+                                            >
+                                                {filteredClients.map((client) => (
+                                                    <motion.tr
+                                                        key={client.id}
+                                                        variants={{
+                                                            hidden: { opacity: 0, x: -10 },
+                                                            show: { opacity: 1, x: 0 }
+                                                        }}
+                                                        className="group hover:bg-background/50 transition-all duration-300 cursor-default"
                                                     >
-                                                        <Pencil className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(client.id)}
-                                                        disabled={actionId === client.id}
-                                                        className="p-3 bg-background/50 hover:bg-red-500/10 rounded-2xl transition-all text-[var(--color-text-muted)] hover:text-red-500 shadow-sm"
-                                                        title="Remover Cliente"
-                                                    >
-                                                        {actionId === client.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                        <td className="px-8 py-5">
+                                                            <div className="flex items-center gap-5">
+                                                                <div className="w-12 h-12 rounded-[1rem] bg-accent-theme/10 flex items-center justify-center text-accent-theme group-hover:scale-110 transition-transform flex-shrink-0 shadow-inner border border-accent-theme/10">
+                                                                    <User className="w-6 h-6" />
+                                                                </div>
+                                                                <div>
+                                                                    <div className="font-black text-foreground group-hover:text-accent-theme transition-colors font-display uppercase tracking-tight italic">{client.name}</div>
+                                                                    <div className="text-[10px] text-[var(--color-text-muted)] md:hidden font-mono">#{client.id} | {client.cpf_cnpj}</div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-8 py-5 hidden md:table-cell">
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="text-[12px] font-black font-mono text-accent-theme/80">{client.cpf_cnpj}</div>
+                                                                <div className="text-[9px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">Documento ID</div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-8 py-5 hidden md:table-cell">
+                                                            <div className="flex flex-col gap-1.5">
+                                                                <div className="flex items-center gap-3 text-foreground font-bold text-[13px]">
+                                                                    <Mail className="w-3.5 h-3.5 text-accent-theme/60" />
+                                                                    {client.email}
+                                                                </div>
+                                                                {client.phone && (
+                                                                    <div className="flex items-center gap-3 text-[11px] text-[var(--color-text-muted)] font-medium">
+                                                                        <Phone className="w-3 h-3" />
+                                                                        {client.phone}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-8 py-5 hidden lg:table-cell">
+                                                            <div className="flex items-center gap-3 text-[var(--color-text-muted)] font-mono text-[11px] uppercase tracking-widest">
+                                                                <Calendar className="w-3.5 h-3.5" />
+                                                                {client.created_at ? new Date(client.created_at).toLocaleDateString() : 'LEGACY'}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-8 py-5">
+                                                            <div className="flex items-center justify-end gap-3">
+                                                                <button
+                                                                    onClick={() => handleOpenModal(client)}
+                                                                    className="p-3 bg-background/50 hover:bg-accent-theme/10 rounded-2xl transition-all text-[var(--color-text-muted)] hover:text-accent-theme shadow-sm"
+                                                                    title="Editar Cliente"
+                                                                >
+                                                                    <Pencil className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDelete(client.id)}
+                                                                    disabled={actionId === client.id}
+                                                                    className="p-3 bg-background/50 hover:bg-red-500/10 rounded-2xl transition-all text-[var(--color-text-muted)] hover:text-red-500 shadow-sm"
+                                                                    title="Remover Cliente"
+                                                                >
+                                                                    {actionId === client.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </motion.tr>
+                                                ))}
 
-                                    {filteredClients.length === 0 && !loading && (
-                                        <tr>
-                                            <td colSpan={4} className="py-24 text-center">
-                                                <div className="w-24 h-24 bg-background/30 rounded-full mx-auto flex items-center justify-center border border-border-theme shadow-inner opacity-20 mb-6 group-hover:scale-110 transition-transform">
-                                                    <User className="w-12 h-12" />
-                                                </div>
-                                                <p className="text-[var(--color-text-muted)] text-sm font-medium italic">Nenhum parceiro encontrado nos registros.</p>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
+                                                {filteredClients.length === 0 && !loading && (
+                                                    <motion.tr
+                                                        initial={{ opacity: 0 }}
+                                                        animate={{ opacity: 1 }}
+                                                    >
+                                                        <td colSpan={5} className="py-24 text-center">
+                                                            <div className="w-24 h-24 bg-background/30 rounded-full mx-auto flex items-center justify-center border border-border-theme shadow-inner opacity-20 mb-6 group-hover:scale-110 transition-transform">
+                                                                <User className="w-12 h-12" />
+                                                            </div>
+                                                            <p className="text-[var(--color-text-muted)] text-sm font-medium italic">Nenhum parceiro encontrado nos registros.</p>
+                                                        </td>
+                                                    </motion.tr>
+                                                )}
+                                            </motion.tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </div>
 
             {/* Modal de Cadastro/Edição */}

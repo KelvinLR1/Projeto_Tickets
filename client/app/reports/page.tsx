@@ -201,7 +201,7 @@ export default function ReportsPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border-theme/50">
-                                {systemStatuses.map(statusObj => (
+                                {systemStatuses.filter(s => !s.is_final).map(statusObj => (
                                     <tr key={statusObj.id} className="group hover:bg-white/5 transition-colors">
                                         <td className="py-6 px-4 font-black uppercase text-[10px] text-[var(--color-text-muted)] group-hover:text-foreground transition-colors tracking-widest">
                                             {statusObj.name}

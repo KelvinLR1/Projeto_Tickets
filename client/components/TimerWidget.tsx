@@ -70,7 +70,7 @@ const TimerWidget: React.FC = () => {
                                 <div className="flex items-start justify-between gap-3 mb-4">
                                     <div className="flex-1 min-w-0">
                                         <p className="text-[8px] font-black text-accent-theme/60 uppercase tracking-tighter mb-1">
-                                            Ticket #{ticket.id}
+                                            Ticket {ticket.id}
                                         </p>
                                         <h3 className="text-xs font-bold truncate leading-tight mb-1 text-foreground">
                                             {ticket.title}

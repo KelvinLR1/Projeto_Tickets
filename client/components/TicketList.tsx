@@ -9,6 +9,7 @@ import { useAuth } from './AuthProvider';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { TicketRowSkeleton } from './Skeleton';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function TicketList({
     tickets: initialTickets,
@@ -256,22 +257,43 @@ export default function TicketList({
                                 <th className="px-8 py-6 text-right w-24">Ações</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border-theme/30">
+                        <motion.tbody
+                            variants={{
+                                show: {
+                                    transition: {
+                                        staggerChildren: 0.05
+                                    }
+                                }
+                            }}
+                            initial="hidden"
+                            animate="show"
+                            className="divide-y divide-border-theme/30"
+                        >
                             {filteredTickets.length === 0 && !loading && (
-                                <tr>
+                                <motion.tr
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                >
                                     <td colSpan={6} className="py-24 text-center">
                                         <div className="w-20 h-20 bg-background rounded-full mx-auto flex items-center justify-center border border-border-theme shadow-inner opacity-20 mb-4">
                                             <ReceiptText className="w-10 h-10" />
                                         </div>
                                         <p className="text-gray-500 text-sm italic">Nenhum ticket encontrado no sistema.</p>
                                     </td>
-                                </tr>
+                                </motion.tr>
                             )}
                             {filteredTickets.map((ticket) => {
                                 const style = getStatusStyle(ticket.status, ticket.status_obj);
 
                                 return (
-                                    <tr key={ticket.id} className="group hover:bg-white/[0.03] transition-all duration-300 border-b border-border-theme/20 last:border-0">
+                                    <motion.tr
+                                        key={ticket.id}
+                                        variants={{
+                                            hidden: { opacity: 0, x: -10 },
+                                            show: { opacity: 1, x: 0 }
+                                        }}
+                                        className="group hover:bg-white/[0.03] transition-all duration-300 border-b border-border-theme/20 last:border-0"
+                                    >
                                         <td className="px-8 py-6 align-top">
                                             <div className="flex items-center gap-4">
                                                 <span className="font-mono text-sm font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
@@ -348,12 +370,20 @@ export default function TicketList({
                                         </td>
                                         <td className="px-8 py-6">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-accent-theme/10 flex items-center justify-center text-accent-theme border border-accent-theme/20">
+                                                <div className={clsx(
+                                                    "w-8 h-8 rounded-full flex items-center justify-center border shrink-0 transition-all",
+                                                    ticket.assigned_user
+                                                        ? "bg-accent-theme/10 text-accent-theme border-accent-theme/20 shadow-lg shadow-accent-theme/5"
+                                                        : "bg-background/20 text-[var(--color-text-muted)] border-border-theme/30 opacity-40 shrink-0"
+                                                )}>
                                                     <User className="w-4 h-4" />
                                                 </div>
                                                 <div className="space-y-0.5">
-                                                    <p className="text-[10px] font-black uppercase tracking-tight leading-none text-foreground">
-                                                        {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'Sistema'}
+                                                    <p className={clsx(
+                                                        "text-[10px] font-black uppercase tracking-tight leading-none",
+                                                        ticket.assigned_user ? "text-foreground" : "text-[var(--color-text-muted)] opacity-70"
+                                                    )}>
+                                                        {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'NÃO ATRIBUÍDO'}
                                                     </p>
                                                     <p className="text-[8px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
                                                         Responsável
@@ -369,10 +399,10 @@ export default function TicketList({
                                                 <RefreshCw className="w-4 h-4" />
                                             </button>
                                         </td>
-                                    </tr>
+                                    </motion.tr>
                                 )
                             })}
-                        </tbody>
+                        </motion.tbody>
                     </table>
                 </div>
             </div>

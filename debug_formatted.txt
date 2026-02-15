@@ -1,0 +1,13 @@
+--- Tickets currently in Monitor (unassigned_only=True, exclude_finalized=True) ---
+Count: 12
+
+--- Checking for Mismatches ---
+
+--- All Statuses ---
+Status 1: Aberto | is_final: False
+Status 2: em atendimento | is_final: False
+Status 3: Em Triagem | is_final: False
+Status 4: Aguardando Terceiro | is_final: False
+Status 5: Em Teste | is_final: False
+Status 6: Impedido | is_final: False
+Status 7: Encerrado pelo Cliente | is_final: True

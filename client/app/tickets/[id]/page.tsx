@@ -12,12 +12,14 @@ import clsx from 'clsx';
 import { useNotification } from '@/components/NotificationProvider';
 import CustomSelect from '@/components/CustomSelect';
 import CategorySelect from '@/components/CategorySelect';
+import { useAuth } from '@/components/AuthProvider';
 import { Flag } from 'lucide-react';
 
 export default function TicketDetailsPage() {
     const params = useParams();
     const router = useRouter();
     const { showNotification, confirm: askConfirm } = useNotification();
+    const { user } = useAuth();
 
     const [ticket, setTicket] = useState<Ticket | null>(null);
     const [loading, setLoading] = useState(true);
@@ -109,6 +111,20 @@ export default function TicketDetailsPage() {
             showNotification('Erro ao carregar detalhes', 'error');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSelfAssignment = async () => {
+        if (!user || !ticket) return;
+        setPerformingAction(true);
+        try {
+            await updateTicket(ticket.id, { assigned_user_id: user.id });
+            showNotification("Ticket atribuído a você com sucesso!", "success");
+            await loadData(); // Refresh ticket and history
+        } catch (error) {
+            showNotification("Erro ao se vincular ao ticket.", "error");
+        } finally {
+            setPerformingAction(false);
         }
     };
 
@@ -499,7 +515,7 @@ export default function TicketDetailsPage() {
                     <div className="relative space-y-6">
                         <div className="space-y-2">
                             <div className="flex items-center gap-3 text-accent-theme font-mono text-xs">
-                                <span>#{ticket.id}</span>
+                                <span>{ticket.id}</span>
                                 <span className="w-1 h-1 rounded-full bg-border-theme" />
                                 <Calendar className="w-3 h-3" />
                                 <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
@@ -528,12 +544,22 @@ export default function TicketDetailsPage() {
                                 <div className="w-14 h-14 rounded-2xl bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme shadow-xl">
                                     <ShieldCheck className="w-6 h-6" />
                                 </div>
-                                <div>
+                                <div className="flex-1">
                                     <p className="text-[10px] font-black text-accent-theme uppercase tracking-widest mb-1 font-shadow-none">Responsável</p>
                                     <p className="font-bold text-lg">
                                         {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'Não Atribuído'}
                                     </p>
                                 </div>
+                                {!ticket.assigned_user && (
+                                    <button
+                                        onClick={handleSelfAssignment}
+                                        disabled={performingAction}
+                                        className="px-4 py-2 bg-accent-theme/10 hover:bg-accent-theme/20 text-accent-theme text-[9px] font-black uppercase tracking-widest rounded-xl border border-accent-theme/30 transition-all active:scale-95 flex items-center gap-2"
+                                    >
+                                        {performingAction ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+                                        Me Vincular
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>

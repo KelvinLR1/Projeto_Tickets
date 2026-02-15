@@ -200,7 +200,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                             <option value="">Nenhum ticket</option>
                             {tickets.map(ticket => (
                                 <option key={ticket.id} value={ticket.id}>
-                                    #{ticket.id} - {ticket.title}
+                                    {ticket.id} - {ticket.title}
                                 </option>
                             ))}
                         </select>

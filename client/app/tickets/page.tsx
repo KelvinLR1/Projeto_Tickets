@@ -71,30 +71,44 @@ export default function TicketsPage() {
 
                     <div className="flex items-center gap-4">
                         {/* View Mode Toggle */}
-                        <div className="flex bg-card/50 border border-border-theme p-1.5 rounded-2xl backdrop-blur-sm self-end">
+                        <div className="flex bg-card/50 border border-border-theme p-1.5 rounded-2xl backdrop-blur-sm self-center h-fit">
                             <button
                                 onClick={() => setViewMode('list')}
                                 className={clsx(
-                                    "flex items-center gap-2 px-4 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
+                                    "relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
                                     viewMode === 'list'
-                                        ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20"
+                                        ? "text-white"
                                         : "text-[var(--color-text-muted)] hover:text-foreground"
                                 )}
                             >
                                 <List className="w-4 h-4" />
                                 <span className="hidden sm:inline">Lista</span>
+                                {viewMode === 'list' && (
+                                    <motion.div
+                                        layoutId="view-mode-active"
+                                        className="absolute inset-0 bg-accent-theme rounded-xl -z-10 shadow-lg shadow-accent-theme/20"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
                             </button>
                             <button
                                 onClick={() => setViewMode('kanban')}
                                 className={clsx(
-                                    "flex items-center gap-2 px-4 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
+                                    "relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
                                     viewMode === 'kanban'
-                                        ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20"
+                                        ? "text-white"
                                         : "text-[var(--color-text-muted)] hover:text-foreground"
                                 )}
                             >
                                 <LayoutGrid className="w-4 h-4" />
                                 <span className="hidden sm:inline">Kanban</span>
+                                {viewMode === 'kanban' && (
+                                    <motion.div
+                                        layoutId="view-mode-active"
+                                        className="absolute inset-0 bg-accent-theme rounded-xl -z-10 shadow-lg shadow-accent-theme/20"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
                             </button>
                         </div>
 
@@ -275,10 +289,10 @@ export default function TicketsPage() {
                         ) : (
                             <motion.div
                                 key="kanban-view"
-                                initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
-                                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                                exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
-                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.3 }}
                             >
                                 <KanbanView
                                     tickets={tickets}

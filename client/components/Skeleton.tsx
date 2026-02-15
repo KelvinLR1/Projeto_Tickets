@@ -80,3 +80,39 @@ export function KanbanColumnSkeleton() {
         </div>
     );
 }
+export function ClientRowSkeleton() {
+    return (
+        <tr className="border-b border-border-theme/20 last:border-0 h-[89px]">
+            <td className="px-8 py-5">
+                <div className="flex items-center gap-5">
+                    <Skeleton className="w-12 h-12 rounded-[1rem]" />
+                    <div className="space-y-2">
+                        <Skeleton className="w-48 h-4 mt-1" />
+                        <Skeleton className="w-24 h-2 md:hidden" />
+                    </div>
+                </div>
+            </td>
+            <td className="px-8 py-5 hidden md:table-cell">
+                <div className="space-y-1.5">
+                    <Skeleton className="w-32 h-3.5" />
+                    <Skeleton className="w-20 h-2" />
+                </div>
+            </td>
+            <td className="px-8 py-5 hidden md:table-cell">
+                <div className="space-y-2">
+                    <Skeleton className="w-40 h-3" />
+                    <Skeleton className="w-28 h-2.5" />
+                </div>
+            </td>
+            <td className="px-8 py-5 hidden lg:table-cell">
+                <Skeleton className="w-24 h-3" />
+            </td>
+            <td className="px-8 py-5">
+                <div className="flex justify-end gap-3">
+                    <Skeleton className="w-10 h-10 rounded-2xl" />
+                    <Skeleton className="w-10 h-10 rounded-2xl" />
+                </div>
+            </td>
+        </tr>
+    );
+}

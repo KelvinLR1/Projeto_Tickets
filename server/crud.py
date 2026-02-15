@@ -266,19 +266,37 @@ def get_or_create_default_status(db: Session):
     return db_status
 
 # --- Ticket CRUD ---
-def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False):
+def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False):
     from sqlalchemy.orm import joinedload
     query = db.query(models.Ticket).options(
         joinedload(models.Ticket.client),
         joinedload(models.Ticket.assigned_user),
         joinedload(models.Ticket.status_obj)
     ).order_by(models.Ticket.created_at.desc())
+    
     if status:
         query = query.filter(models.Ticket.status == status)
     if client_id:
         query = query.filter(models.Ticket.client_id == client_id)
     if unassigned_only:
         query = query.filter(models.Ticket.assigned_user_id == None)
+    
+    if exclude_finalized:
+        # Usamos outerjoin para evitar esconder tickets sem status_id (caso ocorra)
+        # e filtramos apenas aqueles que explicitamente NÃO são finais.
+        # Se t.status_obj for None, is_final também será None (que não é True)
+        from sqlalchemy import or_
+        query = query.outerjoin(models.Status, models.Ticket.status_id == models.Status.id).filter(
+            or_(
+                models.Status.is_final == False,
+                models.Status.id == None
+            )
+        )
+        # Fallback de segurança: se a string do status indicar finalização, exclude também
+        final_keywords = ["encerrado", "finalizado", "concluido", "resolvido", "cancelado"]
+        for kw in final_keywords:
+            query = query.filter(models.Ticket.status.ilike(f"%{kw}%") == False)
+        
     return query.offset(skip).limit(limit).all()
 
 def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int = None):

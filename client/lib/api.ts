@@ -231,9 +231,9 @@ export const exportTickets = async (format: string = 'csv') => {
   link.remove();
 };
 
-export const getTickets = async (clientId?: number, unassignedOnly: boolean = false) => {
+export const getTickets = async (clientId?: number, unassignedOnly: boolean = false, excludeFinalized: boolean = false) => {
   const response = await api.get<Ticket[]>('/tickets/', {
-    params: { client_id: clientId, unassigned_only: unassignedOnly }
+    params: { client_id: clientId, unassigned_only: unassignedOnly, exclude_finalized: excludeFinalized }
   });
   return response.data;
 };
