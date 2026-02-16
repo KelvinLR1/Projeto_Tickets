@@ -452,12 +452,99 @@ def export_tickets(format: str = "csv", db: Session = Depends(get_db), current_u
         )
     
     else: # Default CSV
-        output = StringIO()
-        df.to_csv(output, index=False, encoding='utf-8-sig')
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode('utf-8-sig')),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename={filename}.csv"}
+        )
+
+@app.get("/reports/idle-clients")
+def export_idle_clients(
+    start_date: str, 
+    end_date: str, 
+    format: str = "excel", 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    import pandas as pd
+    from io import BytesIO
+    from datetime import datetime
+    
+    try:
+        dt_start = datetime.strptime(start_date, "%Y-%m-%d")
+        dt_end = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD.")
+
+    clients = crud.get_idle_clients(db, dt_start, dt_end)
+    
+    data = []
+    for c in clients:
+        data.append({
+            "ID": c.id,
+            "Nome": c.name,
+            "E-mail": c.email,
+            "CPF/CNPJ": c.cpf_cnpj or "N/A",
+            "Telefone": c.phone or "N/A",
+            "Cadastrado em": c.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        })
+    
+    df = pd.DataFrame(data)
+    filename = f"clientes_inativos_{start_date}_a_{end_date}"
+
+    if format == "pdf":
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib import colors
+
+        output = BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=A4)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Título
+        elements.append(Paragraph(f"Relatório de Clientes sem Atendimento", styles['Title']))
+        elements.append(Paragraph(f"Período: {start_date} até {end_date}", styles['Normal']))
+        elements.append(Spacer(1, 12))
+        
+        if not data:
+            elements.append(Paragraph("Nenhum cliente inativo encontrado no período.", styles['Normal']))
+        else:
+            # Tabela
+            table_data = [["ID", "Nome", "E-mail", "CPF/CNPJ", "Telefone"]]
+            for d in data:
+                table_data.append([d["ID"], d["Nome"], d["E-mail"], d["CPF/CNPJ"], d["Telefone"]])
+            
+            t = Table(table_data)
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            elements.append(t)
+            
+        doc.build(elements)
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}.pdf"}
+        )
+    
+    else: # Default Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Clientes Inativos')
+        output.seek(0)
+        return StreamingResponse(
+            output, 
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}.xlsx"}
         )
 
 @app.delete("/tickets/{ticket_id}")

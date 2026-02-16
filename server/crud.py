@@ -12,13 +12,13 @@ def get_detailed_report_stats(db: Session):
     client_stats = db.query(
         models.Client.name, 
         func.count(models.Ticket.id)
-    ).join(models.Ticket).group_by(models.Client.id).order_by(func.count(models.Ticket.id).desc()).limit(10).all()
+    ).join(models.Ticket).group_by(models.Client.id).order_by(func.count(models.Ticket.id).desc()).limit(5).all()
 
-    # Tickets por Categoria
+    # Tickets por Categoria (Top 5)
     category_stats = db.query(
         models.Category.name, 
         func.count(models.Ticket.id)
-    ).join(models.Ticket).group_by(models.Category.id).all()
+    ).join(models.Ticket).group_by(models.Category.id).order_by(func.count(models.Ticket.id).desc()).limit(5).all()
 
     # Distribuição de Prioridade
     priority_stats = db.query(
@@ -142,6 +142,23 @@ def bulk_create_clients(db: Session, clients_data: List[dict]):
     
     db.commit()
     return results
+
+# --- Special Reports CRUD ---
+def get_idle_clients(db: Session, start_date: datetime, end_date: datetime):
+    # Clientes que tiveram tickets no período
+    active_client_ids = db.query(models.Ticket.client_id).filter(
+        models.Ticket.created_at >= start_date,
+        models.Ticket.created_at <= end_date
+    ).distinct().all()
+    
+    active_ids = [row[0] for row in active_client_ids if row[0] is not None]
+    
+    # Clientes que NÃO estão na lista acima
+    idle_clients = db.query(models.Client).filter(
+        ~models.Client.id.in_(active_ids)
+    ).all()
+    
+    return idle_clients
 
 # --- Category CRUD ---
 def get_categories(db: Session):

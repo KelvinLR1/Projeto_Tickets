@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getReportSummary, ReportSummary, exportTickets, getStatuses, Status } from '@/lib/api';
-import { BarChart3, Download, FileText, Users, Tag, AlertCircle, Loader2 } from 'lucide-react';
+import { getReportSummary, ReportSummary, exportTickets, getStatuses, Status, getIdleClientsReport } from '@/lib/api';
+import { BarChart3, Download, FileText, Users, Tag, AlertCircle, Loader2, Calendar, FileSpreadsheet, FileJson, PieChart, X, ArrowLeft, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 
 const PRIORITY_MAP: Record<string, string> = {
@@ -19,6 +20,13 @@ export default function ReportsPage() {
     const [exporting, setExporting] = useState(false);
 
     const [showExportMenu, setShowExportMenu] = useState(false);
+    const [showCustomModal, setShowCustomModal] = useState(false);
+    const [modalStep, setModalStep] = useState<'list' | 'config'>('list');
+
+    // Custom report filters
+    const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [reportFormat, setReportFormat] = useState<'excel' | 'pdf'>('excel');
 
     useEffect(() => {
         loadData();
@@ -52,6 +60,18 @@ export default function ReportsPage() {
         }
     };
 
+    const handleGenerateCustomReport = async () => {
+        try {
+            setExporting(true);
+            await getIdleClientsReport(startDate, endDate, reportFormat);
+            setShowCustomModal(false);
+        } catch (error) {
+            console.error('Custom report failed:', error);
+        } finally {
+            setExporting(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center space-y-4">
@@ -74,42 +94,52 @@ export default function ReportsPage() {
                         <p className="text-[var(--color-text-muted)] text-sm font-medium">Extraia insights e dados consolidados do seu sistema.</p>
                     </div>
 
-                    <div className="relative export-container">
+                    <div className="flex gap-4">
                         <button
-                            onClick={() => setShowExportMenu(!showExportMenu)}
-                            disabled={exporting}
-                            className="flex items-center justify-center gap-3 px-10 py-5 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-widest hover:brightness-110 transition-all shadow-2xl shadow-accent-theme/20 active:scale-95 disabled:opacity-50"
+                            onClick={() => setShowCustomModal(true)}
+                            className="flex items-center justify-center gap-3 px-8 py-5 rounded-2xl bg-background border border-border-theme text-[var(--color-text-muted)] font-black text-[10px] uppercase tracking-widest hover:border-accent-theme hover:text-accent-theme transition-all shadow-sm active:scale-95"
                         >
-                            {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-                            Exportar Tickets
+                            <PieChart className="w-5 h-5" />
+                            Relatórios Personalizados
                         </button>
 
-                        <div className={clsx(
-                            "absolute top-full right-0 mt-4 w-56 glass-card rounded-2xl border border-border-theme shadow-2xl transition-all duration-300 z-50 overflow-hidden",
-                            showExportMenu ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"
-                        )}>
-                            <div className="p-2 space-y-1">
-                                <button
-                                    onClick={() => handleExport('csv')}
-                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
-                                >
-                                    <FileText className="w-4 h-4" />
-                                    Formato CSV
-                                </button>
-                                <button
-                                    onClick={() => handleExport('excel')}
-                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
-                                >
-                                    <Download className="w-4 h-4" />
-                                    Excel (XLSX)
-                                </button>
-                                <button
-                                    onClick={() => handleExport('json')}
-                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
-                                >
-                                    <FileText className="w-4 h-4" />
-                                    JSON Data
-                                </button>
+                        <div className="relative export-container">
+                            <button
+                                onClick={() => setShowExportMenu(!showExportMenu)}
+                                disabled={exporting}
+                                className="flex items-center justify-center gap-3 px-10 py-5 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-widest hover:brightness-110 transition-all shadow-2xl shadow-accent-theme/20 active:scale-95 disabled:opacity-50"
+                            >
+                                {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                                Exportar Tickets
+                            </button>
+
+                            <div className={clsx(
+                                "absolute top-full right-0 mt-4 w-56 glass-card rounded-2xl border border-border-theme shadow-2xl transition-all duration-300 z-50 overflow-hidden",
+                                showExportMenu ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"
+                            )}>
+                                <div className="p-2 space-y-1">
+                                    <button
+                                        onClick={() => handleExport('csv')}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Formato CSV
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport('excel')}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Excel (XLSX)
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport('json')}
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-accent-theme/10 text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)] hover:text-accent-theme transition-colors transition-all"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        JSON Data
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -145,7 +175,7 @@ export default function ReportsPage() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     {/* Tickets por Cliente */}
-                    <ReportSection title="Paticipação por Cliente" icon={<Users className="w-4 h-4" />}>
+                    <ReportSection title="Top 5 Clientes (Maior Volume)" icon={<Users className="w-4 h-4" />}>
                         <div className="space-y-6">
                             {summary?.by_client.map((client, i) => (
                                 <div key={client.name} className="flex items-center gap-6 group">
@@ -168,7 +198,7 @@ export default function ReportsPage() {
                     </ReportSection>
 
                     {/* Tickets por Categoria */}
-                    <ReportSection title="Volume por Categoria" icon={<Tag className="w-4 h-4" />}>
+                    <ReportSection title="Top 5 Categorias (Mais Chamados)" icon={<Tag className="w-4 h-4" />}>
                         <div className="grid grid-cols-1 gap-4">
                             {summary?.by_category.map((cat) => (
                                 <div key={cat.name} className="flex items-center justify-between p-5 rounded-2xl bg-background/50 border border-border-theme group hover:border-accent-theme/30 transition-all shadow-sm">
@@ -245,6 +275,204 @@ export default function ReportsPage() {
                 </ReportSection>
 
             </div>
+
+            {/* Modal de Relatórios Personalizados */}
+            <AnimatePresence>
+                {showCustomModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => {
+                                setShowCustomModal(false);
+                                setModalStep('list');
+                            }}
+                            className="absolute inset-0 bg-background/80 backdrop-blur-md"
+                        />
+
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="w-full max-w-md glass-card rounded-3xl border border-border-theme shadow-2xl overflow-hidden relative"
+                        >
+                            <div className="p-8 space-y-8">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-4">
+                                        <AnimatePresence mode="wait">
+                                            {modalStep === 'config' && (
+                                                <motion.button
+                                                    initial={{ opacity: 0, x: -10 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    exit={{ opacity: 0, x: -10 }}
+                                                    whileHover={{ scale: 1.1 }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => setModalStep('list')}
+                                                    className="p-2 hover:bg-accent-theme/10 rounded-xl transition-colors text-accent-theme"
+                                                >
+                                                    <ArrowLeft className="w-5 h-5" />
+                                                </motion.button>
+                                            )}
+                                        </AnimatePresence>
+                                        <div className="space-y-1">
+                                            <motion.h2
+                                                layout
+                                                className="text-2xl font-black uppercase italic tracking-tight"
+                                            >
+                                                {modalStep === 'list' ? 'Relatórios' : 'Configurar'}
+                                            </motion.h2>
+                                            <motion.p
+                                                layout
+                                                className="text-[10px] font-bold text-accent-theme tracking-[0.2em] uppercase opacity-70"
+                                            >
+                                                {modalStep === 'list' ? 'Selecione um modelo' : 'Defina os parâmetros'}
+                                            </motion.p>
+                                        </div>
+                                    </div>
+                                    <motion.button
+                                        whileHover={{ rotate: 90, scale: 1.1 }}
+                                        whileTap={{ scale: 0.9 }}
+                                        onClick={() => {
+                                            setShowCustomModal(false);
+                                            setModalStep('list');
+                                        }}
+                                        className="p-2 hover:bg-accent-theme/10 rounded-xl transition-colors text-[var(--color-text-muted)]"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </motion.button>
+                                </div>
+
+                                <div className="relative min-h-[300px]">
+                                    <AnimatePresence mode="wait">
+                                        {modalStep === 'list' ? (
+                                            <motion.div
+                                                key="list"
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: -20 }}
+                                                transition={{ duration: 0.3 }}
+                                                className="space-y-4"
+                                            >
+                                                <motion.button
+                                                    whileHover={{ scale: 1.02, x: 5 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                    onClick={() => setModalStep('config')}
+                                                    className="w-full p-5 rounded-2xl bg-accent-theme/5 border border-border-theme hover:border-accent-theme/40 flex items-center justify-between group transition-all"
+                                                >
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="p-3 bg-accent-theme rounded-xl text-white shadow-lg shadow-accent-theme/30 group-hover:rotate-12 transition-transform">
+                                                            <Users className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="text-left">
+                                                            <p className="text-xs font-black uppercase">Clientes sem Atendimento</p>
+                                                            <p className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-tight">Lista de inativos no período</p>
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight className="w-5 h-5 text-accent-theme opacity-0 group-hover:opacity-100 transition-all translate-x-[-10px] group-hover:translate-x-0" />
+                                                </motion.button>
+
+                                                {/* Placeholder para futuros relatórios */}
+                                                <motion.div
+                                                    initial={{ opacity: 0.4 }}
+                                                    className="p-5 rounded-2xl border border-dashed border-border-theme flex items-center gap-4 grayscale"
+                                                >
+                                                    <div className="p-3 bg-gray-500 rounded-xl text-white">
+                                                        <BarChart3 className="w-5 h-5" />
+                                                    </div>
+                                                    <div className="text-left">
+                                                        <p className="text-xs font-black uppercase italic">Em breve...</p>
+                                                        <p className="text-[10px] uppercase tracking-tight">Novos modelos estão sendo preparados</p>
+                                                    </div>
+                                                </motion.div>
+                                            </motion.div>
+                                        ) : (
+                                            <motion.div
+                                                key="config"
+                                                initial={{ opacity: 0, x: 20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 20 }}
+                                                transition={{ duration: 0.3 }}
+                                                className="space-y-6"
+                                            >
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Data Início</label>
+                                                        <div className="relative">
+                                                            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-theme opacity-50" />
+                                                            <input
+                                                                type="date"
+                                                                value={startDate}
+                                                                onChange={(e) => setStartDate(e.target.value)}
+                                                                className="w-full pl-11 pr-4 py-3.5 bg-background/50 border border-border-theme rounded-xl text-xs font-bold focus:border-accent-theme outline-none transition-all"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Data Fim</label>
+                                                        <div className="relative">
+                                                            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-theme opacity-50" />
+                                                            <input
+                                                                type="date"
+                                                                value={endDate}
+                                                                onChange={(e) => setEndDate(e.target.value)}
+                                                                className="w-full pl-11 pr-4 py-3.5 bg-background/50 border border-border-theme rounded-xl text-xs font-bold focus:border-accent-theme outline-none transition-all"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-3">
+                                                    <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Formato do Arquivo</label>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <motion.button
+                                                            whileHover={{ y: -2 }}
+                                                            whileTap={{ scale: 0.95 }}
+                                                            onClick={() => setReportFormat('excel')}
+                                                            className={clsx(
+                                                                "flex items-center justify-center gap-3 p-4 rounded-xl border transition-all",
+                                                                reportFormat === 'excel' ? "bg-green-500/10 border-green-500/50 text-green-500" : "bg-transparent border-border-theme hover:border-accent-theme/30 text-[var(--color-text-muted)]"
+                                                            )}
+                                                        >
+                                                            <FileSpreadsheet className="w-4 h-4" />
+                                                            <span className="text-[10px] font-black uppercase">Excel</span>
+                                                        </motion.button>
+                                                        <motion.button
+                                                            whileHover={{ y: -2 }}
+                                                            whileTap={{ scale: 0.95 }}
+                                                            onClick={() => setReportFormat('pdf')}
+                                                            className={clsx(
+                                                                "flex items-center justify-center gap-3 p-4 rounded-xl border transition-all",
+                                                                reportFormat === 'pdf' ? "bg-red-500/10 border-red-500/50 text-red-500" : "bg-transparent border-border-theme hover:border-accent-theme/30 text-[var(--color-text-muted)]"
+                                                            )}
+                                                        >
+                                                            <FileText className="w-4 h-4" />
+                                                            <span className="text-[10px] font-black uppercase">PDF</span>
+                                                        </motion.button>
+                                                    </div>
+                                                </div>
+
+                                                <motion.button
+                                                    layoutId="generate-btn"
+                                                    whileHover={{ scale: 1.02, filter: 'brightness(1.1)' }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                    onClick={handleGenerateCustomReport}
+                                                    disabled={exporting || !startDate || !endDate}
+                                                    className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-accent-theme text-white font-black text-xs uppercase tracking-[0.1em] hover:brightness-110 active:scale-[0.98] transition-all shadow-xl shadow-accent-theme/30 disabled:opacity-50"
+                                                >
+                                                    {exporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                                                    Gerar Relatório agora
+                                                </motion.button>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </main>
     );
 }

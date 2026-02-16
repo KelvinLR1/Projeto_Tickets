@@ -225,6 +225,25 @@ export const getReportSummary = async () => {
   return response.data;
 };
 
+export const getIdleClientsReport = async (startDate: string, endDate: string, format: string = 'excel') => {
+  const response = await api.get('/reports/idle-clients', {
+    params: { start_date: startDate, end_date: endDate, format },
+    responseType: 'blob'
+  });
+
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+
+  const extension = format === 'pdf' ? 'pdf' : 'xlsx';
+  const filename = `clientes_inativos_${startDate}_a_${endDate}.${extension}`;
+
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
 export interface KnowledgeDocument {
   id: number;
   title: string;
