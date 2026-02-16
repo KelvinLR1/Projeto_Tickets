@@ -137,6 +137,8 @@ export interface Ticket {
   status_obj?: Status;
   assigned_user_id?: number;
   assigned_user?: User;
+  sector_id?: number;
+  sector?: Sector;
   created_at: string;
   updated_at: string;
   total_duration?: number;
@@ -159,6 +161,7 @@ export interface Category {
   id: number;
   name: string;
   parent_id?: number;
+  sector_id?: number;
   is_active: boolean;
   subcategories?: Category[];
 }
@@ -203,6 +206,7 @@ export interface Status {
   name: string;
   color: string;
   is_final: boolean;
+  sector_id?: number;
   is_active: boolean;
 }
 
@@ -371,8 +375,10 @@ export const searchKnowledge = async (query: string) => {
   return response.data;
 };
 
-export const getCategories = async () => {
-  const response = await api.get<Category[]>('/categories/');
+export const getCategories = async (sectorId?: number) => {
+  const response = await api.get<Category[]>('/categories/', {
+    params: { sector_id: sectorId }
+  });
   return response.data;
 };
 
@@ -390,8 +396,10 @@ export const updateCategory = async (id: number, data: Partial<Category>) => {
   return response.data;
 };
 
-export const getStatuses = async () => {
-  const response = await api.get<Status[]>('/statuses/');
+export const getStatuses = async (sectorId?: number) => {
+  const response = await api.get<Status[]>('/statuses/', {
+    params: { sector_id: sectorId }
+  });
   return response.data;
 };
 

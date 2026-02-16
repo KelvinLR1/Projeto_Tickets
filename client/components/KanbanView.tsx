@@ -27,6 +27,7 @@ interface KanbanViewProps {
     status?: string;
     priority?: string;
     categoryId?: number;
+    sectorId?: number;
 }
 
 export default function KanbanView({
@@ -35,7 +36,8 @@ export default function KanbanView({
     searchTerm,
     status: statusFilter,
     priority: priorityFilter,
-    categoryId
+    categoryId,
+    sectorId
 }: KanbanViewProps) {
     const { showNotification } = useNotification();
     const { user } = useAuth();
@@ -89,10 +91,11 @@ export default function KanbanView({
             const matchStatus = !statusFilter || t.status === statusFilter;
             const matchPriority = !priorityFilter || t.priority === priorityFilter;
             const matchCategory = !categoryId || t.category_id === categoryId;
+            const matchSector = !sectorId || t.sector_id === sectorId;
 
-            return matchSearch && matchStatus && matchPriority && matchCategory;
+            return matchSearch && matchStatus && matchPriority && matchCategory && matchSector;
         });
-    }, [tickets, searchTerm, statusFilter, priorityFilter, categoryId]);
+    }, [tickets, searchTerm, statusFilter, priorityFilter, categoryId, sectorId]);
 
     const handleMoveTicket = async (ticketId: number, nextStatus: Status, previousStatusId?: number, previousStatusName?: string) => {
         try {

@@ -37,10 +37,12 @@ class Category(Base):
     name = Column(String, index=True)
     parent_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     is_active = Column(Boolean, default=True)
+    sector_id = Column(Integer, ForeignKey("sectors.id"), nullable=True)
     
     parent = relationship("Category", remote_side=[id], back_populates="subcategories")
     subcategories = relationship("Category", back_populates="parent", cascade="all, delete-orphan")
     tickets = relationship("Ticket", back_populates="category")
+    sector = relationship("Sector")
     
 class Status(Base):
     __tablename__ = "statuses"
@@ -50,8 +52,10 @@ class Status(Base):
     color = Column(String, default="#3b82f6") # Tailwind color Hex
     is_final = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    sector_id = Column(Integer, ForeignKey("sectors.id"), nullable=True)
     
     tickets = relationship("Ticket", back_populates="status_obj")
+    sector = relationship("Sector")
 
 class Ticket(Base):
     __tablename__ = "tickets"

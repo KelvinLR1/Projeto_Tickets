@@ -13,6 +13,7 @@ interface CategorySelectProps {
     placeholder?: string;
     className?: string;
     icon?: React.ReactNode;
+    sectorId?: number;
 }
 
 export default function CategorySelect({
@@ -21,7 +22,8 @@ export default function CategorySelect({
     categories,
     placeholder = 'Selecionar Categoria...',
     className,
-    icon: MainIcon
+    icon: MainIcon,
+    sectorId
 }: CategorySelectProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -106,6 +108,10 @@ export default function CategorySelect({
     const renderCategory = (cat: Category, level = 0) => {
         // Only show active categories
         if (!cat.is_active) return null;
+
+        // Filtro por setor
+        const matchesSector = !sectorId || !cat.sector_id || cat.sector_id === sectorId;
+        if (!matchesSector) return null;
 
         const allSubs = cat.subcategories || [];
         const activeSubs = allSubs.filter(s => s.is_active);

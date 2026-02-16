@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile } from '@/lib/api';
+import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn } from 'lucide-react';
+import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -27,6 +27,8 @@ export default function TicketDetailsPage() {
     const [category, setCategory] = useState<Category | null>(null);
     const [allCategories, setAllCategories] = useState<Category[]>([]);
     const [statuses, setStatuses] = useState<Status[]>([]);
+    const [sectors, setSectors] = useState<Sector[]>([]);
+    const [isUpdatingSector, setIsUpdatingSector] = useState(false);
 
     const [isClientModalOpen, setIsClientModalOpen] = useState(false);
     const [isClosingClientModal, setIsClosingClientModal] = useState(false);
@@ -47,6 +49,7 @@ export default function TicketDetailsPage() {
     const [targetSector, setTargetSector] = useState<string>('');
     const [performingAction, setPerformingAction] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [targetSectorId, setTargetSectorId] = useState<string>('');
     const [zoomedImage, setZoomedImage] = useState<string | null>(null);
     const infoDescriptionRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -61,11 +64,27 @@ export default function TicketDetailsPage() {
         try {
             const ticketId = parseInt(params.id as string);
 
-            const [ticketData, statusesData, categoriesData] = await Promise.all([
+            const [ticketData, statusesRaw, categoriesRaw, sectorsData] = await Promise.all([
                 getTicket(ticketId),
                 getStatuses(),
-                getCategories()
+                getCategories(),
+                getSectors()
             ]);
+
+            setSectors(sectorsData);
+
+            // Se o ticket tem setor, busca status e categorias específicos
+            let statusesData = statusesRaw;
+            let categoriesData = categoriesRaw;
+
+            if (ticketData.sector_id) {
+                const [sData, cData] = await Promise.all([
+                    getStatuses(ticketData.sector_id),
+                    getCategories(ticketData.sector_id)
+                ]);
+                statusesData = sData;
+                categoriesData = cData;
+            }
 
             setAllCategories(categoriesData);
 
@@ -228,17 +247,17 @@ export default function TicketDetailsPage() {
     const handleCategoryChange = async (categoryId: number) => {
         if (!ticket) return;
 
-        // Find category name for notification and history
-        const findCategory = (cats: Category[], id: number): Category | undefined => {
+        // Find category for notification and history
+        const findCat = (cats: Category[], id: number): Category | undefined => {
             for (const cat of cats) {
                 if (cat.id === id) return cat;
                 if (cat.subcategories) {
-                    const found = findCategory(cat.subcategories, id);
+                    const found = findCat(cat.subcategories, id);
                     if (found) return found;
                 }
             }
         };
-        const selectedCat = findCategory(allCategories, categoryId);
+        const selectedCat = findCat(allCategories, categoryId);
         if (!selectedCat) return;
 
         setUpdatingCategory(true);
@@ -249,8 +268,7 @@ export default function TicketDetailsPage() {
 
             setTicket({
                 ...ticket,
-                category_id: selectedCat.id,
-                category: selectedCat
+                category_id: selectedCat.id
             });
             setCategory(selectedCat);
 
@@ -260,6 +278,28 @@ export default function TicketDetailsPage() {
             showNotification('Erro ao atualizar categoria', 'error');
         } finally {
             setUpdatingCategory(false);
+            fetchHistory();
+        }
+    };
+
+    const handleSectorChange = async (newSectorId: string) => {
+        if (!ticket) return;
+
+        const sId = newSectorId === '' ? null : parseInt(newSectorId);
+        setIsUpdatingSector(true);
+        try {
+            await updateTicket(ticket.id, {
+                sector_id: sId,
+                category_id: undefined // Reset category when sector changes as it might not be compatible
+            });
+
+            showNotification('Setor atualizado com sucesso!', 'success');
+            await loadData(); // Reload everything to get correct categories/statuses
+        } catch (error) {
+            console.error(error);
+            showNotification('Erro ao atualizar setor', 'error');
+        } finally {
+            setIsUpdatingSector(false);
             fetchHistory();
         }
     };
@@ -378,7 +418,8 @@ export default function TicketDetailsPage() {
             const attendant = attendants.find(a => a.id === attendantId);
 
             await updateTicket(ticket.id, {
-                assigned_user_id: attendantId
+                assigned_user_id: attendantId,
+                sector_id: targetSectorId === '' ? ticket.sector_id : parseInt(targetSectorId)
             });
 
             // Atualiza o estado local do ticket
@@ -413,6 +454,9 @@ export default function TicketDetailsPage() {
             setAttendants(data);
             if (ticket?.assigned_user_id) {
                 setTargetAttendantId(ticket.assigned_user_id.toString());
+            }
+            if (ticket?.sector_id) {
+                setTargetSectorId(ticket.sector_id.toString());
             }
         } catch (error) {
             console.error(error);
@@ -899,7 +943,24 @@ export default function TicketDetailsPage() {
                             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Classificação</h3>
                             <div className="space-y-4">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/50 mb-3">Categoria / Setor</p>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/50 mb-3 font-shadow-none">Setor Responsável</p>
+                                    <CustomSelect
+                                        value={ticket.sector_id || ''}
+                                        onChange={handleSectorChange}
+                                        placeholder="Global (Geral)"
+                                        className="!space-y-0"
+                                        options={[
+                                            { value: '', label: 'Global (Geral)', icon: <Users className="w-3 h-3 opacity-50" /> },
+                                            ...sectors.map(s => ({
+                                                value: s.id,
+                                                label: s.name,
+                                                icon: <Users className="w-3 h-3" />
+                                            }))
+                                        ]}
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/50 mb-3 font-shadow-none">Categoria Técnica</p>
                                     <CategorySelect
                                         value={ticket.category_id || ''}
                                         onChange={handleCategoryChange}
@@ -1183,14 +1244,24 @@ export default function TicketDetailsPage() {
                                     />
                                 </div>
 
-                                <div className="space-y-3 opacity-50">
+                                <div className="space-y-3">
                                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
-                                        <Briefcase className="w-3 h-3 text-accent-theme" />
-                                        Novo Setor (Em breve)
+                                        <Briefcase className="w-3 h-3 text-accent-theme font-shadow-none" />
+                                        Novo Setor Responsável
                                     </label>
-                                    <div className="w-full p-4 rounded-2xl bg-white/5 border border-border-theme text-[10px] font-bold uppercase text-gray-500 italic">
-                                        Funcionalidade de setores em desenvolvimento
-                                    </div>
+                                    <CustomSelect
+                                        value={targetSectorId}
+                                        onChange={setTargetSectorId}
+                                        placeholder="Manter setor atual..."
+                                        options={[
+                                            { value: '', label: 'Manter atual / Global', icon: <Users className="w-3 h-3 opacity-50" /> },
+                                            ...sectors.map(s => ({
+                                                value: s.id,
+                                                label: s.name,
+                                                icon: <Users className="w-3 h-3" />
+                                            }))
+                                        ]}
+                                    />
                                 </div>
                             </div>
                             <div className="p-8 border-t border-border-theme flex justify-end gap-4">

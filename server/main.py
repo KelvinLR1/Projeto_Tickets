@@ -312,8 +312,8 @@ def import_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(get
 
 # --- Categories Endpoints ---
 @app.get("/categories/", response_model=List[schemas.CategoryWithSub])
-def read_categories(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    return crud.get_categories(db)
+def read_categories(sector_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_categories(db, sector_id=sector_id)
 
 @app.post("/categories/", response_model=schemas.Category)
 def create_category(cat: schemas.CategoryCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
@@ -337,8 +337,8 @@ def delete_category(cat_id: int, db: Session = Depends(get_db), current_user: mo
 
 # --- Status Endpoints ---
 @app.get("/statuses/", response_model=List[schemas.Status])
-def read_statuses(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    return crud.get_statuses(db)
+def read_statuses(sector_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_statuses(db, sector_id=sector_id)
 
 @app.post("/statuses/", response_model=schemas.Status)
 def create_status(status: schemas.StatusCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):

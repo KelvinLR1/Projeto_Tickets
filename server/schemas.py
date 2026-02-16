@@ -6,6 +6,7 @@ from datetime import datetime
 class CategoryBase(BaseModel):
     name: str
     parent_id: Optional[int] = None
+    sector_id: Optional[int] = None
     is_active: bool = True
 
 class CategoryCreate(CategoryBase):
@@ -28,6 +29,7 @@ class StatusBase(BaseModel):
     name: str
     color: str = "#3b82f6"
     is_final: bool = False
+    sector_id: Optional[int] = None
     is_active: bool = True
 
 class StatusCreate(StatusBase):
@@ -104,11 +106,13 @@ class TicketCreate(TicketBase):
     category_id: Optional[int] = None
     status_id: Optional[int] = None
     assigned_user_id: Optional[int] = None
+    sector_id: Optional[int] = None
 
 class TicketCreateSimple(TicketBase):
     client_name: str
     category: Optional[str] = "Suporte"
     category_id: Optional[int] = None
+    sector_id: Optional[int] = None
 
 class TicketUpdate(BaseModel):
     title: Optional[str] = None

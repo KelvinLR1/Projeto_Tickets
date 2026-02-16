@@ -17,7 +17,8 @@ export default function TicketList({
     searchTerm,
     status,
     priority,
-    categoryId
+    categoryId,
+    sectorId
 }: {
     tickets?: Ticket[];
     statuses?: Status[];
@@ -25,6 +26,7 @@ export default function TicketList({
     status?: string;
     priority?: string;
     categoryId?: number;
+    sectorId?: number;
 }) {
     const { showNotification, confirm: askConfirm } = useNotification();
     const { user } = useAuth();
@@ -194,8 +196,9 @@ export default function TicketList({
         const matchStatus = !status || t.status === status;
         const matchPriority = !priority || t.priority === priority;
         const matchCategory = !categoryId || t.category_id === categoryId;
+        const matchSector = !sectorId || t.sector_id === sectorId;
 
-        return matchSearch && matchStatus && matchPriority && matchCategory;
+        return matchSearch && matchStatus && matchPriority && matchCategory && matchSector;
     });
 
     if (loading && tickets.length === 0) {

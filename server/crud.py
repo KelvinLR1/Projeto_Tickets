@@ -161,9 +161,13 @@ def get_idle_clients(db: Session, start_date: datetime, end_date: datetime):
     return idle_clients
 
 # --- Category CRUD ---
-def get_categories(db: Session):
+def get_categories(db: Session, sector_id: Optional[int] = None):
     # Retorna apenas categorias raiz (sem pai), as subcategorias virão via relationship
-    return db.query(models.Category).filter(models.Category.parent_id == None).all()
+    query = db.query(models.Category).filter(models.Category.parent_id == None)
+    if sector_id is not None:
+        from sqlalchemy import or_
+        query = query.filter(or_(models.Category.sector_id == sector_id, models.Category.sector_id == None))
+    return query.all()
 
 def create_category(db: Session, cat: schemas.CategoryCreate):
     db_cat = models.Category(**cat.dict())
@@ -227,8 +231,12 @@ def get_or_create_default_category(db: Session):
     return db_cat
 
 # --- Status CRUD ---
-def get_statuses(db: Session):
-    return db.query(models.Status).all()
+def get_statuses(db: Session, sector_id: Optional[int] = None):
+    query = db.query(models.Status)
+    if sector_id is not None:
+        from sqlalchemy import or_
+        query = query.filter(or_(models.Status.sector_id == sector_id, models.Status.sector_id == None))
+    return query.all()
 
 def create_status(db: Session, status: schemas.StatusCreate):
     db_status = models.Status(**status.dict())

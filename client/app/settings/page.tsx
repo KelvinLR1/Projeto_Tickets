@@ -164,6 +164,10 @@ export default function SettingsPage() {
     const [newStatusIsFinal, setNewStatusIsFinal] = useState(false);
     const [loadingStatuses, setLoadingStatuses] = useState(false);
     const [editingStatus, setEditingStatus] = useState<Status | null>(null);
+    const [selectedSectorIdStatus, setSelectedSectorIdStatus] = useState<number | undefined>(undefined);
+    const [newStatusSectorId, setNewStatusSectorId] = useState<number | undefined>(undefined);
+    const [selectedSectorIdCategory, setSelectedSectorIdCategory] = useState<number | undefined>(undefined);
+    const [newCategorySectorId, setNewCategorySectorId] = useState<number | undefined>(undefined);
 
     // Estado da Limpeza de Dados (Danger Zone)
     const [resetEntities, setResetEntities] = useState<string[]>([]);
@@ -200,6 +204,20 @@ export default function SettingsPage() {
     const [logoPreviewDark, setLogoPreviewDark] = useState<string | null>(null);
     const [isSavingSystem, setIsSavingSystem] = useState(false);
     const [editingSector, setEditingSector] = useState<Sector | null>(null);
+    const [showOnlyActiveSectors, setShowOnlyActiveSectors] = useState(false);
+    const [showOnlyActiveCategories, setShowOnlyActiveCategories] = useState(false);
+    const [showOnlyActiveStatuses, setShowOnlyActiveStatuses] = useState(false);
+
+    const expandAllCategories = () => {
+        const allParentIdsWithSubs = categories
+            .filter(c => !c.parent_id && c.subcategories && c.subcategories.length > 0)
+            .map(c => c.id);
+        setExpandedCategories(allParentIdsWithSubs);
+    };
+
+    const collapseAllCategories = () => {
+        setExpandedCategories([]);
+    };
 
     // Real-time Preview de Cores Customizadas
     useEffect(() => {
@@ -251,6 +269,15 @@ export default function SettingsPage() {
         }
         fetchSystemSettings();
     }, [user]);
+
+    // Refresh lists when sector filters change
+    useEffect(() => {
+        fetchStatuses(true, selectedSectorIdStatus);
+    }, [selectedSectorIdStatus]);
+
+    useEffect(() => {
+        fetchCategories(true, selectedSectorIdCategory);
+    }, [selectedSectorIdCategory]);
 
     const fetchSystemSettings = async () => {
         try {
@@ -482,11 +509,18 @@ export default function SettingsPage() {
     };
 
     const handleToggleSectorActive = async (sector: Sector) => {
+        const previousSectors = [...sectors];
+        const newIsActive = !sector.is_active;
+
+        // Optimistic update
+        setSectors(prev => prev.map(s => s.id === sector.id ? { ...s, is_active: newIsActive } : s));
+
         try {
-            await updateSector(sector.id, { is_active: !sector.is_active });
-            showNotification(`Setor ${!sector.is_active ? 'ativado' : 'desativado'}`, 'success');
+            await updateSector(sector.id, { is_active: newIsActive });
+            showNotification(`Setor ${newIsActive ? 'ativado' : 'desativado'}`, 'success');
             fetchSectors();
         } catch (error) {
+            setSectors(previousSectors); // Rollback
             showNotification('Erro ao alterar status do setor', 'error');
         }
     };
@@ -587,10 +621,10 @@ export default function SettingsPage() {
         }
     }, [activeTab]);
 
-    const fetchStatuses = async (silent = false) => {
+    const fetchStatuses = async (silent = false, sectorId?: number) => {
         if (!silent) setLoadingStatuses(true);
         try {
-            const data = await getStatuses();
+            const data = await getStatuses(sectorId);
             setStatuses(data);
         } catch (error) {
             console.error('Failed to statuses:', error);
@@ -599,10 +633,10 @@ export default function SettingsPage() {
         }
     };
 
-    const fetchCategories = async (silent = false) => {
+    const fetchCategories = async (silent = false, sectorId?: number) => {
         if (!silent) setLoadingCats(true);
         try {
-            const data = await getCategories();
+            const data = await getCategories(sectorId);
             setCategories(data);
         } catch (error) {
             console.error('Failed to categories:', error);
@@ -618,6 +652,7 @@ export default function SettingsPage() {
                 await updateCategory(editingCategory.id, {
                     name: newCategoryName,
                     parent_id: parentCategory ? parseInt(parentCategory) : undefined,
+                    sector_id: newCategorySectorId,
                     is_active: editingCategory.is_active
                 } as any);
                 showNotification('Categoria atualizada!', 'success');
@@ -625,6 +660,7 @@ export default function SettingsPage() {
                 await createCategory({
                     name: newCategoryName,
                     parent_id: parentCategory ? parseInt(parentCategory) : undefined,
+                    sector_id: newCategorySectorId,
                     is_active: true
                 } as any);
                 showNotification('Categoria criada!', 'success');
@@ -632,7 +668,7 @@ export default function SettingsPage() {
             setNewCategoryName('');
             setParentCategory('');
             setEditingCategory(null);
-            fetchCategories(true);
+            fetchCategories(true, selectedSectorIdCategory);
         } catch (error) {
             showNotification(editingCategory ? 'Erro ao atualizar categoria' : 'Erro ao criar categoria', 'error');
         }
@@ -642,6 +678,7 @@ export default function SettingsPage() {
         setEditingCategory(cat);
         setNewCategoryName(cat.name);
         setParentCategory(cat.parent_id?.toString() || '');
+        setNewCategorySectorId(cat.sector_id);
         // Scroll para o formulário
         window.scrollTo({ top: 300, behavior: 'smooth' });
     };
@@ -650,6 +687,7 @@ export default function SettingsPage() {
         setEditingCategory(null);
         setNewCategoryName('');
         setParentCategory('');
+        setNewCategorySectorId(undefined);
     };
 
     const handleUpdateCategory = async (id: number, data: Partial<Category>) => {
@@ -682,7 +720,7 @@ export default function SettingsPage() {
             await updateCategory(id, data);
             showNotification('Categoria atualizada!', 'success');
             // Silent refresh to ensure sync
-            fetchCategories(true);
+            fetchCategories(true, selectedSectorIdCategory);
         } catch (error: any) {
             console.error('Failed to update category:', error);
             setCategories(previousCategories); // Rollback
@@ -712,7 +750,7 @@ export default function SettingsPage() {
             try {
                 await deleteCategory(id);
                 showNotification('Categoria removida', 'success');
-                fetchCategories(true);
+                fetchCategories(true, selectedSectorIdCategory);
             } catch (error: any) {
                 setCategories(previousCategories); // Rollback
                 const detail = error.response?.data?.detail || 'Erro ao excluir categoria';
@@ -729,6 +767,7 @@ export default function SettingsPage() {
                     name: newStatusName,
                     color: newStatusColor,
                     is_final: newStatusIsFinal,
+                    sector_id: newStatusSectorId,
                     is_active: editingStatus.is_active
                 });
                 showNotification('Status atualizado!', 'success');
@@ -737,6 +776,7 @@ export default function SettingsPage() {
                     name: newStatusName,
                     color: newStatusColor,
                     is_final: newStatusIsFinal,
+                    sector_id: newStatusSectorId,
                     is_active: true
                 });
                 showNotification('Status criado!', 'success');
@@ -744,7 +784,7 @@ export default function SettingsPage() {
             setNewStatusName('');
             setNewStatusIsFinal(false);
             setEditingStatus(null);
-            fetchStatuses(true);
+            fetchStatuses(true, selectedSectorIdStatus);
         } catch (error) {
             showNotification(editingStatus ? 'Erro ao atualizar status' : 'Erro ao criar status', 'error');
         }
@@ -765,7 +805,7 @@ export default function SettingsPage() {
                 is_active: newIsActive
             });
             showNotification(`Status ${newIsActive ? 'ativado' : 'desativado'}`, 'success');
-            fetchStatuses(true);
+            fetchStatuses(true, selectedSectorIdStatus);
         } catch (error) {
             setStatuses(previousStatuses); // Rollback
             showNotification('Erro ao alterar status', 'error');
@@ -788,7 +828,7 @@ export default function SettingsPage() {
             try {
                 await deleteStatus(id);
                 showNotification('Status removido', 'success');
-                fetchStatuses(true);
+                fetchStatuses(true, selectedSectorIdStatus);
             } catch (error: any) {
                 setStatuses(previousStatuses); // Rollback
                 const detail = error.response?.data?.detail || 'Erro ao excluir status';
@@ -802,12 +842,14 @@ export default function SettingsPage() {
         setNewStatusName(status.name);
         setNewStatusColor(status.color);
         setNewStatusIsFinal(status.is_final);
+        setNewStatusSectorId(status.sector_id);
     };
 
     const cancelEditStatus = () => {
         setEditingStatus(null);
         setNewStatusName('');
         setNewStatusIsFinal(false);
+        setNewStatusSectorId(undefined);
     };
 
     const loadModels = async () => {
@@ -1108,142 +1150,115 @@ export default function SettingsPage() {
                                     transition={{ duration: 0.3 }}
                                     className="space-y-10"
                                 >
-                                    {/* Gestão de Status */}
-                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden group transition-all">
-                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                            <CheckCircle2 className="w-24 h-24" />
-                                        </div>
-                                        <div className="flex items-center gap-3 text-blue-500">
-                                            <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                                                <CheckCircle2 className="w-6 h-6" />
+                                    {/* Gestão de Setores */}
+                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative group transition-all z-0">
+                                        <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                <FolderPlus className="w-24 h-24" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Fluxo e Status de Chamado</h2>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-emerald-500 relative z-10">
+                                            <div className="p-2.5 bg-emerald-500/10 rounded-xl">
+                                                <Tag className="w-6 h-6" />
+                                            </div>
+                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Gestão de Setores</h2>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                             {/* Formulário */}
                                             <div className="space-y-6">
-                                                <div className="flex items-center justify-between">
-                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">
-                                                        {editingStatus ? 'Editar Estado' : 'Novo Estado'}
+                                                <div className="flex h-[42px] items-center justify-between">
+                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">
+                                                        {editingSector ? 'Editar Setor' : 'Novo Setor'}
                                                     </h3>
-                                                    {editingStatus && (
-                                                        <button onClick={cancelEditStatus} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
+                                                    {editingSector && (
+                                                        <button
+                                                            onClick={cancelEditSector}
+                                                            className="text-[10px] font-bold text-red-500 hover:text-red-400 uppercase tracking-wider flex items-center gap-1"
+                                                        >
+                                                            <RotateCcw className="w-3 h-3" /> Cancelar
+                                                        </button>
                                                     )}
                                                 </div>
                                                 <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
                                                     <div>
-                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Status</label>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Setor</label>
                                                         <input
-                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-blue-500/30 outline-none transition-all shadow-sm"
-                                                            placeholder="Ex: Em Teste, Aguardando Cliente..."
-                                                            value={newStatusName}
-                                                            onChange={e => setNewStatusName(e.target.value)}
+                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-emerald-500/30 outline-none transition-all shadow-sm"
+                                                            placeholder="Ex: Comercial, Administrativo, Suporte..."
+                                                            value={newSectorName}
+                                                            onChange={e => setNewSectorName(e.target.value)}
                                                         />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-3 border-l-2 border-blue-500/50 pl-2">Representação Visual (Cor)</label>
-                                                        <div className="flex items-center gap-4 bg-background/40 p-3 rounded-2xl border border-border-theme group/color">
-                                                            <div className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
-                                                                <input
-                                                                    type="color"
-                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                                                    value={newStatusColor}
-                                                                    onChange={e => setNewStatusColor(e.target.value)}
-                                                                />
-                                                                <div
-                                                                    className="w-12 h-12 rounded-xl border border-white/20 shadow-lg flex items-center justify-center relative overflow-hidden transition-all duration-500"
-                                                                    style={{
-                                                                        backgroundColor: newStatusColor,
-                                                                        boxShadow: `0 8px 20px -6px ${newStatusColor}66`
-                                                                    }}
-                                                                >
-                                                                    <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent pointer-events-none" />
-                                                                    <Palette className="w-5 h-5 text-white/80 drop-shadow-md relative z-0" />
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex-1 space-y-1">
-                                                                <div className="flex items-center justify-between px-1">
-                                                                    <span className="text-[8px] font-black uppercase text-[var(--color-text-muted)] tracking-tighter">Hex Code</span>
-                                                                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: newStatusColor }} />
-                                                                </div>
-                                                                <input
-                                                                    className="w-full bg-white/5 border border-border-theme rounded-xl p-2.5 text-xs font-mono outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all uppercase"
-                                                                    value={newStatusColor}
-                                                                    maxLength={7}
-                                                                    onChange={e => {
-                                                                        let val = e.target.value;
-                                                                        if (!val.startsWith('#') && val.length > 0) val = '#' + val;
-                                                                        setNewStatusColor(val);
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-3 bg-background/40 p-3 rounded-xl border border-border-theme">
-                                                        <input
-                                                            type="checkbox"
-                                                            id="isFinal"
-                                                            checked={newStatusIsFinal}
-                                                            onChange={e => setNewStatusIsFinal(e.target.checked)}
-                                                            className="w-5 h-5 rounded-md border-border-theme bg-[var(--color-input)] text-blue-500 focus:ring-blue-500/30 cursor-pointer"
-                                                        />
-                                                        <label htmlFor="isFinal" className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest cursor-pointer">Status Finalizador (Gera encerramento)</label>
                                                     </div>
                                                     <button
-                                                        onClick={handleCreateStatus}
-                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
+                                                        onClick={handleCreateSector}
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/20 active:scale-95"
                                                     >
-                                                        <PlusCircle className="w-4 h-4" />
-                                                        Adicionar ao Fluxo
+                                                        {editingSector ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
+                                                        {editingSector ? 'Salvar Alterações' : 'Criar Setor'}
                                                     </button>
                                                 </div>
                                             </div>
 
                                             {/* Listagem */}
                                             <div className="space-y-6">
-                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Lista de Estados Ativos</h3>
-                                                <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
-                                                    {loadingStatuses ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></div> :
-                                                        statuses.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum status customizado.</div> :
-                                                            statuses.map(st => (
-                                                                <div key={st.id} className={clsx(
-                                                                    "flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm",
-                                                                    !st.is_active && "opacity-50 grayscale-[0.5]"
-                                                                )}>
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="w-4 h-4 rounded-full border border-white/10 shadow-sm" style={{ backgroundColor: st.color }} />
-                                                                        <span className={clsx(
-                                                                            "text-sm font-bold tracking-tight",
-                                                                            !st.is_active && "line-through"
-                                                                        )}>{st.name}</span>
-                                                                        {st.is_final && (
-                                                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">Finalizado</span>
-                                                                        )}
-                                                                        {!st.is_active && (
-                                                                            <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/20">Inativo</span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
-                                                                        <button
-                                                                            onClick={() => handleToggleStatusActivation(st)}
-                                                                            className={clsx(
-                                                                                "p-2 rounded-xl transition-all",
-                                                                                st.is_active ? "text-blue-500 hover:bg-blue-500/10" : "text-gray-400 hover:text-blue-500 hover:bg-blue-500/10"
-                                                                            )}
-                                                                            title={st.is_active ? "Desativar" : "Ativar"}
-                                                                        >
-                                                                            {st.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                                                                        </button>
-                                                                        <button onClick={() => handleEditStatus(st)} className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl transition-all">
-                                                                            <Edit2 className="w-4 h-4" />
-                                                                        </button>
-                                                                        <button onClick={() => handleDeleteStatus(st.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
-                                                                            <Trash2 className="w-4 h-4" />
-                                                                        </button>
-                                                                    </div>
+                                                <div className="flex h-[42px] items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">Setores Ativos</h3>
+                                                        <button
+                                                            onClick={() => setShowOnlyActiveSectors(!showOnlyActiveSectors)}
+                                                            className={clsx(
+                                                                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all border",
+                                                                showOnlyActiveSectors
+                                                                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+                                                                    : "bg-white/5 text-[var(--color-text-muted)] border-white/5 hover:bg-white/10"
+                                                            )}
+                                                            title={showOnlyActiveSectors ? "Mostrar todos" : "Mostrar apenas ativos"}
+                                                        >
+                                                            {showOnlyActiveSectors ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-background/20 rounded-3xl border border-border-theme p-6 space-y-2 shadow-inner">
+                                                    {sectors.filter(s => !showOnlyActiveSectors || s.is_active).length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum setor encontrado.</div> :
+                                                        sectors.filter(s => !showOnlyActiveSectors || s.is_active).map(sector => (
+                                                            <div key={sector.id} className={clsx(
+                                                                "flex items-center justify-between p-4 rounded-2xl border border-border-theme group/item transition-all shadow-sm",
+                                                                sector.is_active ? "bg-card/40 hover:bg-card/60" : "bg-card/20 opacity-60 hover:opacity-100"
+                                                            )}>
+                                                                <div className="flex items-center gap-3">
+                                                                    <Tag className={clsx("w-4 h-4", sector.is_active ? "text-emerald-500" : "text-gray-500")} />
+                                                                    <span className={clsx("text-sm font-bold tracking-tight", !sector.is_active && "line-through text-gray-500")}>
+                                                                        {sector.name}
+                                                                    </span>
                                                                 </div>
-                                                            ))}
+                                                                <div className="flex items-center gap-1 opacity-100">
+                                                                    <button
+                                                                        onClick={() => handleToggleSectorActive(sector)}
+                                                                        title={sector.is_active ? "Desativar" : "Ativar"}
+                                                                        className={clsx(
+                                                                            "p-2 rounded-xl transition-colors",
+                                                                            sector.is_active ? "text-gray-500 hover:text-orange-500 hover:bg-orange-500/10" : "text-green-500 hover:bg-green-500/10"
+                                                                        )}
+                                                                    >
+                                                                        {sector.is_active ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleEditSector(sector)}
+                                                                        className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
+                                                                    >
+                                                                        <Edit2 className="w-3 h-3" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteSector(sector.id)}
+                                                                        className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    }
                                                 </div>
                                             </div>
                                         </div>
@@ -1260,13 +1275,16 @@ export default function SettingsPage() {
                                             <div className="p-2.5 bg-accent-theme/10 rounded-xl">
                                                 <Tag className="w-6 h-6" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Organização de Categorias</h2>
+                                            <div className="flex-1">
+                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Organização de Categorias</h2>
+                                                <p className="text-[9px] text-[var(--color-text-muted)] font-black uppercase tracking-widest opacity-60">Categorização granular por setor.</p>
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                             {/* Formulário */}
                                             <div className="space-y-6">
-                                                <div className="flex items-center justify-between">
+                                                <div className="flex h-[42px] items-center justify-between">
                                                     <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">
                                                         {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
                                                     </h3>
@@ -1275,6 +1293,19 @@ export default function SettingsPage() {
                                                     )}
                                                 </div>
                                                 <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
+                                                    <CustomSelect
+                                                        label="Setor Relacionado"
+                                                        value={newCategorySectorId || ''}
+                                                        onChange={(val) => setNewCategorySectorId(val === '' ? undefined : Number(val))}
+                                                        options={[
+                                                            { value: '', label: 'Global (Todos os Setores)', icon: <Users className="w-4 h-4 opacity-50" /> },
+                                                            ...sectors.map(s => ({
+                                                                value: s.id,
+                                                                label: s.name,
+                                                                icon: <Users className="w-4 h-4 text-emerald-500" />
+                                                            }))
+                                                        ]}
+                                                    />
                                                     <div>
                                                         <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome da Categoria</label>
                                                         <input
@@ -1309,13 +1340,64 @@ export default function SettingsPage() {
 
                                             {/* Listagem */}
                                             <div className="space-y-6">
-                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">Categorias Ativas</h3>
-                                                <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
+                                                <div className="flex h-[42px] items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">Categorias Ativas</h3>
+
+                                                        {/* Bulk Expand/Collapse */}
+                                                        <div className="flex items-center bg-background/40 rounded-full border border-border-theme p-0.5">
+                                                            <button
+                                                                onClick={expandAllCategories}
+                                                                className="p-1.5 hover:bg-white/10 rounded-full text-[var(--color-text-muted)] hover:text-accent-theme transition-all"
+                                                                title="Expandir todas"
+                                                            >
+                                                                <ChevronDown className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <div className="w-[1px] h-3 bg-border-theme" />
+                                                            <button
+                                                                onClick={collapseAllCategories}
+                                                                className="p-1.5 hover:bg-white/10 rounded-full text-[var(--color-text-muted)] hover:text-accent-theme transition-all"
+                                                                title="Recolher todas"
+                                                            >
+                                                                <ChevronDown className="w-3.5 h-3.5 rotate-180" />
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Active Filter */}
+                                                        <button
+                                                            onClick={() => setShowOnlyActiveCategories(!showOnlyActiveCategories)}
+                                                            className={clsx(
+                                                                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all border",
+                                                                showOnlyActiveCategories
+                                                                    ? "bg-accent-theme/20 text-accent-theme border-accent-theme/40"
+                                                                    : "bg-white/5 text-[var(--color-text-muted)] border-white/5 hover:bg-white/10"
+                                                            )}
+                                                            title={showOnlyActiveCategories ? "Mostrar todas" : "Mostrar apenas ativas"}
+                                                        >
+                                                            {showOnlyActiveCategories ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                                        </button>
+                                                    </div>
+                                                    <div className="w-48">
+                                                        <CustomSelect
+                                                            value={selectedSectorIdCategory || ''}
+                                                            onChange={(val) => setSelectedSectorIdCategory(val === '' ? undefined : Number(val))}
+                                                            options={[
+                                                                { value: '', label: 'Ver Todas', icon: <Users className="w-3 h-3 opacity-50" /> },
+                                                                ...sectors.map(s => ({
+                                                                    value: s.id,
+                                                                    label: s.name,
+                                                                    icon: <Users className="w-3 h-3 text-emerald-500" />
+                                                                }))
+                                                            ]}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="bg-background/20 rounded-3xl border border-border-theme p-6 space-y-2 shadow-inner">
                                                     {loadingCats ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-accent-theme" /></div> :
-                                                        categories.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhuma categoria cadastrada.</div> :
-                                                            categories.filter(c => !c.parent_id).map(cat => {
+                                                        categories.filter(c => !c.parent_id && (!showOnlyActiveCategories || c.is_active)).length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhuma categoria encontrada.</div> :
+                                                            categories.filter(c => !c.parent_id && (!showOnlyActiveCategories || c.is_active)).map(cat => {
                                                                 const isExpanded = expandedCategories.includes(cat.id);
-                                                                const subcats = cat.subcategories || [];
+                                                                const subcats = (cat.subcategories || []).filter(sub => !showOnlyActiveCategories || sub.is_active);
                                                                 const hasSubcats = subcats.length > 0;
 
                                                                 return (
@@ -1330,6 +1412,9 @@ export default function SettingsPage() {
                                                                             <div className="flex items-center gap-3">
                                                                                 <Tag className={clsx("w-4 h-4", cat.is_active ? "text-accent-theme" : "text-gray-500")} />
                                                                                 <span className={clsx("text-sm font-bold tracking-tight", !cat.is_active && "text-gray-500 line-through opacity-50")}>{cat.name}</span>
+                                                                                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                                                                    {cat.sector_id ? sectors.find(s => s.id === cat.sector_id)?.name || 'Setor' : 'Global'}
+                                                                                </span>
                                                                                 {hasSubcats && (
                                                                                     <span className="px-2 py-0.5 bg-accent-theme/10 text-accent-theme rounded-full text-[9px] font-black">
                                                                                         {subcats.length} sub
@@ -1383,6 +1468,9 @@ export default function SettingsPage() {
                                                                                 <div className="flex items-center gap-2">
                                                                                     <div className={clsx("w-2 h-2 rounded-full", sub.is_active ? "bg-accent-theme/40" : "bg-gray-500/40")} />
                                                                                     <span className={clsx("text-xs font-medium", !sub.is_active && "text-gray-500 line-through opacity-50")}>{sub.name}</span>
+                                                                                    <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                                                                        {sub.sector_id ? sectors.find(s => s.id === sub.sector_id)?.name || 'Setor' : 'Global'}
+                                                                                    </span>
                                                                                     {!sub.is_active && (
                                                                                         <span className="px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded-full text-[8px] font-black uppercase tracking-wider">
                                                                                             Inativa
@@ -1420,105 +1508,216 @@ export default function SettingsPage() {
                                                                         ))}
                                                                     </div>
                                                                 );
-                                                            })}
+                                                            })
+                                                    }
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Gestão de Setores */}
-                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative group transition-all z-0">
-                                        <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
-                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                <FolderPlus className="w-24 h-24" />
-                                            </div>
+                                    {/* Gestão de Status */}
+                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden group transition-all">
+                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                            <CheckCircle2 className="w-24 h-24" />
                                         </div>
-                                        <div className="flex items-center gap-3 text-emerald-500 relative z-10">
-                                            <div className="p-2.5 bg-emerald-500/10 rounded-xl">
-                                                <Tag className="w-6 h-6" />
+                                        <div className="flex items-center gap-3 text-blue-500">
+                                            <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                <CheckCircle2 className="w-6 h-6" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Gestão de Setores</h2>
+                                            <div className="flex-1">
+                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Fluxo e Status de Chamado</h2>
+                                                <p className="text-[9px] text-[var(--color-text-muted)] font-black uppercase tracking-widest opacity-60">Gerencie os estados dos chamados por setor.</p>
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                             {/* Formulário */}
-                                            {/* Formulário */}
                                             <div className="space-y-6">
-                                                <div className="flex items-center justify-between">
-                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">
-                                                        {editingSector ? 'Editar Setor' : 'Novo Setor'}
+                                                <div className="flex h-[42px] items-center justify-between">
+                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">
+                                                        {editingStatus ? 'Editar Estado' : 'Novo Estado'}
                                                     </h3>
-                                                    {editingSector && (
-                                                        <button
-                                                            onClick={cancelEditSector}
-                                                            className="text-[10px] font-bold text-red-500 hover:text-red-400 uppercase tracking-wider flex items-center gap-1"
-                                                        >
-                                                            <RotateCcw className="w-3 h-3" /> Cancelar
-                                                        </button>
+                                                    {editingStatus && (
+                                                        <button onClick={cancelEditStatus} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
                                                     )}
                                                 </div>
                                                 <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
+                                                    <CustomSelect
+                                                        label="Setor Relacionado"
+                                                        value={newStatusSectorId || ''}
+                                                        onChange={(val) => setNewStatusSectorId(val === '' ? undefined : Number(val))}
+                                                        options={[
+                                                            { value: '', label: 'Global (Todos os Setores)', icon: <Users className="w-4 h-4 opacity-50" /> },
+                                                            ...sectors.map(s => ({
+                                                                value: s.id,
+                                                                label: s.name,
+                                                                icon: <Users className="w-4 h-4 text-emerald-500" />
+                                                            }))
+                                                        ]}
+                                                    />
                                                     <div>
-                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Setor</label>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Status</label>
                                                         <input
-                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-emerald-500/30 outline-none transition-all shadow-sm"
-                                                            placeholder="Ex: Comercial, Administrativo, Suporte..."
-                                                            value={newSectorName}
-                                                            onChange={e => setNewSectorName(e.target.value)}
+                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-blue-500/30 outline-none transition-all shadow-sm"
+                                                            placeholder="Ex: Em Teste, Aguardando Cliente..."
+                                                            value={newStatusName}
+                                                            onChange={e => setNewStatusName(e.target.value)}
                                                         />
                                                     </div>
-                                                    <button
-                                                        onClick={handleCreateSector}
-                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/20 active:scale-95"
+                                                    <div>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-3 border-l-2 border-blue-500/50 pl-2">Representação Visual (Cor)</label>
+                                                        <div className="flex items-center gap-4 bg-background/40 p-3 rounded-2xl border border-border-theme group/color">
+                                                            <div className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
+                                                                <input
+                                                                    type="color"
+                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                                    value={newStatusColor}
+                                                                    onChange={e => setNewStatusColor(e.target.value)}
+                                                                />
+                                                                <div
+                                                                    className="w-12 h-12 rounded-xl border border-white/20 shadow-lg flex items-center justify-center relative overflow-hidden transition-all duration-500"
+                                                                    style={{
+                                                                        backgroundColor: newStatusColor,
+                                                                        boxShadow: `0 8px 20px -6px ${newStatusColor}66`
+                                                                    }}
+                                                                >
+                                                                    <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent pointer-events-none" />
+                                                                    <Palette className="w-5 h-5 text-white/80 drop-shadow-md relative z-0" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 space-y-1">
+                                                                <div className="flex items-center justify-between px-1">
+                                                                    <span className="text-[8px] font-black uppercase text-[var(--color-text-muted)] tracking-tighter">Hex Code</span>
+                                                                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: newStatusColor }} />
+                                                                </div>
+                                                                <input
+                                                                    className="w-full bg-white/5 border border-border-theme rounded-xl p-2.5 text-xs font-mono outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all uppercase"
+                                                                    value={newStatusColor}
+                                                                    maxLength={7}
+                                                                    onChange={e => {
+                                                                        let val = e.target.value;
+                                                                        if (!val.startsWith('#') && val.length > 0) val = '#' + val;
+                                                                        setNewStatusColor(val);
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div
+                                                        onClick={() => setNewStatusIsFinal(!newStatusIsFinal)}
+                                                        className={clsx(
+                                                            "flex items-center justify-between p-4 bg-background/40 rounded-2xl border transition-all cursor-pointer group hover:bg-background/60",
+                                                            newStatusIsFinal ? "border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.1)]" : "border-border-theme"
+                                                        )}
                                                     >
-                                                        {editingSector ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
-                                                        {editingSector ? 'Salvar Alterações' : 'Criar Setor'}
+                                                        <div className="flex flex-col gap-1">
+                                                            <label className={clsx(
+                                                                "text-[9px] font-black uppercase tracking-[0.1em] transition-colors",
+                                                                newStatusIsFinal ? "text-blue-400" : "text-[var(--color-text-muted)]"
+                                                            )}>
+                                                                Status Finalizador
+                                                            </label>
+                                                            <span className="text-[8px] font-medium text-[var(--color-text-muted)] opacity-60 uppercase tracking-tight">Gera encerramento automático</span>
+                                                        </div>
+                                                        <div className={clsx(
+                                                            "w-12 h-6 rounded-full relative transition-all duration-300 border",
+                                                            newStatusIsFinal ? "bg-blue-500/20 border-blue-500/40" : "bg-white/5 border-white/5"
+                                                        )}>
+                                                            <div className={clsx(
+                                                                "absolute top-1 left-1 w-4 h-4 rounded-full transition-all duration-300 shadow-lg",
+                                                                newStatusIsFinal
+                                                                    ? "translate-x-6 bg-blue-500 shadow-blue-500/40"
+                                                                    : "translate-x-0 bg-white/20"
+                                                            )} />
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={handleCreateStatus}
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
+                                                    >
+                                                        <PlusCircle className="w-4 h-4" />
+                                                        Adicionar ao Fluxo
                                                     </button>
                                                 </div>
                                             </div>
 
                                             {/* Listagem */}
                                             <div className="space-y-6">
-                                                <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">Setores Ativos</h3>
-                                                <div className="bg-background/10 rounded-3xl border border-border-theme max-h-[350px] overflow-y-auto p-3 space-y-2 custom-scrollbar shadow-inner">
-                                                    {sectors.length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum setor cadastrado.</div> :
-                                                        sectors.map(sector => (
-                                                            <div key={sector.id} className={clsx(
-                                                                "flex items-center justify-between p-4 rounded-2xl border border-border-theme group/item transition-all shadow-sm",
-                                                                sector.is_active ? "bg-card/40 hover:bg-card/60" : "bg-card/20 opacity-60 hover:opacity-100"
-                                                            )}>
-                                                                <div className="flex items-center gap-3">
-                                                                    <Tag className={clsx("w-4 h-4", sector.is_active ? "text-emerald-500" : "text-gray-500")} />
-                                                                    <span className={clsx("text-sm font-bold tracking-tight", !sector.is_active && "line-through text-gray-500")}>
-                                                                        {sector.name}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex items-center gap-1 opacity-100">
-                                                                    <button
-                                                                        onClick={() => handleToggleSectorActive(sector)}
-                                                                        title={sector.is_active ? "Desativar" : "Ativar"}
-                                                                        className={clsx(
-                                                                            "p-2 rounded-xl transition-colors",
-                                                                            sector.is_active ? "text-gray-500 hover:text-orange-500 hover:bg-orange-500/10" : "text-green-500 hover:bg-green-500/10"
+                                                <div className="flex h-[42px] items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Lista de Estados Ativos</h3>
+                                                        <button
+                                                            onClick={() => setShowOnlyActiveStatuses(!showOnlyActiveStatuses)}
+                                                            className={clsx(
+                                                                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all border",
+                                                                showOnlyActiveStatuses
+                                                                    ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                                                                    : "bg-white/5 text-[var(--color-text-muted)] border-white/5 hover:bg-white/10"
+                                                            )}
+                                                            title={showOnlyActiveStatuses ? "Mostrar todos" : "Mostrar apenas ativos"}
+                                                        >
+                                                            {showOnlyActiveStatuses ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                                        </button>
+                                                    </div>
+                                                    <div className="w-48">
+                                                        <CustomSelect
+                                                            value={selectedSectorIdStatus || ''}
+                                                            onChange={(val) => setSelectedSectorIdStatus(val === '' ? undefined : Number(val))}
+                                                            options={[
+                                                                { value: '', label: 'Ver Todos', icon: <Users className="w-3 h-3 opacity-50" /> },
+                                                                ...sectors.map(s => ({
+                                                                    value: s.id,
+                                                                    label: s.name,
+                                                                    icon: <Users className="w-3 h-3 text-emerald-500" />
+                                                                }))
+                                                            ]}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="bg-background/20 rounded-3xl border border-border-theme p-6 space-y-2 shadow-inner">
+                                                    {loadingStatuses ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></div> :
+                                                        statuses.filter(st => !showOnlyActiveStatuses || st.is_active).length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum status encontrado.</div> :
+                                                            statuses.filter(st => !showOnlyActiveStatuses || st.is_active).map(st => (
+                                                                <div key={st.id} className={clsx(
+                                                                    "flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm",
+                                                                    !st.is_active && "opacity-50 grayscale-[0.5]"
+                                                                )}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-4 h-4 rounded-full border border-white/10 shadow-sm" style={{ backgroundColor: st.color }} />
+                                                                        <span className={clsx(
+                                                                            "text-sm font-bold tracking-tight",
+                                                                            !st.is_active && "line-through"
+                                                                        )}>{st.name}</span>
+                                                                        <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                                                            {st.sector_id ? sectors.find(s => s.id === st.sector_id)?.name || 'Setor' : 'Global'}
+                                                                        </span>
+                                                                        {st.is_final && (
+                                                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">Finalizado</span>
                                                                         )}
-                                                                    >
-                                                                        {sector.is_active ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleEditSector(sector)}
-                                                                        className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl"
-                                                                    >
-                                                                        <Edit2 className="w-3 h-3" />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleDeleteSector(sector.id)}
-                                                                        className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl"
-                                                                    >
-                                                                        <Trash2 className="w-3 h-3" />
-                                                                    </button>
+                                                                        {!st.is_active && (
+                                                                            <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/20">Inativo</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                                                                        <button
+                                                                            onClick={() => handleToggleStatusActivation(st)}
+                                                                            className={clsx(
+                                                                                "p-2 rounded-xl transition-all",
+                                                                                st.is_active ? "text-blue-500 hover:bg-blue-500/10" : "text-gray-400 hover:text-blue-500 hover:bg-blue-500/10"
+                                                                            )}
+                                                                            title={st.is_active ? "Desativar" : "Ativar"}
+                                                                        >
+                                                                            {st.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                                                        </button>
+                                                                        <button onClick={() => handleEditStatus(st)} className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl transition-all">
+                                                                            <Edit2 className="w-4 h-4" />
+                                                                        </button>
+                                                                        <button onClick={() => handleDeleteStatus(st.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        ))
+                                                            ))
                                                     }
                                                 </div>
                                             </div>

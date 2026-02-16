@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Send, Loader2, Sparkles, Image as ImageIcon, CheckCircle2, User, Mail, Phone, ChevronDown, Tag, Eye, Edit2, Paperclip, Circle, Clock, AlertOctagon } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Sparkles, Image as ImageIcon, CheckCircle2, User, Mail, Phone, ChevronDown, Tag, Eye, Edit2, Paperclip, Circle, Clock, AlertOctagon, Users } from 'lucide-react';
 import Link from 'next/link';
-import { createTicket, getCategories, getClients, Category, Client } from '@/lib/api';
+import { createTicket, getCategories, getClients, getSectors, Category, Client, Sector } from '@/lib/api';
 import { chatWithOllama } from '@/lib/ollama';
 import { useNotification } from '@/components/NotificationProvider';
 import CustomSelect from '@/components/CustomSelect';
@@ -21,6 +21,8 @@ export default function NewTicket() {
     const [aiImage, setAiImage] = useState<string | null>(null);
     const [config, setConfig] = useState({ textModel: 'phi3', visionModel: 'moondream' });
     const [categories, setCategories] = useState<Category[]>([]);
+    const [sectors, setSectors] = useState<Sector[]>([]);
+    const [selectedSectorId, setSelectedSectorId] = useState<number | undefined>(undefined);
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [isAiActive, setIsAiActive] = useState(false);
@@ -42,7 +44,22 @@ export default function NewTicket() {
         }
         loadCategories();
         loadClients();
+        loadSectors();
     }, []);
+
+    // Atualiza categorias quando o setor selecionado mudar
+    React.useEffect(() => {
+        loadCategories(selectedSectorId);
+    }, [selectedSectorId]);
+
+    const loadSectors = async () => {
+        try {
+            const data = await getSectors();
+            setSectors(data);
+        } catch (error) {
+            console.error('Error fetching sectors:', error);
+        }
+    };
 
     const loadClients = async () => {
         try {
@@ -53,9 +70,9 @@ export default function NewTicket() {
         }
     };
 
-    const loadCategories = async () => {
+    const loadCategories = async (sectorId?: number) => {
         try {
-            const data = await getCategories();
+            const data = await getCategories(sectorId);
             setCategories(data);
         } catch (error) {
             console.error('Error fetching categories:', error);
@@ -68,7 +85,8 @@ export default function NewTicket() {
         description: '',
         priority: 'Média',
         client_name: '',
-        category_id: undefined as number | undefined
+        category_id: undefined as number | undefined,
+        sector_id: undefined as number | undefined
     });
 
     const handleSave = async (e: React.FormEvent) => {
@@ -180,7 +198,8 @@ Note: Be concise in the title and detailed in the description.`;
                     title: data.title || '',
                     description: data.description || '',
                     priority: data.priority || 'Média',
-                    category_id: undefined
+                    category_id: undefined,
+                    sector_id: selectedSectorId
                 });
             } else {
                 setFormData({
@@ -431,21 +450,42 @@ Note: Be concise in the title and detailed in the description.`;
                                 ]}
                             />
 
-                            <CustomSelect
-                                label="Categoria Técnica"
-                                value={formData.category_id || ''}
-                                onChange={val => setFormData({ ...formData, category_id: val ? parseInt(val) : undefined })}
-                                placeholder="Selecione categoria..."
-                                options={categories.flatMap(cat => [
-                                    { value: cat.id, label: cat.name, icon: <Tag className="w-4 h-4" /> },
-                                    ...(cat.subcategories?.map(sub => ({
-                                        value: sub.id,
-                                        label: sub.name,
-                                        icon: <Tag className="w-3 h-3 ml-2" />,
-                                        className: "pl-8 opacity-80"
-                                    })) || [])
-                                ])}
-                            />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <CustomSelect
+                                    label="Setor Responsável"
+                                    value={selectedSectorId || ''}
+                                    onChange={(val) => {
+                                        const sId = val === '' ? undefined : Number(val);
+                                        setSelectedSectorId(sId);
+                                        setFormData({ ...formData, sector_id: sId, category_id: undefined });
+                                    }}
+                                    placeholder="Todos os Setores"
+                                    options={[
+                                        { value: '', label: 'Global (Geral)', icon: <Users className="w-4 h-4 opacity-50" /> },
+                                        ...sectors.map(s => ({
+                                            value: s.id,
+                                            label: s.name,
+                                            icon: <Users className="w-4 h-4 text-emerald-500" />
+                                        }))
+                                    ]}
+                                />
+
+                                <CustomSelect
+                                    label="Categoria Técnica"
+                                    value={formData.category_id || ''}
+                                    onChange={val => setFormData({ ...formData, category_id: val ? parseInt(val) : undefined })}
+                                    placeholder="Selecione categoria..."
+                                    options={categories.flatMap(cat => [
+                                        { value: cat.id, label: cat.name, icon: <Tag className="w-4 h-4" /> },
+                                        ...(cat.subcategories?.map(sub => ({
+                                            value: sub.id,
+                                            label: sub.name,
+                                            icon: <Tag className="w-3 h-3 ml-2" />,
+                                            className: "pl-8 opacity-80"
+                                        })) || [])
+                                    ])}
+                                />
+                            </div>
 
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between ml-1">

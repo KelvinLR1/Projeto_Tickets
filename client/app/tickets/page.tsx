@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import TicketList from '@/components/TicketList';
 import KanbanView from '@/components/KanbanView';
-import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag, LayoutGrid, List } from 'lucide-react';
-import { getCategories, Category, getStatuses, Status, getTickets, Ticket } from '@/lib/api';
+import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag, LayoutGrid, List, Users } from 'lucide-react';
+import { getCategories, Category, getStatuses, Status, getTickets, Ticket, getSectors, Sector } from '@/lib/api';
 import CustomSelect from '@/components/CustomSelect';
 import CategorySelect from '@/components/CategorySelect';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -25,6 +25,8 @@ export default function TicketsPage() {
     const [categoryFilter, setCategoryFilter] = useState<number | undefined>(undefined);
     const [categories, setCategories] = useState<Category[]>([]);
     const [statuses, setStatuses] = useState<Status[]>([]);
+    const [sectors, setSectors] = useState<Sector[]>([]);
+    const [sectorFilter, setSectorFilter] = useState<number | undefined>(undefined);
 
     useEffect(() => {
         loadData();
@@ -33,14 +35,16 @@ export default function TicketsPage() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [catsData, statusesData, ticketsData] = await Promise.all([
+            const [catsData, statusesData, ticketsData, sectorsData] = await Promise.all([
                 getCategories(),
                 getStatuses(),
-                getTickets()
+                getTickets(),
+                getSectors()
             ]);
             setCategories(catsData);
             setStatuses(statusesData);
             setTickets(ticketsData);
+            setSectors(sectorsData);
         } catch (error) {
             console.error('Failed to load tickets data:', error);
         } finally {
@@ -52,9 +56,10 @@ export default function TicketsPage() {
         setStatusFilter('');
         setPriorityFilter('');
         setCategoryFilter(undefined);
+        setSectorFilter(undefined);
     };
 
-    const hasActiveFilters = statusFilter || priorityFilter || (categoryFilter !== undefined);
+    const hasActiveFilters = statusFilter || priorityFilter || (categoryFilter !== undefined) || (sectorFilter !== undefined);
 
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
@@ -161,7 +166,26 @@ export default function TicketsPage() {
                                 className="overflow-hidden"
                             >
                                 <div className="glass-card p-10 rounded-3xl border border-border-theme shadow-2xl space-y-10 relative z-30">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
+                                        <div className="space-y-3">
+                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                <Users className="w-3 h-3 text-accent-theme/50" />
+                                                Setor Responsável
+                                            </label>
+                                            <CustomSelect
+                                                value={sectorFilter || ''}
+                                                onChange={val => setSectorFilter(val ? parseInt(val) : undefined)}
+                                                placeholder="TODOS OS SETORES"
+                                                options={[
+                                                    { value: '', label: 'TODOS OS SETORES', icon: <Users className="w-4 h-4 opacity-50" /> },
+                                                    ...sectors.map(s => ({
+                                                        value: s.id.toString(),
+                                                        label: s.name,
+                                                        icon: <Users className="w-3 h-3" />
+                                                    }))
+                                                ]}
+                                            />
+                                        </div>
                                         <div className="space-y-3">
                                             <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
                                                 <Circle className="w-3 h-3 text-accent-theme/50" />
@@ -210,6 +234,7 @@ export default function TicketsPage() {
                                                 value={categoryFilter || ''}
                                                 onChange={val => setCategoryFilter(val || undefined)}
                                                 categories={categories}
+                                                sectorId={sectorFilter}
                                                 placeholder="TODAS AS CATEGORIAS"
                                             />
                                         </div>
@@ -284,6 +309,7 @@ export default function TicketsPage() {
                                     status={statusFilter}
                                     priority={priorityFilter}
                                     categoryId={categoryFilter}
+                                    sectorId={sectorFilter}
                                 />
                             </motion.div>
                         ) : (
