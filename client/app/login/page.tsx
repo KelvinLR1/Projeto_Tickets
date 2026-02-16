@@ -3,7 +3,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSystemSettings } from '@/components/SystemSettingsProvider';
-import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck } from 'lucide-react';
+import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck, Settings, Globe, X, RefreshCw, AlertCircle, Save } from 'lucide-react';
+import { getDefaultBaseURL } from '@/lib/api';
+import axios from 'axios';
 
 export default function LoginPage() {
     const [username, setUsername] = useState('');
@@ -13,6 +15,72 @@ export default function LoginPage() {
     const { login } = useAuth();
     const { systemName, logoUrlOnAccent } = useSystemSettings();
 
+    // Estado para Configuração de Servidor
+    const [showServerSettings, setShowServerSettings] = useState(false);
+    const [apiUrl, setApiUrl] = useState('');
+    const [isTesting, setIsTesting] = useState(false);
+    const [testStatus, setTestStatus] = useState<'success' | 'error' | null>(null);
+
+    // Carrega URL do Servidor e verifica conectividade
+    React.useEffect(() => {
+        const localConfig = localStorage.getItem('system_config');
+        let currentUrl = getDefaultBaseURL();
+
+        if (localConfig) {
+            try {
+                const { apiUrl: storedUrl } = JSON.parse(localConfig);
+                if (storedUrl) {
+                    currentUrl = storedUrl;
+                }
+            } catch (e) { }
+        }
+        setApiUrl(currentUrl);
+
+        // Verifica conexão proativamente ao montar a tela
+        const checkInitialConnection = async () => {
+            try {
+                // Tenta um ping leve sem headers de auth para não poluir logs de 401
+                await axios.get(`${currentUrl.replace(/\/$/, "")}/health`, { timeout: 3000 });
+            } catch (err) {
+                // Se for Network Error (servidor offline), já avisa o usuário
+                const isNetworkError = !axios.isAxiosError(err) || (!err.response && (err.message === 'Network Error' || (err as any).code === 'ERR_NETWORK'));
+                if (isNetworkError) {
+                    setError('O servidor não responde no endereço configurado. Verifique os ajustes.');
+                }
+            }
+        };
+
+        checkInitialConnection();
+    }, []);
+
+    const handleSaveSettings = () => {
+        const config = { apiUrl: apiUrl.replace(/\/$/, "") };
+        localStorage.setItem('system_config', JSON.stringify(config));
+        setShowServerSettings(false);
+        setError(''); // Limpa erro anterior se houver
+        // Força recarregamento da página para o axios interceptor pegar a nova URL
+        window.location.reload();
+    };
+
+    const handleTestConnection = async () => {
+        setIsTesting(true);
+        setTestStatus(null);
+        try {
+            // Tenta um endpoint simples de health check ou similar
+            await axios.get(`${apiUrl.replace(/\/$/, "")}/health`, { timeout: 5000 });
+            setTestStatus('success');
+        } catch (err) {
+            // Se o /health não existir mas o servidor responder (Ex: 404), consideramos sucesso de conexão
+            if (axios.isAxiosError(err) && err.response) {
+                setTestStatus('success');
+            } else {
+                setTestStatus('error');
+            }
+        } finally {
+            setIsTesting(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -21,7 +89,12 @@ export default function LoginPage() {
         try {
             await login(username, password);
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Credenciais inválidas. Tente novamente.');
+            const isNetworkError = !err.response && (err.message === 'Network Error' || err.code === 'ERR_NETWORK');
+            if (isNetworkError) {
+                setError('Não foi possível conectar ao servidor. Verifique o endereço configurado.');
+            } else {
+                setError(err.response?.data?.detail || 'Credenciais inválidas. Tente novamente.');
+            }
         } finally {
             setIsLoggingIn(false);
         }
@@ -32,6 +105,15 @@ export default function LoginPage() {
             {/* Elementos Decorativos de Fundo */}
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent-theme/10 blur-[120px] rounded-full animate-pulse" />
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary-theme/10 blur-[120px] rounded-full animate-pulse delay-700" />
+
+            {/* Botão de Configuração Flutuante */}
+            <button
+                onClick={() => setShowServerSettings(true)}
+                className="absolute top-8 right-8 p-3 glass-card rounded-2xl text-[var(--color-text-muted)] hover:text-accent-theme hover:scale-110 transition-all z-20 group"
+                title="Configurar Servidor"
+            >
+                <Settings className="w-6 h-6 group-hover:rotate-90 transition-transform duration-500" />
+            </button>
 
             <div className="w-full max-w-md p-4 relative z-10 animate-in fade-in zoom-in-95 duration-700">
                 <div className="glass-card rounded-[2.5rem] p-10 space-y-10 border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)]">
@@ -102,9 +184,21 @@ export default function LoginPage() {
                         </div>
 
                         {error && (
-                            <div className="p-5 text-[10px] font-black uppercase tracking-widest text-red-500 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top-2">
-                                <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                {error}
+                            <div className="space-y-4 animate-in slide-in-from-top-2">
+                                <div className="p-5 text-[10px] font-black uppercase tracking-widest text-red-500 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3">
+                                    <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                                    {error}
+                                </div>
+                                {error.includes('conectar') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowServerSettings(true)}
+                                        className="w-full p-4 border border-accent-theme/30 rounded-2xl text-[9px] font-black uppercase tracking-widest text-accent-theme hover:bg-accent-theme/10 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <Globe className="w-4 h-4" />
+                                        Configurar Caminho do Servidor
+                                    </button>
+                                )}
                             </div>
                         )}
 
@@ -141,6 +235,77 @@ export default function LoginPage() {
                     © 2026 TicketFlow System | LAN Secured
                 </p>
             </div>
+
+            {/* Modal de Configuração de Servidor */}
+            {showServerSettings && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="w-full max-w-sm glass-card rounded-[2.5rem] p-8 border-white/10 shadow-2xl relative">
+                        <button
+                            onClick={() => setShowServerSettings(false)}
+                            className="absolute top-6 right-6 p-2 text-[var(--color-text-muted)] hover:text-foreground transition-colors"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="space-y-6">
+                            <div className="flex items-center gap-3 text-accent-theme">
+                                <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                    <Globe className="w-6 h-6" />
+                                </div>
+                                <h3 className="font-bold text-lg uppercase tracking-widest text-foreground">Servidor API</h3>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                        Endereço do Backend (URL)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={apiUrl}
+                                        onChange={(e) => setApiUrl(e.target.value)}
+                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-5 py-4 text-sm font-mono focus:outline-none focus:ring-4 focus:ring-accent-theme/10 focus:border-accent-theme/30 transition-all"
+                                        placeholder="http://192.168.0.10:8080"
+                                    />
+                                    <p className="text-[9px] text-[var(--color-text-muted)] italic px-1 pt-1">
+                                        IP do servidor onde o backend está rodando.
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleTestConnection}
+                                        disabled={isTesting}
+                                        className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${testStatus === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-500' :
+                                            testStatus === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-500' :
+                                                'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                            }`}
+                                    >
+                                        {isTesting ? (
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
+                                        ) : testStatus === 'success' ? (
+                                            <ShieldCheck className="w-4 h-4" />
+                                        ) : testStatus === 'error' ? (
+                                            <AlertCircle className="w-4 h-4" />
+                                        ) : (
+                                            <RefreshCw className="w-4 h-4" />
+                                        )}
+                                        {isTesting ? 'Testando...' : testStatus === 'success' ? 'Conectado' : testStatus === 'error' ? 'Falhou' : 'Testar'}
+                                    </button>
+
+                                    <button
+                                        onClick={handleSaveSettings}
+                                        className="flex-[1.5] flex items-center justify-center gap-2 py-4 premium-gradient rounded-xl text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-accent-theme/20 hover:brightness-110 active:scale-95 transition-all"
+                                    >
+                                        <Save className="w-4 h-4" />
+                                        Salvar & Recarregar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

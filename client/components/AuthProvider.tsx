@@ -40,7 +40,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (isUnauthorized) {
                 console.warn('Session expired or invalid token. Redirecting to login.');
             } else {
-                console.error('Failed to load user:', error.message);
+                const isNetworkError = !error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK');
+                if (!isNetworkError) {
+                    console.error('Failed to load user:', error.message);
+                }
             }
 
             if (isUnauthorized) {

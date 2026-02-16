@@ -113,6 +113,10 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 def read_root():
     return {"status": "ok", "message": "Sistema de Tickets Offline Rodando"}
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
 # --- Auth Endpoints ---
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

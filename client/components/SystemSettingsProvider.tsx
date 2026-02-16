@@ -89,8 +89,11 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
                 logo_url_dark: resolveUrl(data.logo_url_dark) || resolveUrl(data.logo_url) || null,
                 custom_colors: data.custom_colors || null
             });
-        } catch (error) {
-            console.error('Failed to fetch system settings:', error);
+        } catch (error: any) {
+            const isNetworkError = !error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK');
+            if (!isNetworkError) {
+                console.error('Failed to fetch system settings:', error);
+            }
         } finally {
             setIsLoading(false);
         }

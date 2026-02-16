@@ -92,16 +92,23 @@ api.interceptors.response.use(
     // Só loga no console se NÃO for um erro de login esperado (401 no /token)
     // ou se for um erro crítico (500+) ou erro de rede (Network Error)
     // Ignoramos 401 ruidosos aqui para que os Providers tratem se necessário ou fiquem quietos
-    const isNetworkError = !error.response && error.message === 'Network Error';
+    const isNetworkError = !error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK');
 
     if (!isLoginRequest && !isUnauthorized && ((error.response?.status && error.response.status >= 500) || isNetworkError)) {
-      console.error('[API Error]', {
-        url: error.config?.url,
-        baseURL: error.config?.baseURL,
-        status: error.response?.status || 'NETWORK_ERROR',
-        message: error.message,
-        location: typeof window !== 'undefined' ? window.location.href : 'SSR'
-      });
+      // Se for erro de rede, logamos de forma mais sutil ou evitamos poluir se estivermos na tela de login
+      const isLoginPath = typeof window !== 'undefined' && window.location.pathname.includes('/login');
+
+      if (isNetworkError && isLoginPath) {
+        // Silêncio na tela de login para erros de rede, pois a própria tela já avisa
+      } else {
+        console.error('[API Error]', {
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+          status: error.response?.status || 'NETWORK_ERROR',
+          message: error.message,
+          location: typeof window !== 'undefined' ? window.location.href : 'SSR'
+        });
+      }
 
       // Se for erro de rede e estivermos em localhost mas a API não, sugere reset
       if (isNetworkError && typeof window !== 'undefined') {
