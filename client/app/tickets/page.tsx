@@ -40,6 +40,13 @@ export default function TicketsPage() {
         return undefined;
     });
     const [excludeFinalized, setExcludeFinalized] = useState(true);
+    const [assignedUserFilter, setAssignedUserFilter] = useState<number | undefined>(undefined);
+    const [clientFilter, setClientFilter] = useState<number | undefined>(undefined);
+    const [unassignedOnly, setUnassignedOnly] = useState(false);
+    const [attendants, setAttendants] = useState<{ id: number; name: string }[]>([]);
+    const [clients, setClients] = useState<{ id: number; name: string }[]>([]);
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
 
     const availableSectors = user?.sectors || [];
 
@@ -65,6 +72,23 @@ export default function TicketsPage() {
         }
     }, [user, availableSectors]);
 
+    // Buscar atendentes e clientes
+    useEffect(() => {
+        const fetchFilterData = async () => {
+            try {
+                const [usersData, clientsData] = await Promise.all([
+                    import('@/lib/api').then(m => m.getAttendants()),
+                    import('@/lib/api').then(m => m.getClients())
+                ]);
+                setAttendants(usersData);
+                setClients(clientsData.map(c => ({ id: c.id, name: c.name })));
+            } catch (error) {
+                console.error('Failed to fetch filter data:', error);
+            }
+        };
+        fetchFilterData();
+    }, []);
+
     useEffect(() => {
         let ignore = false;
 
@@ -80,7 +104,12 @@ export default function TicketsPage() {
                     categoryId: categoryFilter,
                     q: searchTerm || undefined,
                     status: statusFilter || undefined,
-                    excludeFinalized: excludeFinalized
+                    excludeFinalized: excludeFinalized,
+                    assignedUserId: assignedUserFilter,
+                    clientId: clientFilter,
+                    unassignedOnly: unassignedOnly,
+                    startDate: startDate || undefined,
+                    endDate: endDate || undefined
                 };
 
                 const [catsData, statusesData, ticketsData] = await Promise.all([
@@ -110,7 +139,7 @@ export default function TicketsPage() {
             ignore = true;
             clearTimeout(timeoutId);
         };
-    }, [sectorFilter, statusFilter, priorityFilter, categoryFilter, searchTerm, excludeFinalized]);
+    }, [sectorFilter, statusFilter, priorityFilter, categoryFilter, searchTerm, excludeFinalized, assignedUserFilter, clientFilter, unassignedOnly, startDate, endDate]);
 
     const loadData = () => {
         // Redundant
@@ -120,9 +149,14 @@ export default function TicketsPage() {
         setStatusFilter('');
         setPriorityFilter('');
         setCategoryFilter(undefined);
+        setAssignedUserFilter(undefined);
+        setClientFilter(undefined);
+        setUnassignedOnly(false);
+        setStartDate('');
+        setEndDate('');
     };
 
-    const hasActiveFilters = !!(statusFilter || priorityFilter || categoryFilter);
+    const hasActiveFilters = !!(statusFilter || priorityFilter || categoryFilter || assignedUserFilter || clientFilter || unassignedOnly || startDate || endDate);
 
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
@@ -282,7 +316,7 @@ export default function TicketsPage() {
                                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
                                     animate={{ opacity: 1, scale: 1, y: 0 }}
                                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                                    className="glass-card w-full max-w-4xl rounded-[2.5rem] border border-white/10 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden relative z-10"
+                                    className="glass-card w-full max-w-4xl rounded-[2.5rem] border border-white/10 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] relative z-10"
                                 >
                                     <div className="p-8 sm:p-12 space-y-10">
                                         <div className="flex items-center justify-between">
@@ -349,6 +383,94 @@ export default function TicketsPage() {
                                                     categories={categories}
                                                     sectorId={sectorFilter}
                                                     placeholder="TODAS AS CATEGORIAS"
+                                                />
+                                            </div>
+
+                                            {/* Novos filtros */}
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Users className="w-3 h-3 text-accent-theme/50" />
+                                                    Técnico Responsável
+                                                </label>
+                                                <CustomSelect
+                                                    value={assignedUserFilter?.toString() || ''}
+                                                    onChange={val => setAssignedUserFilter(val ? parseInt(val) : undefined)}
+                                                    placeholder="TODOS OS TÉCNICOS"
+                                                    options={[
+                                                        { value: '', label: 'TODOS OS TÉCNICOS', icon: <Users className="w-4 h-4 opacity-50" /> },
+                                                        ...attendants.map(a => ({
+                                                            value: a.id.toString(),
+                                                            label: a.name,
+                                                            icon: <Users className="w-3 h-3" />
+                                                        }))
+                                                    ]}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Users className="w-3 h-3 text-accent-theme/50" />
+                                                    Cliente Solicitante
+                                                </label>
+                                                <CustomSelect
+                                                    value={clientFilter?.toString() || ''}
+                                                    onChange={val => setClientFilter(val ? parseInt(val) : undefined)}
+                                                    placeholder="TODOS OS CLIENTES"
+                                                    options={[
+                                                        { value: '', label: 'TODOS OS CLIENTES', icon: <Users className="w-4 h-4 opacity-50" /> },
+                                                        ...clients.map(c => ({
+                                                            value: c.id.toString(),
+                                                            label: c.name,
+                                                            icon: <Users className="w-3 h-3" />
+                                                        }))
+                                                    ]}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Clock className="w-3 h-3 text-accent-theme/50" />
+                                                    Filtros Rápidos
+                                                </label>
+                                                <div className="flex items-center gap-4 h-14 bg-background/50 border border-border-theme rounded-2xl px-6">
+                                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                                        <div
+                                                            onClick={() => setUnassignedOnly(!unassignedOnly)}
+                                                            className={clsx(
+                                                                "w-6 h-6 rounded-lg border-2 transition-all flex items-center justify-center",
+                                                                unassignedOnly ? "bg-accent-theme border-accent-theme" : "border-border-theme group-hover:border-accent-theme/50"
+                                                            )}
+                                                        >
+                                                            {unassignedOnly && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                                        </div>
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] group-hover:text-foreground">Apenas não atribuídos</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Clock className="w-3 h-3 text-accent-theme/50" />
+                                                    Data Inicial
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-xs font-bold outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all h-14"
+                                                    value={startDate}
+                                                    onChange={(e) => setStartDate(e.target.value)}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Clock className="w-3 h-3 text-accent-theme/50" />
+                                                    Data Final
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-xs font-bold outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all h-14"
+                                                    value={endDate}
+                                                    onChange={(e) => setEndDate(e.target.value)}
                                                 />
                                             </div>
                                         </div>

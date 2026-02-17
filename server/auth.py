@@ -26,11 +26,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        # Expira ao final do dia atual (23:59:59)
-        now = datetime.utcnow()
+        # Expira ao final do dia atual (23:59:59) no horário local do servidor
+        now = datetime.now()
         expire = datetime(now.year, now.month, now.day, 23, 59, 59)
         
-        # Se já passou das 23:59:59 (raro, mas possível entre segundos), coloca para o fim do próximo dia
+        # Se já passou das 23:59:59, coloca para o fim do próximo dia
         if expire <= now:
             expire += timedelta(days=1)
             

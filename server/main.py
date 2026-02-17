@@ -29,8 +29,46 @@ models.Base.metadata.create_all(bind=engine)
 def seed_db():
     db = database.SessionLocal()
     try:
-        # 1. Garantir usuário ROOT (admin)
-        # Tenta buscar por username ou por email de sistema
+        # 1. Garantir Perfis de Acesso Padrão
+        master_profile = db.query(models.Profile).filter(models.Profile.name == "Master").first()
+        if not master_profile:
+            master_profile = models.Profile(
+                name="Master",
+                description="Acesso total ao sistema",
+                permissions={"menus": ["*"], "actions": ["*"]}
+            )
+            db.add(master_profile)
+            db.commit()
+            db.refresh(master_profile)
+            print("Perfil 'Master' criado!")
+
+        if not db.query(models.Profile).filter(models.Profile.name == "Técnico").first():
+            tech_profile = models.Profile(
+                name="Técnico",
+                description="Atendimento e gestão de chamados",
+                permissions={
+                    "menus": ["dashboard", "tickets", "clients", "knowledge"],
+                    "actions": ["create_ticket", "edit_ticket"]
+                }
+            )
+            db.add(tech_profile)
+            db.commit()
+            print("Perfil 'Técnico' criado!")
+
+        if not db.query(models.Profile).filter(models.Profile.name == "Leitor").first():
+            reader_profile = models.Profile(
+                name="Leitor",
+                description="Apenas visualização",
+                permissions={
+                    "menus": ["dashboard", "tickets"],
+                    "actions": []
+                }
+            )
+            db.add(reader_profile)
+            db.commit()
+            print("Perfil 'Leitor' criado!")
+
+        # 2. Garantir usuário ROOT (admin) vinculado ao Master
         admin_user = db.query(models.User).filter(
             (models.User.username == "admin") | (models.User.email == "admin@sistema.com")
         ).first()
@@ -45,21 +83,22 @@ def seed_db():
                 role="ROOT"
             )
             hashed_password = auth.get_password_hash("admin")
-            crud.create_user(db, admin_schema, hashed_password)
-            print("Usuário 'admin' (ROOT) criado com sucesso!")
+            admin_user = crud.create_user(db, admin_schema, hashed_password)
+            admin_user.profile_id = master_profile.id
+            db.commit()
+            print(f"Usuário 'admin' vinculado ao perfil '{master_profile.name}'!")
         else:
-            # Garante que as credenciais e papel estão corretos
             updated = False
-            if admin_user.username != "admin":
-                admin_user.username = "admin"
-                updated = True
             if admin_user.role != "ROOT":
                 admin_user.role = "ROOT"
+                updated = True
+            if not admin_user.profile_id:
+                admin_user.profile_id = master_profile.id
                 updated = True
             
             if updated:
                 db.commit()
-                print("Usuário admin existente atualizado para papel ROOT.")
+                print("Usuário admin atualizado (Role ROOT + Perfil Master).")
 
         # 2. Garantir categorias e status padrão
         crud.get_or_create_default_category(db)
@@ -374,8 +413,8 @@ def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depen
     return crud.create_ticket_simple(db=db, ticket=ticket)
 
 @app.get("/tickets/", response_model=List[schemas.Ticket])
-def read_tickets(skip: int = 0, limit: int = 100, q: str = None, status: str = None, client_id: int = None, sector_id: int = None, priority: str = None, category_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db)):
-    tickets = crud.get_tickets(db, skip=skip, limit=limit, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
+def read_tickets(skip: int = 0, limit: int = 100, q: str = None, status: str = None, client_id: int = None, sector_id: int = None, priority: str = None, category_id: int = None, assigned_user_id: int = None, start_date: str = None, end_date: str = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db)):
+    tickets = crud.get_tickets(db, skip=skip, limit=limit, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, assigned_user_id=assigned_user_id, start_date=start_date, end_date=end_date, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
     return tickets
 
 @app.get("/dashboard/stats")
@@ -402,10 +441,22 @@ def create_message(ticket_id: int, message: schemas.TicketMessageCreate, db: Ses
 
 @app.put("/tickets/{ticket_id}", response_model=schemas.Ticket)
 def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    db_ticket = crud.update_ticket(db=db, ticket_id=ticket_id, ticket_update=ticket, user_id=current_user.id)
+    db_ticket = crud.get_ticket(db, ticket_id=ticket_id)
     if db_ticket is None:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
-    return db_ticket
+    
+    # Validação de Transferência: Somente o responsável ou ADMIN/ROOT podem mudar setor ou atendente
+    is_transfer = ticket.sector_id is not None or ticket.assigned_user_id is not None
+    if is_transfer:
+        is_owner = db_ticket.assigned_user_id == current_user.id
+        is_admin = current_user.role in ["ADMIN", "ROOT"]
+        if not (is_owner or is_admin):
+            raise HTTPException(
+                status_code=403, 
+                detail="Você não tem permissão para transferir este ticket. Apenas o responsável ou administradores podem fazê-lo."
+            )
+
+    return crud.update_ticket(db=db, ticket_id=ticket_id, ticket_update=ticket, user_id=current_user.id)
 
 @app.get("/tickets/{ticket_id}/history", response_model=List[schemas.TicketHistory])
 def read_ticket_history(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -602,6 +653,10 @@ def follow_ticket(
     if not success:
         raise HTTPException(status_code=400, detail="Erro ao adicionar acompanhante ou usuário já segue o ticket.")
     return ticket
+
+@app.get("/users/me/followed-tickets", response_model=List[schemas.Ticket])
+def read_followed_tickets(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_followed_tickets(db, user_id=current_user.id)
 
 @app.post("/tickets/{ticket_id}/unfollow", response_model=schemas.Ticket)
 def unfollow_ticket(
@@ -932,6 +987,11 @@ def mark_all_notifications_read(
 ):
     crud.mark_all_notifications_as_read(db, user_id=current_user.id)
     return {"message": "Todas as notificações marcadas como lidas"}
+
+@app.get("/sectors", response_model=List[schemas.Sector])
+def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    sectors = crud.get_sectors(db, skip=skip, limit=limit)
+    return sectors
 
 @app.post("/notifications/send", response_model=schemas.Notification)
 def send_notification(

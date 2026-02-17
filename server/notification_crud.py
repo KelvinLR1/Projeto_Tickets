@@ -63,10 +63,32 @@ def create_notification(db: Session, notification: schemas.NotificationCreate):
     return db_notification
 
 def send_user_notification(db: Session, sender_id: int, data: schemas.NotificationSend):
-    """Send a notification from one user to another"""
-    # Validate recipient exists
-    recipient = db.query(models.User).filter(models.User.id == data.recipient_user_id).first()
-    if not recipient:
+    """Send a notification from one user to another (or multiple)"""
+    
+    target_user_ids = set()
+
+    # 1. Add individual recipients
+    if data.recipient_ids:
+        target_user_ids.update(data.recipient_ids)
+    
+    # Backward compatibility
+    if data.recipient_user_id:
+        target_user_ids.add(data.recipient_user_id)
+
+    # 2. Add recipients from sectors
+    if data.sector_ids:
+        # Get all users belonging to these sectors
+        # Assuming User model has a relationship or we query via association table
+        # If User has 'sectors' relationship:
+        sector_users = db.query(models.User).join(models.User.sectors).filter(
+            models.Sector.id.in_(data.sector_ids),
+            models.User.is_active == True
+        ).all()
+        
+        for user in sector_users:
+            target_user_ids.add(user.id)
+
+    if not target_user_ids:
         return None
     
     # Build link if ticket_id provided
@@ -75,20 +97,37 @@ def send_user_notification(db: Session, sender_id: int, data: schemas.Notificati
         ticket = db.query(models.Ticket).filter(models.Ticket.id == data.ticket_id).first()
         if ticket:
             link = f"/tickets/{data.ticket_id}"
+
+    notifications_created = []
+
+    for user_id in target_user_ids:
+        # Validate recipient exists
+        recipient = db.query(models.User).filter(models.User.id == user_id).first()
+        if not recipient:
+            continue
+
+        # Create notification
+        db_notification = models.Notification(
+            user_id=user_id,
+            created_by_user_id=sender_id,
+            title=data.title,
+            message=data.message,
+            type=data.type,
+            link=link,
+            read=False
+        )
+        db.add(db_notification)
+        notifications_created.append(db_notification)
     
-    # Create notification
-    db_notification = models.Notification(
-        user_id=data.recipient_user_id,
-        created_by_user_id=sender_id,
-        title=data.title,
-        message=data.message,
-        type=data.type,
-        link=link,
-        read=False
-    )
-    
-    db.add(db_notification)
     db.commit()
-    db.refresh(db_notification)
     
-    return db_notification
+    # Refresh all created (optional, might be slow for many)
+    # for n in notifications_created:
+    #     db.refresh(n)
+    
+    # Return the last one just to satisfy legacy single-return expectation if needed, 
+    # or return a list if we change the endpoint.
+    # For now, let's return the first one created so the API doesn't crash on "response_model=Notification"
+    # Ideally we should change the response model to List[Notification] or a Summary.
+    
+    return notifications_created[0] if notifications_created else None

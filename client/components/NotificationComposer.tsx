@@ -1,9 +1,10 @@
-'use client';
-
 import React, { useState, useEffect } from 'react';
-import { X, Send, User, MessageSquare, AlertCircle, Info, CheckCircle, AlertTriangle, Tag } from 'lucide-react';
-import { sendNotification, getUsers, getTickets } from '@/lib/api';
+import { X, Send, User, MessageSquare, AlertCircle, Info, CheckCircle, AlertTriangle, Tag, Layers, Users } from 'lucide-react';
+import { sendNotification, getUsers, getSectors } from '@/lib/api';
 import clsx from 'clsx';
+import MultiSelectUser from './MultiSelectUser';
+import MultiSelectSector from './MultiSelectSector';
+import TicketSearchSelect from './TicketSearchSelect';
 
 interface NotificationComposerProps {
     onClose: () => void;
@@ -12,50 +13,54 @@ interface NotificationComposerProps {
 
 export default function NotificationComposer({ onClose, onSuccess }: NotificationComposerProps) {
     const [users, setUsers] = useState<any[]>([]);
-    const [tickets, setTickets] = useState<any[]>([]);
+    const [sectors, setSectors] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
-    const [recipientId, setRecipientId] = useState<number | null>(null);
+    // Selection State
+    const [targetType, setTargetType] = useState<'users' | 'sectors'>('users');
+    const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+    const [selectedSectorIds, setSelectedSectorIds] = useState<number[]>([]);
+
     const [title, setTitle] = useState('');
     const [message, setMessage] = useState('');
     const [type, setType] = useState('info');
     const [ticketId, setTicketId] = useState<number | null>(null);
 
     useEffect(() => {
-        loadUsers();
-        loadTickets();
+        loadData();
     }, []);
 
-    const loadUsers = async () => {
+    const loadData = async () => {
         try {
-            const data = await getUsers();
-            setUsers(data);
+            const [usersData, sectorsData] = await Promise.all([
+                getUsers(),
+                getSectors()
+            ]);
+            setUsers(usersData);
+            setSectors(sectorsData);
         } catch (error) {
-            console.error('Erro ao carregar usuários:', error);
-        }
-    };
-
-    const loadTickets = async () => {
-        try {
-            const data = await getTickets();
-            setTickets(data.slice(0, 20)); // Limit to 20 most recent
-        } catch (error) {
-            console.error('Erro ao carregar tickets:', error);
+            console.error('Erro ao carregar dados:', error);
         }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!recipientId || !title || !message) {
-            alert('Por favor, preencha todos os campos obrigatórios');
+        const hasRecipients = targetType === 'users'
+            ? selectedUserIds.length > 0
+            : selectedSectorIds.length > 0;
+
+        if (!hasRecipients || !title || !message) {
+            alert('Por favor, preencha todos os campos obrigatórios e selecione pelo menos um destinatário.');
             return;
         }
 
         setLoading(true);
         try {
             await sendNotification({
-                recipient_user_id: recipientId,
+                recipient_user_id: 0, // Ignored by new backend logic but kept for type safety if needed temporarily
+                recipient_ids: targetType === 'users' ? selectedUserIds : undefined,
+                sector_ids: targetType === 'sectors' ? selectedSectorIds : undefined,
                 title,
                 message,
                 type,
@@ -81,7 +86,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="glass-card rounded-3xl max-w-2xl w-full p-8 border border-border-theme shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            <div className="glass-card rounded-3xl max-w-2xl w-full p-8 border border-border-theme shadow-2xl animate-in fade-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-8 pb-6 border-b border-border-theme">
                     <div className="flex items-center gap-4">
@@ -90,7 +95,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         </div>
                         <div>
                             <h2 className="text-2xl font-black tracking-tight">Nova Notificação</h2>
-                            <p className="text-sm text-muted-foreground">Envie uma mensagem para outro usuário</p>
+                            <p className="text-sm text-muted-foreground">Envie mensagens para usuários ou setores</p>
                         </div>
                     </div>
                     <button
@@ -103,25 +108,63 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* Recipient */}
+
+                    {/* Target Type Tabs */}
+                    <div className="flex bg-background/50 p-1 rounded-2xl border border-border-theme">
+                        <button
+                            type="button"
+                            onClick={() => setTargetType('users')}
+                            className={clsx(
+                                "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                targetType === 'users'
+                                    ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20"
+                                    : "text-muted-foreground hover:bg-white/5"
+                            )}
+                        >
+                            <Users className="w-3.5 h-3.5" />
+                            Usuários
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setTargetType('sectors')}
+                            className={clsx(
+                                "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+                                targetType === 'sectors'
+                                    ? "bg-accent-theme text-white shadow-lg shadow-accent-theme/20"
+                                    : "text-muted-foreground hover:bg-white/5"
+                            )}
+                        >
+                            <Layers className="w-3.5 h-3.5" />
+                            Setores
+                        </button>
+                    </div>
+
+                    {/* Recipient Selection */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                            <User className="w-3.5 h-3.5" />
-                            Destinatário *
+                            {targetType === 'users' ? <User className="w-3.5 h-3.5" /> : <Layers className="w-3.5 h-3.5" />}
+                            {targetType === 'users' ? 'Selecionar Usuários' : 'Selecionar Setores'} *
                         </label>
-                        <select
-                            value={recipientId || ''}
-                            onChange={(e) => setRecipientId(Number(e.target.value))}
-                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-medium"
-                            required
-                        >
-                            <option value="">Selecione um usuário</option>
-                            {users.map(user => (
-                                <option key={user.id} value={user.id}>
-                                    {user.full_name} (@{user.username})
-                                </option>
-                            ))}
-                        </select>
+
+                        {targetType === 'users' ? (
+                            <MultiSelectUser
+                                users={users}
+                                selectedIds={selectedUserIds}
+                                onChange={setSelectedUserIds}
+                            />
+                        ) : (
+                            <MultiSelectSector
+                                sectors={sectors}
+                                selectedIds={selectedSectorIds}
+                                onChange={setSelectedSectorIds}
+                            />
+                        )}
+                        <p className="text-xs text-muted-foreground text-right pt-1">
+                            {targetType === 'users'
+                                ? `${selectedUserIds.length} usuários selecionados`
+                                : `${selectedSectorIds.length} setores selecionados`
+                            }
+                        </p>
                     </div>
 
                     {/* Type */}
@@ -188,22 +231,11 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
 
                     {/* Ticket (Optional) */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                            <Tag className="w-3.5 h-3.5" />
-                            Vincular Ticket (Opcional)
-                        </label>
-                        <select
-                            value={ticketId || ''}
-                            onChange={(e) => setTicketId(e.target.value ? Number(e.target.value) : null)}
-                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-medium"
-                        >
-                            <option value="">Nenhum ticket</option>
-                            {tickets.map(ticket => (
-                                <option key={ticket.id} value={ticket.id}>
-                                    {ticket.id} - {ticket.title}
-                                </option>
-                            ))}
-                        </select>
+                        <TicketSearchSelect
+                            label="Vincular Ticket (Opcional)"
+                            value={ticketId}
+                            onChange={(id) => setTicketId(id)}
+                        />
                     </div>
 
                     {/* Actions */}
@@ -217,7 +249,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         </button>
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || (targetType === 'users' ? selectedUserIds.length === 0 : selectedSectorIds.length === 0)}
                             className="flex-1 px-6 py-3 rounded-2xl premium-gradient text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-accent-theme/20 hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {loading ? (

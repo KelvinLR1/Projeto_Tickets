@@ -6,7 +6,7 @@ import {
     Plus, Edit2, Trash2, Shield, User as UserIcon, Mail, ShieldCheck,
     Settings as SettingsIcon, Key, UserSquare2, Users, ArrowLeft, ArrowRight,
     Link2, Tag, PlusCircle, HardDrive, FolderPlus, Download, Upload, AlertTriangle,
-    XCircle, Eye, EyeOff
+    XCircle, Eye, EyeOff, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getOllamaModels } from '@/lib/ollama';
@@ -59,9 +59,14 @@ const AVAILABLE_MENUS = [
 const AVAILABLE_ACTIONS = [
     { id: 'create_ticket', label: 'Criar Chamados' },
     { id: 'edit_ticket', label: 'Editar Chamados' },
+    { id: 'transfer_ticket', label: 'Transferir Chamados' },
     { id: 'delete_ticket', label: 'Excluir Chamados (Cuidado)' },
+    { id: 'view_reports', label: 'Visualizar Relatórios' },
     { id: 'manage_users', label: 'Gerenciar Usuários' },
     { id: 'manage_profiles', label: 'Gerenciar Perfis' },
+    { id: 'manage_sectors', label: 'Gerenciar Setores' },
+    { id: 'manage_categories', label: 'Gerenciar Categorias & Status' },
+    { id: 'manage_system', label: 'Configurações do Sistema' },
     { id: 'view_financial', label: 'Ver Dados Financeiros' },
 ];
 
@@ -264,7 +269,7 @@ export default function SettingsPage() {
         fetchCategories();
         fetchStatuses();
         fetchSectors();
-        if (user) {
+        if (user && (user.role === 'ADMIN' || user.role === 'ROOT')) {
             fetchUsers();
         }
         fetchSystemSettings();
@@ -1781,13 +1786,16 @@ export default function SettingsPage() {
                                                             </td>
                                                             <td className="px-8 py-6">
                                                                 <div className={clsx(
-                                                                    "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border",
-                                                                    u.role === 'ROOT' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
-                                                                        u.role === 'ADMIN' ? "bg-accent-theme/10 border-accent-theme/20 text-accent-theme" :
-                                                                            "bg-white/5 border-white/10 text-[var(--color-text-muted)]"
+                                                                    "inline-flex items-center justify-center gap-2 w-[120px] py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border",
+                                                                    u.profile_id ? "bg-orange-500/10 border-orange-500/20 text-orange-500" :
+                                                                        u.role === 'ROOT' ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
+                                                                            u.role === 'ADMIN' ? "bg-accent-theme/10 border-accent-theme/20 text-accent-theme" :
+                                                                                "bg-white/5 border-white/10 text-[var(--color-text-muted)]"
                                                                 )}>
-                                                                    <Shield className="w-2.5 h-2.5" />
-                                                                    {u.role}
+                                                                    <Shield className="w-2.5 h-2.5 flex-shrink-0" />
+                                                                    <span className="truncate max-w-[80px]">
+                                                                        {u.profile_id ? (profiles.find(p => p.id === u.profile_id)?.name || 'Custom') : u.role}
+                                                                    </span>
                                                                 </div>
                                                             </td>
                                                             <td className="px-8 py-6">
@@ -2516,143 +2524,150 @@ export default function SettingsPage() {
                 {
                     isUserModalOpen && (
                         <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
-                            <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] flex flex-col">
+                            <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] flex flex-col overflow-hidden">
                                 <div className="p-10 border-b border-border-theme/50 flex-shrink-0">
                                     <h2 className="text-3xl font-black italic uppercase tracking-tight">
                                         {isEditingUser ? 'Editar' : 'Novo'} <span className="text-accent-theme">Usuário</span>
                                     </h2>
                                 </div>
-                                <form onSubmit={handleSaveUser} className="p-10 space-y-6 overflow-y-auto custom-scrollbar">
-                                    <div className="space-y-6">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome Completo</label>
-                                            <input type="text" required value={currentUser.full_name || ''} onChange={e => setCurrentUser({ ...currentUser, full_name: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="flex-grow overflow-y-auto custom-scrollbar p-10">
+                                    <form id="user-form" onSubmit={handleSaveUser} className="space-y-6">
+                                        <div className="space-y-6">
                                             <div className="space-y-2">
-                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Username</label>
-                                                <input type="text" required disabled={isEditingUser} value={currentUser.username || ''} onChange={e => setCurrentUser({ ...currentUser, username: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none disabled:opacity-50 focus:border-accent-theme/50 transition-all" />
+                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome Completo</label>
+                                                <input type="text" required value={currentUser.full_name || ''} onChange={e => setCurrentUser({ ...currentUser, full_name: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
                                             </div>
-                                            <div className="space-y-2">
+
+                                            <div className="grid grid-cols-1 gap-6">
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Username</label>
+                                                    <input type="text" required disabled={isEditingUser} value={currentUser.username || ''} onChange={e => setCurrentUser({ ...currentUser, username: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none disabled:opacity-50 focus:border-accent-theme/50 transition-all" />
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2 pt-2">
                                                 <CustomSelect
-                                                    label="Nível de Acesso"
-                                                    value={currentUser.role || 'AGENT'}
-                                                    onChange={val => setCurrentUser({ ...currentUser, role: val })}
-                                                    icon={<Shield className="w-3 h-3" />}
+                                                    label="Perfil de Acesso (RBAC)"
+                                                    value={currentUser.profile_id || ''}
+                                                    onChange={val => {
+                                                        const pid = Number(val) || undefined;
+                                                        let newRole = currentUser.role || 'AGENT';
+
+                                                        // Map profile to role automatically
+                                                        if (pid === 1) { // Master
+                                                            // Keep ROOT if already ROOT, otherwise elevate to ADMIN
+                                                            newRole = currentUser.role === 'ROOT' ? 'ROOT' : 'ADMIN';
+                                                        } else if (pid === 2 || pid === 3) { // Técnico ou Leitor
+                                                            newRole = 'AGENT';
+                                                        }
+
+                                                        setCurrentUser({
+                                                            ...currentUser,
+                                                            profile_id: pid,
+                                                            role: newRole
+                                                        });
+                                                    }}
+                                                    icon={<ShieldCheck className="w-3 h-3 text-orange-400" />}
                                                     options={[
-                                                        { value: 'AGENT', label: 'Agente', icon: <UserIcon className="w-4 h-4" /> },
-                                                        { value: 'ADMIN', label: 'Admin', icon: <ShieldCheck className="w-4 h-4 text-accent-theme" /> },
-                                                        ...(user?.role === 'ROOT' ? [{ value: 'ROOT', label: 'Root', icon: <SettingsIcon className="w-4 h-4 text-purple-500" /> }] : [])
+                                                        { value: '', label: 'Nenhum (Usar Role Padrão)', icon: <UserIcon className="w-4 h-4 opacity-50" /> },
+                                                        ...profiles.map(p => ({
+                                                            value: p.id,
+                                                            label: p.name,
+                                                            icon: <ShieldCheck className="w-4 h-4 text-orange-400" />
+                                                        }))
                                                     ]}
+                                                    placeholder="Selecione um perfil customizado..."
                                                 />
+                                                <p className="text-[9px] text-[var(--color-text-muted)] ml-1">* Perfis sobrescrevem permissões padrão da role.</p>
                                             </div>
-                                        </div>
 
-                                        <div className="space-y-2 pt-2">
-                                            <CustomSelect
-                                                label="Perfil de Acesso (RBAC)"
-                                                value={currentUser.profile_id || ''}
-                                                onChange={val => setCurrentUser({ ...currentUser, profile_id: Number(val) || undefined })}
-                                                icon={<ShieldCheck className="w-3 h-3 text-orange-400" />}
-                                                options={[
-                                                    { value: '', label: 'Nenhum (Usar Role Padrão)', icon: <UserIcon className="w-4 h-4 opacity-50" /> },
-                                                    ...profiles.map(p => ({
-                                                        value: p.id,
-                                                        label: p.name,
-                                                        icon: <ShieldCheck className="w-4 h-4 text-orange-400" />
-                                                    }))
-                                                ]}
-                                                placeholder="Selecione um perfil customizado..."
-                                            />
-                                            <p className="text-[9px] text-[var(--color-text-muted)] ml-1">* Perfis sobrescrevem permissões padrão da role.</p>
-                                        </div>
-
-                                        <div className="space-y-3 pt-2">
-                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Setores de Atuação</label>
-                                            <div className="flex flex-col gap-2 p-4 bg-background/30 rounded-2xl border border-border-theme/50 max-h-[200px] overflow-y-auto custom-scrollbar">
-                                                {sectors.map(sector => {
-                                                    const isSelected = (currentUser.sectors || []).some(s => s.id === sector.id) || (currentUser as any).sector_ids?.includes(sector.id);
-                                                    return (
-                                                        <button
-                                                            key={sector.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                const currentSectors = currentUser.sectors || [];
-                                                                // @ts-ignore
-                                                                const currentIds = (currentUser as any).sector_ids || currentSectors.map(s => s.id);
-
-                                                                let newIds;
-                                                                if (currentIds.includes(sector.id)) {
-                                                                    newIds = currentIds.filter((id: number) => id !== sector.id);
-                                                                } else {
-                                                                    newIds = [...currentIds, sector.id];
-                                                                }
-
-                                                                setCurrentUser({
-                                                                    ...currentUser,
+                                            <div className="space-y-3 pt-2">
+                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Setores de Atuação</label>
+                                                <div className="flex flex-col gap-2 p-4 bg-background/30 rounded-2xl border border-border-theme/50 max-h-[200px] overflow-y-auto custom-scrollbar">
+                                                    {sectors.map(sector => {
+                                                        const isSelected = (currentUser.sectors || []).some(s => s.id === sector.id) || (currentUser as any).sector_ids?.includes(sector.id);
+                                                        return (
+                                                            <button
+                                                                key={sector.id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const currentSectors = currentUser.sectors || [];
                                                                     // @ts-ignore
-                                                                    sector_ids: newIds,
-                                                                    // Update sectors object array for UI feedback while editing (optimistic)
-                                                                    sectors: sectors.filter(s => newIds.includes(s.id))
-                                                                });
-                                                            }}
-                                                            className={clsx(
-                                                                "group flex items-center justify-start gap-3 px-4 py-3 rounded-xl text-[10px] font-bold uppercase transition-all border shadow-sm relative overflow-hidden",
-                                                                isSelected
-                                                                    ? "bg-emerald-500/10 border-emerald-500 text-emerald-500 shadow-emerald-500/10"
-                                                                    : "bg-background border-border-theme text-[var(--color-text-muted)] hover:border-emerald-500/30 hover:bg-background/60 hover:text-foreground"
-                                                            )}
-                                                        >
-                                                            <div className={clsx(
-                                                                "w-4 h-4 rounded-md flex items-center justify-center border transition-all flex-shrink-0",
-                                                                isSelected ? "bg-emerald-500 border-emerald-500" : "border-gray-500/30 group-hover:border-emerald-500/50"
-                                                            )}>
-                                                                {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
-                                                            </div>
-                                                            <span className="text-left leading-relaxed">{sector.name}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {sectors.length === 0 && (
-                                                    <div className="col-span-full text-center text-[10px] text-gray-500 italic py-2">
-                                                        Nenhum setor disponível.
+                                                                    const currentIds = (currentUser as any).sector_ids || currentSectors.map(s => s.id);
+
+                                                                    let newIds;
+                                                                    if (currentIds.includes(sector.id)) {
+                                                                        newIds = currentIds.filter((id: number) => id !== sector.id);
+                                                                    } else {
+                                                                        newIds = [...currentIds, sector.id];
+                                                                    }
+
+                                                                    setCurrentUser({
+                                                                        ...currentUser,
+                                                                        // @ts-ignore
+                                                                        sector_ids: newIds,
+                                                                        // Update sectors object array for UI feedback while editing (optimistic)
+                                                                        sectors: sectors.filter(s => newIds.includes(s.id))
+                                                                    });
+                                                                }}
+                                                                className={clsx(
+                                                                    "group flex items-center justify-start gap-3 px-4 py-3 rounded-xl text-[10px] font-bold uppercase transition-all border shadow-sm relative overflow-hidden",
+                                                                    isSelected
+                                                                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-500 shadow-emerald-500/10"
+                                                                        : "bg-background border-border-theme text-[var(--color-text-muted)] hover:border-emerald-500/30 hover:bg-background/60 hover:text-foreground"
+                                                                )}
+                                                            >
+                                                                <div className={clsx(
+                                                                    "w-4 h-4 rounded-md flex items-center justify-center border transition-all flex-shrink-0",
+                                                                    isSelected ? "bg-emerald-500 border-emerald-500" : "border-gray-500/30 group-hover:border-emerald-500/50"
+                                                                )}>
+                                                                    {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                                                </div>
+                                                                <span className="text-left leading-relaxed">{sector.name}</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                    {sectors.length === 0 && (
+                                                        <div className="col-span-full text-center text-[10px] text-gray-500 italic py-2">
+                                                            Nenhum setor disponível.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Email</label>
+                                                    <input type="email" required value={currentUser.email || ''} onChange={e => setCurrentUser({ ...currentUser, email: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">{isEditingUser ? 'Nova Senha (Opcional)' : 'Senha'}</label>
+                                                    <input type="password" required={!isEditingUser} value={currentUser.password || ''} onChange={e => setCurrentUser({ ...currentUser, password: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center justify-between p-5 bg-background/30 rounded-2xl border border-border-theme/50">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={clsx("p-2 rounded-xl transition-colors", currentUser.is_active ? "bg-emerald-500/10 text-emerald-500" : "bg-gray-500/10 text-gray-500")}>
+                                                        {currentUser.is_active ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                                                     </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Email</label>
-                                                <input type="email" required value={currentUser.email || ''} onChange={e => setCurrentUser({ ...currentUser, email: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">{isEditingUser ? 'Nova Senha (Opcional)' : 'Senha'}</label>
-                                                <input type="password" required={!isEditingUser} value={currentUser.password || ''} onChange={e => setCurrentUser({ ...currentUser, password: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center justify-between p-5 bg-background/30 rounded-2xl border border-border-theme/50">
-                                            <div className="flex items-center gap-3">
-                                                <div className={clsx("p-2 rounded-xl transition-colors", currentUser.is_active ? "bg-emerald-500/10 text-emerald-500" : "bg-gray-500/10 text-gray-500")}>
-                                                    {currentUser.is_active ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                                                    <div>
+                                                        <div className="text-[10px] font-black uppercase tracking-wider">Status da Conta</div>
+                                                        <div className="text-[10px] text-[var(--color-text-muted)]">{currentUser.is_active ? 'Usuário pode acessar o sistema' : 'Acesso bloqueado'}</div>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <div className="text-[10px] font-black uppercase tracking-wider">Status da Conta</div>
-                                                    <div className="text-[10px] text-[var(--color-text-muted)]">{currentUser.is_active ? 'Usuário pode acessar o sistema' : 'Acesso bloqueado'}</div>
-                                                </div>
+                                                <button type="button" onClick={() => setCurrentUser({ ...currentUser, is_active: !currentUser.is_active })} className={clsx("w-12 h-7 rounded-full relative transition-all shadow-inner", currentUser.is_active ? "bg-emerald-500" : "bg-gray-600/30")}>
+                                                    <div className={clsx("w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-sm", currentUser.is_active ? "left-6" : "left-1")} />
+                                                </button>
                                             </div>
-                                            <button type="button" onClick={() => setCurrentUser({ ...currentUser, is_active: !currentUser.is_active })} className={clsx("w-12 h-7 rounded-full relative transition-all shadow-inner", currentUser.is_active ? "bg-emerald-500" : "bg-gray-600/30")}>
-                                                <div className={clsx("w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-sm", currentUser.is_active ? "left-6" : "left-1")} />
-                                            </button>
                                         </div>
-                                    </div>
-                                    <div className="flex justify-end gap-4 pt-4">
-                                        <button type="button" onClick={() => setIsUserModalOpen(false)} className="text-[10px] font-black uppercase">Cancelar</button>
-                                        <button type="submit" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl">Salvar</button>
-                                    </div>
-                                </form>
+                                    </form>
+                                    <div className="h-4"></div> {/* Spacer for scroll bottom */}
+                                </div>
+                                <div className="p-6 border-t border-border-theme/50 flex-shrink-0 flex justify-end gap-4 bg-background/50 backdrop-blur-md z-20 relative">
+                                    <button type="button" onClick={() => setIsUserModalOpen(false)} className="text-[10px] font-black uppercase hover:bg-white/5 px-6 py-4 rounded-2xl transition-all">Cancelar</button>
+                                    <button type="submit" form="user-form" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:scale-105 active:scale-95 transition-all">Salvar</button>
+                                </div>
                             </div>
                         </div>
                     )
@@ -2662,98 +2677,162 @@ export default function SettingsPage() {
                 {
                     isProfileModalOpen && (
                         <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
-                            <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] overflow-y-auto custom-scrollbar">
-                                <div className="p-10 border-b border-border-theme/50 sticky top-0 bg-background/50 backdrop-blur-md z-10">
+                            <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] flex flex-col overflow-hidden">
+                                <div className="p-10 border-b border-border-theme/50 flex-shrink-0 bg-background/50 backdrop-blur-md z-10">
                                     <h2 className="text-3xl font-black italic uppercase tracking-tight">
                                         {currentProfile.id ? 'Editar' : 'Novo'} <span className="text-orange-500">Perfil</span>
                                     </h2>
                                 </div>
-                                <form onSubmit={handleSaveProfile} className="p-10 space-y-8">
-                                    <div className="space-y-4">
-                                        <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome do Perfil</label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={currentProfile.name || ''}
-                                            onChange={e => setCurrentProfile({ ...currentProfile, name: e.target.value })}
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors"
-                                            placeholder="Ex: Gerente de Contas"
-                                        />
-                                    </div>
-                                    <div className="space-y-4">
-                                        <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Descrição</label>
-                                        <textarea
-                                            rows={2}
-                                            value={currentProfile.description || ''}
-                                            onChange={e => setCurrentProfile({ ...currentProfile, description: e.target.value })}
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors resize-none"
-                                            placeholder="Breve descrição das responsabilidades..."
-                                        />
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        {/* Permissões de Menu */}
+                                <div className="flex-grow overflow-y-auto custom-scrollbar p-10">
+                                    <form id="profile-form" onSubmit={handleSaveProfile} className="space-y-8">
                                         <div className="space-y-4">
-                                            <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Acesso a Menus</h3>
-                                            <div className="space-y-2">
-                                                <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 cursor-pointer hover:bg-white/10 transition-all">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={currentProfile.permissions?.menus?.includes('*') || false}
-                                                        onChange={() => toggleProfilePermission('menus', '*')}
-                                                        className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                                    />
-                                                    <span className="text-xs font-bold text-orange-400">Acesso Total (Admin)</span>
-                                                </label>
-                                                {!currentProfile.permissions?.menus?.includes('*') && AVAILABLE_MENUS.map(menu => (
-                                                    <label key={menu.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-theme/50 cursor-pointer hover:border-orange-500/30 transition-all">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={currentProfile.permissions?.menus?.includes(menu.id) || false}
-                                                            onChange={() => toggleProfilePermission('menus', menu.id)}
-                                                            className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                                        />
-                                                        <span className="text-xs font-medium">{menu.label}</span>
-                                                    </label>
-                                                ))}
-                                            </div>
+                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome do Perfil</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                value={currentProfile.name || ''}
+                                                onChange={e => setCurrentProfile({ ...currentProfile, name: e.target.value })}
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors"
+                                                placeholder="Ex: Gerente de Contas"
+                                            />
+                                        </div>
+                                        <div className="space-y-4">
+                                            <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Descrição</label>
+                                            <textarea
+                                                rows={2}
+                                                value={currentProfile.description || ''}
+                                                onChange={e => setCurrentProfile({ ...currentProfile, description: e.target.value })}
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-orange-500/50 transition-colors resize-none"
+                                                placeholder="Breve descrição das responsabilidades..."
+                                            />
                                         </div>
 
-                                        {/* Permissões de Ação */}
-                                        <div className="space-y-4">
-                                            <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Permissões de Ação</h3>
-                                            <div className="space-y-2">
-                                                <label className="flex items-center gap-3 p-3 rounded-xl bg-white/5 cursor-pointer hover:bg-white/10 transition-all">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={currentProfile.permissions?.actions?.includes('*') || false}
-                                                        onChange={() => toggleProfilePermission('actions', '*')}
-                                                        className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                                    />
-                                                    <span className="text-xs font-bold text-orange-400">Superusuário</span>
-                                                </label>
-                                                {!currentProfile.permissions?.actions?.includes('*') && AVAILABLE_ACTIONS.map(action => (
-                                                    <label key={action.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-theme/50 cursor-pointer hover:border-orange-500/30 transition-all">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={currentProfile.permissions?.actions?.includes(action.id) || false}
-                                                            onChange={() => toggleProfilePermission('actions', action.id)}
-                                                            className="w-4 h-4 rounded border-gray-600 text-orange-500 focus:ring-orange-500 bg-gray-700"
-                                                        />
-                                                        <span className="text-xs font-medium">{action.label}</span>
-                                                    </label>
-                                                ))}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            {/* Permissões de Menu */}
+                                            <div className="space-y-4">
+                                                <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Acesso a Menus</h3>
+                                                <div className="space-y-2">
+                                                    <div
+                                                        onClick={() => toggleProfilePermission('menus', '*')}
+                                                        className={clsx(
+                                                            "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all group select-none active:scale-[0.98]",
+                                                            currentProfile.permissions?.menus?.includes('*')
+                                                                ? "bg-accent-theme/10 border-accent-theme/50"
+                                                                : "bg-white/5 border-border-theme/50 hover:border-accent-theme/30"
+                                                        )}
+                                                    >
+                                                        <div className={clsx(
+                                                            "w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all duration-300",
+                                                            currentProfile.permissions?.menus?.includes('*')
+                                                                ? "border-accent-theme bg-accent-theme text-white shadow-[0_0_10px_rgba(var(--accent-color-rgb),0.3)]"
+                                                                : "border-white/20 bg-white/5 group-hover:border-white/40"
+                                                        )}>
+                                                            {currentProfile.permissions?.menus?.includes('*') && <Check size={12} strokeWidth={4} />}
+                                                        </div>
+                                                        <span className={clsx(
+                                                            "text-xs font-black uppercase tracking-wider transition-colors",
+                                                            currentProfile.permissions?.menus?.includes('*') ? "text-accent-theme" : "text-[var(--color-text-muted)] group-hover:text-foreground"
+                                                        )}>Acesso Total (Admin)</span>
+                                                    </div>
+
+                                                    {!currentProfile.permissions?.menus?.includes('*') && AVAILABLE_MENUS.map(menu => {
+                                                        const isChecked = currentProfile.permissions?.menus?.includes(menu.id) || false;
+                                                        return (
+                                                            <div
+                                                                key={menu.id}
+                                                                onClick={() => toggleProfilePermission('menus', menu.id)}
+                                                                className={clsx(
+                                                                    "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all group select-none active:scale-[0.98]",
+                                                                    isChecked
+                                                                        ? "bg-accent-theme/5 border-accent-theme/30"
+                                                                        : "bg-transparent border-border-theme/30 hover:bg-white/5 hover:border-border-theme/50"
+                                                                )}
+                                                            >
+                                                                <div className={clsx(
+                                                                    "w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all duration-300",
+                                                                    isChecked
+                                                                        ? "border-accent-theme bg-accent-theme text-white shadow-sm"
+                                                                        : "border-white/10 bg-white/5 group-hover:border-white/30"
+                                                                )}>
+                                                                    {isChecked && <Check size={12} strokeWidth={4} />}
+                                                                </div>
+                                                                <span className={clsx(
+                                                                    "text-xs font-bold transition-colors",
+                                                                    isChecked ? "text-foreground" : "text-[var(--color-text-muted)] group-hover:text-foreground"
+                                                                )}>{menu.label}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* Permissões de Ação */}
+                                            <div className="space-y-4">
+                                                <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Permissões de Ação</h3>
+                                                <div className="space-y-2">
+                                                    <div
+                                                        onClick={() => toggleProfilePermission('actions', '*')}
+                                                        className={clsx(
+                                                            "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all group select-none active:scale-[0.98]",
+                                                            currentProfile.permissions?.actions?.includes('*')
+                                                                ? "bg-accent-theme/10 border-accent-theme/50"
+                                                                : "bg-white/5 border-border-theme/50 hover:border-accent-theme/30"
+                                                        )}
+                                                    >
+                                                        <div className={clsx(
+                                                            "w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all duration-300",
+                                                            currentProfile.permissions?.actions?.includes('*')
+                                                                ? "border-accent-theme bg-accent-theme text-white shadow-[0_0_10px_rgba(var(--accent-color-rgb),0.3)]"
+                                                                : "border-white/20 bg-white/5 group-hover:border-white/40"
+                                                        )}>
+                                                            {currentProfile.permissions?.actions?.includes('*') && <Check size={12} strokeWidth={4} />}
+                                                        </div>
+                                                        <span className={clsx(
+                                                            "text-xs font-black uppercase tracking-wider transition-colors",
+                                                            currentProfile.permissions?.actions?.includes('*') ? "text-accent-theme" : "text-[var(--color-text-muted)] group-hover:text-foreground"
+                                                        )}>Superusuário</span>
+                                                    </div>
+
+                                                    {!currentProfile.permissions?.actions?.includes('*') && AVAILABLE_ACTIONS.map(action => {
+                                                        const isChecked = currentProfile.permissions?.actions?.includes(action.id) || false;
+                                                        return (
+                                                            <div
+                                                                key={action.id}
+                                                                onClick={() => toggleProfilePermission('actions', action.id)}
+                                                                className={clsx(
+                                                                    "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all group select-none active:scale-[0.98]",
+                                                                    isChecked
+                                                                        ? "bg-accent-theme/5 border-accent-theme/30"
+                                                                        : "bg-transparent border-border-theme/30 hover:bg-white/5 hover:border-border-theme/50"
+                                                                )}
+                                                            >
+                                                                <div className={clsx(
+                                                                    "w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all duration-300",
+                                                                    isChecked
+                                                                        ? "border-accent-theme bg-accent-theme text-white shadow-sm"
+                                                                        : "border-white/10 bg-white/5 group-hover:border-white/30"
+                                                                )}>
+                                                                    {isChecked && <Check size={12} strokeWidth={4} />}
+                                                                </div>
+                                                                <span className={clsx(
+                                                                    "text-xs font-bold transition-colors",
+                                                                    isChecked ? "text-foreground" : "text-[var(--color-text-muted)] group-hover:text-foreground"
+                                                                )}>{action.label}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <div className="flex justify-end gap-4 pt-6 border-t border-border-theme/50">
-                                        <button type="button" onClick={() => setIsProfileModalOpen(false)} className="px-6 py-3 rounded-xl text-xs font-black uppercase hover:bg-white/5 transition-colors">Cancelar</button>
-                                        <button type="submit" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:shadow-orange-500/20 transition-all transform active:scale-95">
-                                            {loadingProfiles ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Perfil'}
-                                        </button>
-                                    </div>
-                                </form>
+                                    </form>
+                                    <div className="h-4"></div> {/* Spacer for scroll bottom */}
+                                </div>
+                                <div className="p-6 border-t border-border-theme/50 flex-shrink-0 flex justify-end gap-4 bg-background/50 backdrop-blur-md z-20 relative">
+                                    <button type="button" onClick={() => setIsProfileModalOpen(false)} className="px-6 py-4 rounded-2xl text-xs font-black uppercase hover:bg-white/5 transition-colors">Cancelar</button>
+                                    <button type="submit" form="profile-form" className="px-10 py-4 premium-gradient text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:shadow-orange-500/20 transition-all transform active:scale-95">
+                                        {loadingProfiles ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Perfil'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )

@@ -81,6 +81,15 @@ npm run dev
 
 ---
 
+## 📖 Documentação da API
+
+O backend (FastAPI) gera automaticamente documentações interativas que permitem testar os endpoints:
+
+- **Swagger UI (Interativo):** [http://localhost:8080/docs](http://localhost:8080/docs) - Recomendado para testes rápidos.
+- **ReDoc:** [http://localhost:8080/redoc](http://localhost:8080/redoc) - Documentação mais limpa e organizada para leitura.
+
+---
+
 ## 🛑 Comandos Úteis
 
 - **Parar Serviços:** `Ctrl + C` em qualquer terminal.

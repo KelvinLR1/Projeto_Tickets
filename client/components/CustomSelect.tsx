@@ -36,9 +36,16 @@ export default function CustomSelect({
 }: CustomSelectProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [openUpwards, setOpenUpwards] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
     const containerRef = useRef<HTMLDivElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
 
     const selectedOption = options.find(opt => opt.value === value);
+
+    const filteredOptions = options.filter(opt =>
+        opt.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (opt.subtitle && opt.subtitle.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -56,12 +63,18 @@ export default function CustomSelect({
         if (isOpen && containerRef.current) {
             const rect = containerRef.current.getBoundingClientRect();
             const spaceBelow = window.innerHeight - rect.bottom;
-            // Typical max-height of dropdown is 300px + padding
             if (spaceBelow < 350) {
                 setOpenUpwards(true);
             } else {
                 setOpenUpwards(false);
             }
+
+            // Auto-focus search input if available
+            setTimeout(() => {
+                searchInputRef.current?.focus();
+            }, 100);
+        } else {
+            setSearchTerm(''); // Reset search when closing
         }
     }, [isOpen]);
 
@@ -103,37 +116,56 @@ export default function CustomSelect({
                             exit={{ opacity: 0, scale: 0.95, y: 10 }}
                             transition={{ duration: 0.2, ease: "easeOut" }}
                             className={clsx(
-                                "absolute left-0 w-full bg-card/95 backdrop-blur-xl border border-border-theme rounded-2xl shadow-3xl z-[1000] overflow-hidden",
+                                "absolute left-0 w-full bg-card/95 backdrop-blur-xl border border-border-theme rounded-2xl shadow-3xl z-[1000] overflow-hidden flex flex-col",
                                 openUpwards ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
                             )}
                         >
+                            {options.length > 5 && (
+                                <div className="p-2 border-b border-border-theme bg-white/5">
+                                    <input
+                                        ref={searchInputRef}
+                                        type="text"
+                                        placeholder="Buscar..."
+                                        className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-accent-theme/30 transition-all"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                </div>
+                            )}
                             <div className="max-h-[300px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                                {options.map((opt) => (
-                                    <button
-                                        key={opt.value}
-                                        type="button"
-                                        onClick={() => {
-                                            onChange(opt.value);
-                                            setIsOpen(false);
-                                        }}
-                                        className={clsx(
-                                            "w-full text-left p-4 hover:bg-accent-theme/10 rounded-xl transition-all flex items-center justify-between group",
-                                            opt.className,
-                                            value === opt.value && "bg-accent-theme/5"
-                                        )}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            {opt.icon && <div className={clsx("transition-transform group-hover:scale-110", value === opt.value ? "text-accent-theme" : "text-[var(--color-text-muted)]")}>{opt.icon}</div>}
-                                            <div>
-                                                <div className={clsx("text-xs font-bold transition-colors", value === opt.value ? "text-accent-theme" : "text-foreground group-hover:text-accent-theme")}>
-                                                    {opt.label}
+                                {filteredOptions.length > 0 ? (
+                                    filteredOptions.map((opt) => (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            onClick={() => {
+                                                onChange(opt.value);
+                                                setIsOpen(false);
+                                            }}
+                                            className={clsx(
+                                                "w-full text-left p-4 hover:bg-accent-theme/10 rounded-xl transition-all flex items-center justify-between group",
+                                                opt.className,
+                                                value === opt.value && "bg-accent-theme/5"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                {opt.icon && <div className={clsx("transition-transform group-hover:scale-110", value === opt.value ? "text-accent-theme" : "text-[var(--color-text-muted)]")}>{opt.icon}</div>}
+                                                <div>
+                                                    <div className={clsx("text-xs font-bold transition-colors", value === opt.value ? "text-accent-theme" : "text-foreground group-hover:text-accent-theme")}>
+                                                        {opt.label}
+                                                    </div>
+                                                    {opt.subtitle && <div className="text-[9px] text-[var(--color-text-muted)] uppercase tracking-wider mt-0.5">{opt.subtitle}</div>}
                                                 </div>
-                                                {opt.subtitle && <div className="text-[9px] text-[var(--color-text-muted)] uppercase tracking-wider mt-0.5">{opt.subtitle}</div>}
                                             </div>
-                                        </div>
-                                        {value === opt.value && <CheckCircle2 className="w-4 h-4 text-accent-theme animate-in zoom-in duration-300" />}
-                                    </button>
-                                ))}
+                                            {value === opt.value && <CheckCircle2 className="w-4 h-4 text-accent-theme animate-in zoom-in duration-300" />}
+                                        </button>
+                                    ))
+                                ) : (
+                                    <div className="p-4 text-center text-xs text-[var(--color-text-muted)] italic">
+                                        Nenhum resultado encontrado
+                                    </div>
+                                )}
                             </div>
                         </motion.div>
                     )}

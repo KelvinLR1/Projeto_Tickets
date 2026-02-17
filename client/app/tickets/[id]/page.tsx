@@ -54,6 +54,7 @@ export default function TicketDetailsPage() {
     const [loadingAttendants, setLoadingAttendants] = useState(false);
     const [isAddFollowerModalOpen, setIsAddFollowerModalOpen] = useState(false);
     const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+    const canManage = ticket?.assigned_user_id === user?.id || user?.role === 'ADMIN' || user?.role === 'ROOT';
     const [selectedUserId, setSelectedUserId] = useState<string>('');
     const infoDescriptionRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -86,8 +87,8 @@ export default function TicketDetailsPage() {
         }
     }, [params.id]);
 
-    const loadData = async () => {
-        setLoading(true);
+    const loadData = async (silent = false) => {
+        if (!silent) setLoading(true);
         try {
             const ticketId = parseInt(params.id as string);
 
@@ -156,7 +157,7 @@ export default function TicketDetailsPage() {
             console.error('Failed to load ticket details:', error);
             showNotification('Erro ao carregar detalhes', 'error');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -408,7 +409,7 @@ export default function TicketDetailsPage() {
             });
 
             showNotification('Setor atualizado com sucesso!', 'success');
-            await loadData(); // Reload everything to get correct categories/statuses
+            await loadData(true); // Silent reload to get correct categories/statuses
         } catch (error) {
             console.error(error);
             showNotification('Erro ao atualizar setor', 'error');
@@ -552,7 +553,7 @@ export default function TicketDetailsPage() {
 
             showNotification(`Ticket transferido para ${attendant?.name}`, 'success');
             setIsTransferModalOpen(false);
-            fetchHistory();
+            await loadData(true); // Silent reload to get correct categories/statuses and update UI labels
         } catch (error) {
             console.error(error);
             showNotification('Erro ao transferir ticket', 'error');
@@ -647,6 +648,7 @@ export default function TicketDetailsPage() {
                             }))}
                             placeholder="Status..."
                             className="w-[240px] !space-y-0"
+                            disabled={!canManage}
                         />
 
                         <CustomSelect
@@ -660,6 +662,7 @@ export default function TicketDetailsPage() {
                             ]}
                             placeholder="Prioridade..."
                             className="w-[160px] !space-y-0"
+                            disabled={!canManage}
                         />
                     </div>
                 </div>
@@ -678,7 +681,7 @@ export default function TicketDetailsPage() {
                                 <Calendar className="w-3 h-3" />
                                 <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
                             </div>
-                            <h1 className="text-4xl md:text-5xl font-black font-display tracking-tight uppercase italic leading-tight max-w-3xl">
+                            <h1 className="text-4xl md:text-5xl font-black font-display tracking-tight uppercase italic leading-tight max-w-full break-words">
                                 {ticket.title}
                             </h1>
                         </div>
@@ -723,9 +726,9 @@ export default function TicketDetailsPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <motion.div layout className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
                     {/* Description Area */}
-                    <div className="lg:col-span-2 flex flex-col gap-6">
+                    <motion.div layout className="lg:col-span-2 flex flex-col gap-6 h-[1px] min-h-full">
                         {/* Tabs Switcher */}
                         <div className="flex p-1.5 bg-background/40 backdrop-blur-xl border border-border-theme/30 rounded-[2rem] w-fit relative">
                             <button
@@ -776,7 +779,7 @@ export default function TicketDetailsPage() {
                             </button>
                         </div>
 
-                        <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-lg min-h-[500px] flex-1">
+                        <motion.div layout className="glass-card px-10 py-6 rounded-[2.5rem] border border-border-theme shadow-lg min-h-[500px] flex-1 flex flex-col min-h-0 overflow-hidden">
                             <AnimatePresence mode="wait">
                                 {activeTab === 'details' ? (
                                     <motion.div
@@ -785,13 +788,14 @@ export default function TicketDetailsPage() {
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -10 }}
                                         transition={{ duration: 0.3 }}
+                                        className="flex-1 flex flex-col min-h-0"
                                     >
-                                        <div className="flex items-center gap-3 pb-6 mb-8 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-10 pt-10">
+                                        <div className="flex items-center gap-3 pb-6 mb-4 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-6 pt-6">
                                             <MessageSquare className="w-4 h-4 text-accent-theme" />
                                             Descrição Técnica e Detalhes
                                         </div>
 
-                                        <div className="space-y-8 pr-4 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                        <div className="space-y-8 pr-4 flex-1 overflow-y-auto custom-scrollbar min-h-0">
                                             {(function renderFormattedDescription() {
                                                 const parts = ticket.description.split(/\n\s*---\s*\n/);
                                                 const originalPart = parts[0];
@@ -867,7 +871,7 @@ export default function TicketDetailsPage() {
                                                                     <span className="text-[10px] font-black uppercase tracking-[0.3em] text-accent-theme/60">Descrição Principal</span>
                                                                     <div className="flex-1 h-px bg-white/5" />
                                                                 </div>
-                                                                <div className="prose prose-invert prose-p:text-gray-300 prose-headings:text-foreground prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-3xl prose-img:shadow-2xl prose-img:border prose-img:border-white/5 max-w-none">
+                                                                <div className="prose prose-invert prose-p:text-gray-300 prose-headings:text-foreground prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-3xl prose-img:shadow-2xl prose-img:border prose-img:border-white/5 max-w-full break-words overflow-hidden">
                                                                     <ReactMarkdown components={MarkdownComponents}>{part}</ReactMarkdown>
                                                                 </div>
                                                             </div>
@@ -906,7 +910,7 @@ export default function TicketDetailsPage() {
                                                                     </div>
                                                                 )}
 
-                                                                <div className="prose prose-invert prose-p:text-foreground/90 prose-headings:text-accent-theme prose-headings:italic prose-headings:mt-0 prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-3xl max-w-none relative z-10 font-medium">
+                                                                <div className="prose prose-invert prose-p:text-foreground/90 prose-headings:text-accent-theme prose-headings:italic prose-headings:mt-0 prose-strong:text-foreground prose-a:text-accent-theme prose-img:rounded-3xl max-w-full break-words overflow-hidden relative z-10 font-medium">
                                                                     <ReactMarkdown components={MarkdownComponents}>{cleanPart}</ReactMarkdown>
                                                                 </div>
                                                             </div>
@@ -923,8 +927,9 @@ export default function TicketDetailsPage() {
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -10 }}
                                         transition={{ duration: 0.3 }}
+                                        className="flex-1 flex flex-col min-h-0"
                                     >
-                                        <div className="flex items-center gap-3 pb-6 mb-8 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-10 pt-10">
+                                        <div className="flex items-center gap-3 pb-6 mb-4 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-6 pt-6">
                                             <History className="w-4 h-4 text-accent-theme" />
                                             Linha do Tempo de Alterações
                                         </div>
@@ -940,7 +945,7 @@ export default function TicketDetailsPage() {
                                                 <p className="text-sm">Nenhuma alteração registrada ainda.</p>
                                             </div>
                                         ) : (
-                                            <div className="relative pl-8 pr-4 space-y-10 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                            <div className="relative pl-8 pr-4 space-y-10 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0">
                                                 {history.map((event, idx) => {
                                                     const nextEvent = history[idx + 1];
                                                     const isSameUserAsNext = nextEvent && (
@@ -959,8 +964,8 @@ export default function TicketDetailsPage() {
                                                             <div className="absolute -left-[27px] top-1.5 w-4 h-4 rounded-full bg-background border-2 border-accent-theme shadow-[0_0_10px_rgba(var(--accent-rgb),0.3)] z-10 group-hover/item:scale-125 transition-transform duration-300" />
 
                                                             <div className="space-y-2">
-                                                                <div className="flex items-center justify-between gap-4">
-                                                                    <div className="flex items-center gap-3">
+                                                                <div className="flex items-center justify-between gap-4 min-w-0">
+                                                                    <div className="flex items-center gap-3 min-w-0 shrink-0">
                                                                         <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 bg-accent-theme/10 text-accent-theme rounded-lg border border-accent-theme/20">
                                                                             {(function translate(type: string, desc: string): string {
                                                                                 const t = type.toUpperCase();
@@ -976,7 +981,9 @@ export default function TicketDetailsPage() {
                                                                                     'UNFOLLOW': 'SAÍDA DE ACOMPANHANTE',
 
                                                                                     'ASSIGNED_USER_CHANGE': 'TROCA DE TÉCNICO',
-                                                                                    'SECTOR_CHANGE': 'TRANSFERÊNCIA DE SETOR'
+                                                                                    'ASSIGNED_USER_ID_CHANGE': 'TROCA DE TÉCNICO',
+                                                                                    'SECTOR_CHANGE': 'TRANSFERÊNCIA DE SETOR',
+                                                                                    'SECTOR_ID_CHANGE': 'TRANSFERÊNCIA DE SETOR'
                                                                                 };
                                                                                 return map[t] || t.replaceAll('_', ' ');
                                                                             })(event.event_type, event.description)}
@@ -985,14 +992,25 @@ export default function TicketDetailsPage() {
                                                                             {formatDateTime(event.created_at)}
                                                                         </span>
                                                                     </div>
-                                                                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400">
+                                                                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 min-w-0 shrink">
                                                                         <User className="w-3.5 h-3.5 text-accent-theme/50" />
-                                                                        {event.user?.full_name || event.user?.username || 'Sistema'}
+                                                                        <span className="truncate">{event.user?.full_name || event.user?.username || 'Sistema'}</span>
                                                                     </div>
                                                                 </div>
-                                                                <p className="text-sm text-gray-300 font-medium leading-relaxed pl-1">
-                                                                    {event.description}
-                                                                </p>
+                                                                <div className="text-sm text-gray-300 font-medium leading-relaxed pl-1 prose-none max-w-full break-words overflow-hidden">
+                                                                    <ReactMarkdown
+                                                                        components={{
+                                                                            strong: ({ node, ...props }) => (
+                                                                                <strong
+                                                                                    className="inline-block px-1.5 py-0.5 rounded bg-accent-theme/20 text-accent-theme border border-accent-theme/30 font-bold mx-0.5"
+                                                                                    {...props}
+                                                                                />
+                                                                            )
+                                                                        }}
+                                                                    >
+                                                                        {event.description.replace(/'([^']+)'/g, '**$1**')}
+                                                                    </ReactMarkdown>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     );
@@ -1002,8 +1020,8 @@ export default function TicketDetailsPage() {
                                     </motion.div>
                                 )}
                             </AnimatePresence>
-                        </div>
-                    </div>
+                        </motion.div>
+                    </motion.div>
 
                     {/* Sidebar */}
                     <div className="space-y-6 lg:pt-[82px]">
@@ -1021,15 +1039,17 @@ export default function TicketDetailsPage() {
                                     </div>
                                 </button>
 
-                                <button
-                                    onClick={openTransferModal}
-                                    className="w-full flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-border-theme hover:bg-white/10 transition-all group"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <Send className="w-4 h-4 text-gray-500 group-hover:text-accent-theme transition-colors font-shadow-none" />
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-foreground transition-colors font-shadow-none">Transferir Ticket</span>
-                                    </div>
-                                </button>
+                                {canManage && (
+                                    <button
+                                        onClick={openTransferModal}
+                                        className="w-full flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-border-theme hover:bg-white/10 transition-all group"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Send className="w-4 h-4 text-gray-500 group-hover:text-accent-theme transition-colors font-shadow-none" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-foreground transition-colors font-shadow-none">Transferir Ticket</span>
+                                        </div>
+                                    </button>
+                                )}
 
                                 <button
                                     onClick={() => {
@@ -1046,15 +1066,17 @@ export default function TicketDetailsPage() {
 
 
 
-                                <button
-                                    onClick={handleCloseTicket}
-                                    className="w-full flex items-center justify-between p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all group mt-2"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <CheckCircle className="w-4 h-4" />
-                                        <span className="text-[10px] font-black uppercase tracking-widest">Encerrar Ticket</span>
-                                    </div>
-                                </button>
+                                {canManage && (
+                                    <button
+                                        onClick={handleCloseTicket}
+                                        className="w-full flex items-center justify-between p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all group mt-2"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <CheckCircle className="w-4 h-4" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest">Encerrar Ticket</span>
+                                        </div>
+                                    </button>
+                                )}
                             </div>
                         </div>
                         <div className="glass-card p-8 rounded-[2rem] border border-border-theme space-y-6 relative z-20">
@@ -1078,6 +1100,7 @@ export default function TicketDetailsPage() {
                                         placeholder="Selecionar Categoria..."
                                         className="!space-y-0"
                                         icon={<Tag className="w-4 h-4" />}
+                                        disabled={!canManage}
                                     />
                                 </div>
                             </div>
@@ -1110,7 +1133,7 @@ export default function TicketDetailsPage() {
                         {/* Card de Acompanhantes */}
                         {/* Card de Acompanhantes */}
                         {/* Card de Acompanhantes */}
-                        <div className="glass-card p-8 rounded-[2rem] border border-border-theme relative z-10">
+                        <motion.div layout className="glass-card p-8 rounded-[2rem] border border-border-theme relative z-10">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Acompanhantes</h3>
                                 {ticket.assigned_user_id === user?.id ? (
@@ -1147,42 +1170,56 @@ export default function TicketDetailsPage() {
                                     </button>
                                 )}
                             </div>
-                            <div className="space-y-3">
-                                {ticket.followers && ticket.followers.length > 0 ? (
-                                    ticket.followers.map(follower => (
-                                        <div key={follower.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-border-theme/30 group/follower relative">
-                                            <div className="w-8 h-8 rounded-lg bg-accent-theme/10 flex items-center justify-center border border-accent-theme/20">
-                                                <User className="w-4 h-4 text-accent-theme" />
-                                            </div>
-                                            <div className="flex flex-col min-w-0">
-                                                <span className="text-[11px] font-bold text-foreground/90 truncate">{follower.full_name || follower.username}</span>
-                                                <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">{follower.username}</span>
-                                            </div>
+                            <motion.div layout className="space-y-3">
+                                <AnimatePresence initial={false}>
+                                    {ticket.followers && ticket.followers.length > 0 ? (
+                                        ticket.followers.map(follower => (
+                                            <motion.div
+                                                key={follower.id}
+                                                layout
+                                                initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                                                animate={{ opacity: 1, x: 0, scale: 1 }}
+                                                exit={{ opacity: 0, x: 20, scale: 0.95 }}
+                                                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                                className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-border-theme/30 group/follower relative"
+                                            >
+                                                <div className="w-8 h-8 rounded-lg bg-accent-theme/10 flex items-center justify-center border border-accent-theme/20">
+                                                    <User className="w-4 h-4 text-accent-theme" />
+                                                </div>
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-[11px] font-bold text-foreground/90 truncate">{follower.full_name || follower.username}</span>
+                                                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">{follower.username}</span>
+                                                </div>
 
-                                            {ticket.assigned_user_id === user?.id && (
-                                                <button
-                                                    onClick={() => handleRemoveFollower(follower.id)}
-                                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-red-500/10 text-red-500 opacity-0 group-hover/follower:opacity-100 transition-opacity hover:bg-red-500/20"
-                                                    title="Remover Acompanhante"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))
-                                ) : (
-                                    <p className="text-[10px] text-gray-500 font-bold italic opacity-50 text-center py-4">
-                                        Nenhum acompanhante neste ticket
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-
-
+                                                {ticket.assigned_user_id === user?.id && (
+                                                    <button
+                                                        onClick={() => handleRemoveFollower(follower.id)}
+                                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-red-500/10 text-red-500 opacity-0 group-hover/follower:opacity-100 transition-opacity hover:bg-red-500/20"
+                                                        title="Remover Acompanhante"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                )}
+                                            </motion.div>
+                                        ))
+                                    ) : (
+                                        <motion.p
+                                            layout
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 0.5 }}
+                                            className="text-[10px] text-gray-500 font-bold italic text-center py-4"
+                                        >
+                                            Nenhum acompanhante neste ticket
+                                        </motion.p>
+                                    )}
+                                </AnimatePresence>
+                            </motion.div>
+                        </motion.div>
                     </div>
-                </div>
+                </motion.div>
 
                 {/* Modal de Detalhes do Cliente */}
+
                 {
                     (isClientModalOpen || isClosingClientModal) && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1310,235 +1347,273 @@ export default function TicketDetailsPage() {
                                 </div>
                             </div>
                         </div>
-                    )}
+                    )
+                }
 
                 {/* Modal Adicionar Informação */}
-                {isInfoModalOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-fade-in" onClick={() => !performingAction && setIsInfoModalOpen(false)} />
-                        <div className="relative w-full max-w-2xl glass-card rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-modal-in">
-                            <div className="premium-gradient p-8 text-white">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
-                                        <MessageSquare className="w-6 h-6" />
+                {
+                    isInfoModalOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-fade-in" onClick={() => !performingAction && setIsInfoModalOpen(false)} />
+                            <div className="relative w-full max-w-2xl glass-card rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-modal-in">
+                                <div className="premium-gradient p-8 text-white">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
+                                            <MessageSquare className="w-6 h-6" />
+                                        </div>
+                                        <h2 className="text-2xl font-black uppercase italic">Adicionar Informação</h2>
                                     </div>
-                                    <h2 className="text-2xl font-black uppercase italic">Adicionar Informação</h2>
                                 </div>
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-10 space-y-8 custom-scrollbar">
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">O que você deseja adicionar?</label>
-                                        <button
-                                            type="button"
-                                            onClick={() => document.getElementById('info-image-insert')?.click()}
-                                            disabled={uploadingImage}
-                                            className="text-[9px] font-black uppercase tracking-widest text-accent-theme hover:brightness-125 transition-all flex items-center gap-1.5 disabled:opacity-50"
-                                        >
-                                            {uploadingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImageIcon className="w-3 h-3" />}
-                                            {uploadingImage ? 'INSERINDO...' : 'INSERIR IMAGEM NO TEXTO'}
-                                        </button>
-                                        <input
-                                            id="info-image-insert"
-                                            type="file"
-                                            className="hidden"
-                                            accept="image/*"
-                                            onChange={handleImageInsert}
+                                <div className="flex-1 overflow-y-auto p-10 space-y-8 custom-scrollbar">
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">O que você deseja adicionar?</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => document.getElementById('info-image-insert')?.click()}
+                                                disabled={uploadingImage}
+                                                className="text-[9px] font-black uppercase tracking-widest text-accent-theme hover:brightness-125 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                                            >
+                                                {uploadingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImageIcon className="w-3 h-3" />}
+                                                {uploadingImage ? 'INSERINDO...' : 'INSERIR IMAGEM NO TEXTO'}
+                                            </button>
+                                            <input
+                                                id="info-image-insert"
+                                                type="file"
+                                                className="hidden"
+                                                accept="image/*"
+                                                onChange={handleImageInsert}
+                                            />
+                                        </div>
+                                        <textarea
+                                            ref={infoDescriptionRef}
+                                            value={newInfoContent}
+                                            onChange={(e) => setNewInfoContent(e.target.value)}
+                                            placeholder="Digite aqui as informações adicionais..."
+                                            className="w-full bg-background/50 border border-border-theme rounded-3xl p-6 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 min-h-[200px] transition-all font-bold placeholder:font-normal"
                                         />
                                     </div>
-                                    <textarea
-                                        ref={infoDescriptionRef}
-                                        value={newInfoContent}
-                                        onChange={(e) => setNewInfoContent(e.target.value)}
-                                        placeholder="Digite aqui as informações adicionais..."
-                                        className="w-full bg-background/50 border border-border-theme rounded-3xl p-6 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 min-h-[200px] transition-all font-bold placeholder:font-normal"
-                                    />
-                                </div>
 
-                                <div className="flex items-center gap-4">
-                                    <input
-                                        type="file"
-                                        id="file-upload"
-                                        className="hidden"
-                                        onChange={handleFileUpload}
-                                        disabled={uploadingFile || performingAction}
-                                    />
-                                    <label
-                                        htmlFor="file-upload"
-                                        className={clsx(
-                                            "flex items-center gap-2 px-6 py-3 rounded-xl border border-border-theme text-[10px] font-black uppercase tracking-widest cursor-pointer hover:bg-white/5 transition-all",
-                                            (uploadingFile || performingAction) && "opacity-50 cursor-not-allowed"
-                                        )}
-                                    >
-                                        {uploadingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-                                        Anexar Qualquer Arquivo
-                                    </label>
-                                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Suporta Excel, Vídeos, Documentos e mais</span>
+                                    <div className="flex items-center gap-4">
+                                        <input
+                                            type="file"
+                                            id="file-upload"
+                                            className="hidden"
+                                            onChange={handleFileUpload}
+                                            disabled={uploadingFile || performingAction}
+                                        />
+                                        <label
+                                            htmlFor="file-upload"
+                                            className={clsx(
+                                                "flex items-center gap-2 px-6 py-3 rounded-xl border border-border-theme text-[10px] font-black uppercase tracking-widest cursor-pointer hover:bg-white/5 transition-all",
+                                                (uploadingFile || performingAction) && "opacity-50 cursor-not-allowed"
+                                            )}
+                                        >
+                                            {uploadingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+                                            Anexar Qualquer Arquivo
+                                        </label>
+                                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Suporta Excel, Vídeos, Documentos e mais</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="p-8 border-t border-border-theme flex justify-end gap-4">
-                                <button
-                                    onClick={() => setIsInfoModalOpen(false)}
-                                    className="px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    onClick={handleAddInfo}
-                                    disabled={performingAction || !newInfoContent.trim()}
-                                    className="px-10 py-4 rounded-2xl bg-accent-theme text-foreground text-[10px] font-black uppercase tracking-widest hover:brightness-110 transition-all flex items-center gap-3 disabled:opacity-50"
-                                >
-                                    {performingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                                    Salvar e Atualizar
-                                </button>
+                                <div className="p-8 border-t border-border-theme flex justify-end gap-4">
+                                    <button
+                                        onClick={() => setIsInfoModalOpen(false)}
+                                        className="px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleAddInfo}
+                                        disabled={performingAction || !newInfoContent.trim()}
+                                        className="px-10 py-4 rounded-2xl bg-accent-theme text-foreground text-[10px] font-black uppercase tracking-widest hover:brightness-110 transition-all flex items-center gap-3 disabled:opacity-50"
+                                    >
+                                        {performingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                        Salvar e Atualizar
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Modal Transferir Ticket */}
-                {isTransferModalOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-fade-in" onClick={() => !performingAction && setIsTransferModalOpen(false)} />
-                        <div className="relative w-full max-w-md glass-card rounded-[3rem] border border-border-theme shadow-2xl overflow-hidden animate-modal-in">
-                            <div className="premium-gradient p-8 text-white">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
-                                        <UserPlus className="w-6 h-6" />
+                <AnimatePresence>
+                    {isTransferModalOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                                onClick={() => !performingAction && setIsTransferModalOpen(false)}
+                            />
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.98, y: 10 }}
+                                transition={{
+                                    type: "spring",
+                                    stiffness: 400,
+                                    damping: 30,
+                                    mass: 0.8
+                                }}
+                                className="relative w-full max-w-md glass-card rounded-[3rem] border border-border-theme shadow-2xl overflow-hidden"
+                            >
+                                <div className="premium-gradient p-8 text-white">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
+                                            <UserPlus className="w-6 h-6" />
+                                        </div>
+                                        <h2 className="text-2xl font-black uppercase italic">Transferir Ticket</h2>
                                     </div>
-                                    <h2 className="text-2xl font-black uppercase italic">Transferir Ticket</h2>
                                 </div>
-                            </div>
-                            <div className="p-8 space-y-8">
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
-                                        <Briefcase className="w-3 h-3 text-accent-theme font-shadow-none" />
-                                        Novo Setor Responsável
-                                    </label>
-                                    <CustomSelect
-                                        value={targetSectorId}
-                                        onChange={setTargetSectorId}
-                                        placeholder="Manter setor atual..."
-                                        options={[
-                                            ...sectors.map(s => ({
-                                                value: s.id.toString(),
-                                                label: s.name,
-                                                icon: <Users className="w-3 h-3" />
-                                            }))
-                                        ]}
-                                    />
-                                </div>
+                                <div className="p-8 space-y-8">
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
+                                            <Briefcase className="w-3 h-3 text-accent-theme font-shadow-none" />
+                                            Novo Setor Responsável
+                                        </label>
+                                        <CustomSelect
+                                            value={targetSectorId}
+                                            onChange={setTargetSectorId}
+                                            placeholder="Manter setor atual..."
+                                            options={[
+                                                ...sectors.map(s => ({
+                                                    value: s.id.toString(),
+                                                    label: s.name,
+                                                    icon: <Users className="w-3 h-3" />
+                                                }))
+                                            ]}
+                                        />
+                                    </div>
 
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
-                                        <User className="w-3 h-3 text-accent-theme font-shadow-none" />
-                                        Novo Atendente Responsável
-                                    </label>
-                                    <CustomSelect
-                                        value={targetAttendantId}
-                                        onChange={setTargetAttendantId}
-                                        placeholder={loadingAttendants ? "Carregando..." : "Selecione um atendente..."}
-                                        disabled={loadingAttendants}
-                                        options={[
-                                            ...attendants.map(a => ({
-                                                value: a.id.toString(),
-                                                label: a.name,
-                                                icon: <User className="w-3 h-3" />
-                                            }))
-                                        ]}
-                                    />
-                                </div>
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
+                                            <User className="w-3 h-3 text-accent-theme font-shadow-none" />
+                                            Novo Atendente Responsável
+                                        </label>
+                                        <CustomSelect
+                                            value={targetAttendantId}
+                                            onChange={setTargetAttendantId}
+                                            placeholder={loadingAttendants ? "Carregando..." : "Selecione um atendente..."}
+                                            disabled={loadingAttendants}
+                                            options={[
+                                                ...attendants.map(a => ({
+                                                    value: a.id.toString(),
+                                                    label: a.name,
+                                                    icon: <User className="w-3 h-3" />
+                                                }))
+                                            ]}
+                                        />
+                                    </div>
 
-                                <div className="flex justify-end gap-3 pt-4 border-t border-border-theme/50">
-                                    <button
-                                        onClick={() => !performingAction && setIsTransferModalOpen(false)}
-                                        disabled={performingAction}
-                                        className="px-6 py-3 rounded-xl font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-sm uppercase tracking-widest"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        onClick={handleTransferTicket}
-                                        disabled={performingAction}
-                                        className="px-6 py-3 rounded-xl bg-accent-theme text-white font-bold shadow-lg shadow-accent-theme/20 hover:shadow-accent-theme/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm uppercase tracking-widest"
-                                    >
-                                        {performingAction ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Transferindo...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Send className="w-4 h-4" />
-                                                Transferir
-                                            </>
-                                        )}
-                                    </button>
+                                    <div className="flex justify-end gap-3 pt-4 border-t border-border-theme/50">
+                                        <button
+                                            onClick={() => !performingAction && setIsTransferModalOpen(false)}
+                                            disabled={performingAction}
+                                            className="px-6 py-3 rounded-xl font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-sm uppercase tracking-widest"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            onClick={handleTransferTicket}
+                                            disabled={performingAction}
+                                            className="px-6 py-3 rounded-xl bg-accent-theme text-white font-bold shadow-lg shadow-accent-theme/20 hover:shadow-accent-theme/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm uppercase tracking-widest"
+                                        >
+                                            {performingAction ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Transferindo...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Send className="w-4 h-4" />
+                                                    Transferir
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            </motion.div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </AnimatePresence>
 
                 {/* Modal de Adicionar Acompanhante */}
-                {isAddFollowerModalOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div
-                            className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-fade-in"
-                            onClick={() => setIsAddFollowerModalOpen(false)}
-                        />
-                        <div className="relative w-full max-w-md glass-card rounded-[2.5rem] border border-border-theme shadow-2xl p-8 animate-modal-in">
-                            <h2 className="text-xl font-black text-foreground mb-6 uppercase tracking-wider">Adicionar Acompanhante</h2>
+                <AnimatePresence>
+                    {isAddFollowerModalOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                                onClick={() => setIsAddFollowerModalOpen(false)}
+                            />
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.98, y: 10 }}
+                                transition={{
+                                    type: "spring",
+                                    stiffness: 400,
+                                    damping: 30,
+                                    mass: 0.8
+                                }}
+                                className="relative w-full max-w-md glass-card rounded-[2.5rem] border border-border-theme shadow-2xl p-8"
+                            >
+                                <h2 className="text-xl font-black text-foreground mb-6 uppercase tracking-wider">Adicionar Acompanhante</h2>
 
-                            <div className="space-y-6">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Usuário</label>
-                                    <CustomSelect
-                                        options={[
-                                            { value: '', label: 'Selecione um usuário' },
-                                            ...availableUsers.map(u => ({ value: u.id.toString(), label: u.name || u.full_name || u.username }))
-                                        ]}
-                                        value={selectedUserId}
-                                        onChange={setSelectedUserId}
-                                        placeholder="Selecione..."
-                                    />
-                                    {availableUsers.length === 0 && (
-                                        <p className="text-[10px] text-yellow-500 font-bold mt-2 flex items-center gap-1">
-                                            <AlertCircle className="w-3 h-3" />
-                                            Nenhum usuário disponível para adicionar.
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div className="flex justify-end gap-3 pt-4 border-t border-border-theme/50">
-                                    <button
-                                        onClick={() => setIsAddFollowerModalOpen(false)}
-                                        className="px-6 py-3 rounded-xl font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-xs uppercase tracking-widest"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        onClick={handleAddFollower}
-                                        disabled={!selectedUserId || performingAction}
-                                        className="px-6 py-3 rounded-xl bg-accent-theme text-white font-bold shadow-lg shadow-accent-theme/20 hover:shadow-accent-theme/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xs uppercase tracking-widest"
-                                    >
-                                        {performingAction ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Adicionando...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <UserPlus className="w-4 h-4" />
-                                                Adicionar
-                                            </>
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Usuário</label>
+                                        <CustomSelect
+                                            options={[
+                                                { value: '', label: 'Selecione um usuário' },
+                                                ...availableUsers.map(u => ({ value: u.id.toString(), label: u.name || u.full_name || u.username }))
+                                            ]}
+                                            value={selectedUserId}
+                                            onChange={setSelectedUserId}
+                                            placeholder="Selecione..."
+                                        />
+                                        {availableUsers.length === 0 && (
+                                            <p className="text-[10px] text-yellow-500 font-bold mt-2 flex items-center gap-1">
+                                                <AlertCircle className="w-3 h-3" />
+                                                Nenhum usuário disponível para adicionar.
+                                            </p>
                                         )}
-                                    </button>
+                                    </div>
+
+                                    <div className="flex justify-end gap-3 pt-4 border-t border-border-theme/50">
+                                        <button
+                                            onClick={() => setIsAddFollowerModalOpen(false)}
+                                            className="px-6 py-3 rounded-xl font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-xs uppercase tracking-widest"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            onClick={handleAddFollower}
+                                            disabled={!selectedUserId || performingAction}
+                                            className="px-6 py-3 rounded-xl bg-accent-theme text-white font-bold shadow-lg shadow-accent-theme/20 hover:shadow-accent-theme/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xs uppercase tracking-widest"
+                                        >
+                                            {performingAction ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Adicionando...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <UserPlus className="w-4 h-4" />
+                                                    Adicionar
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            </motion.div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </AnimatePresence>
 
 
                 {/* Image Zoom Modal */}
@@ -1563,7 +1638,7 @@ export default function TicketDetailsPage() {
                                 initial={{ scale: 0.9, y: 20 }}
                                 animate={{ scale: 1, y: 0 }}
                                 exit={{ scale: 0.9, y: 20 }}
-                                src={zoomedImage}
+                                src={zoomedImage || undefined}
                                 alt="Zoomed"
                                 className="max-w-full max-h-full rounded-3xl shadow-2xl border border-white/10"
                                 onClick={(e) => e.stopPropagation()}

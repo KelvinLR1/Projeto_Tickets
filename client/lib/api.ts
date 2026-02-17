@@ -183,7 +183,7 @@ export interface Sector {
 }
 
 export const getSectors = async () => {
-  const response = await api.get<Sector[]>('/sectors/');
+  const response = await api.get<Sector[]>('/sectors');
   return response.data;
 };
 
@@ -298,6 +298,9 @@ export interface GetTicketsParams {
   categoryId?: number;
   q?: string;
   status?: string;
+  assignedUserId?: number;
+  startDate?: string;
+  endDate?: string;
   skip?: number;
   limit?: number;
 }
@@ -311,6 +314,9 @@ export const getTickets = async (params: GetTicketsParams = {}) => {
       sector_id: params.sectorId,
       priority: params.priority || undefined,
       category_id: params.categoryId,
+      assigned_user_id: params.assignedUserId,
+      start_date: params.startDate,
+      end_date: params.endDate,
       q: params.q || undefined,
       status: params.status || undefined,
       skip: params.skip,
@@ -519,6 +525,8 @@ export const getUsers = async () => {
   return response.data;
 };
 
+// Duplicate removed
+
 export const getAttendants = async (sectorId?: number) => {
   const url = sectorId ? `/users/attendants?sector_id=${sectorId}` : '/users/attendants';
   const response = await api.get<{ id: number; name: string }[]>(url);
@@ -619,6 +627,8 @@ export interface Notification {
 
 export interface NotificationSend {
   recipient_user_id: number;
+  recipient_ids?: number[];
+  sector_ids?: number[];
   title: string;
   message: string;
   type?: string;
@@ -700,6 +710,11 @@ export const followTicket = async (ticketId: number, userId?: number): Promise<T
 export const unfollowTicket = async (ticketId: number, userId?: number): Promise<Ticket> => {
   const query = userId ? `?user_id=${userId}` : '';
   const response = await api.post(`/tickets/${ticketId}/unfollow${query}`);
+  return response.data;
+};
+
+export const getFollowedTickets = async () => {
+  const response = await api.get<Ticket[]>('/users/me/followed-tickets');
   return response.data;
 };
 

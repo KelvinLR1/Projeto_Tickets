@@ -314,7 +314,9 @@ class NotificationCreate(NotificationBase):
 
 class NotificationSend(BaseModel):
     """Schema for users sending notifications to each other"""
-    recipient_user_id: int
+    recipient_user_id: Optional[int] = None # Deprecated in favor of recipient_ids, kept for backward compatibility
+    recipient_ids: Optional[List[int]] = None
+    sector_ids: Optional[List[int]] = None
     title: str
     message: str
     type: str = "info"

@@ -291,7 +291,7 @@ def get_or_create_default_status(db: Session):
     return db_status
 
 # --- Ticket CRUD ---
-def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, sector_id: int = None, priority: str = None, category_id: int = None, q: str = None):
+def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, sector_id: int = None, priority: str = None, category_id: int = None, q: str = None, assigned_user_id: int = None, start_date: str = None, end_date: str = None):
     from sqlalchemy.orm import joinedload
     from sqlalchemy import or_
     
@@ -302,10 +302,17 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None
     )
     
     if q:
-        query = query.filter(or_(
+        search_filters = [
             models.Ticket.title.ilike(f"%{q}%"),
-            models.Ticket.description.ilike(f"%{q}%")
-        ))
+            models.Ticket.description.ilike(f"%{q}%"),
+            models.Ticket.client.has(models.Client.name.ilike(f"%{q}%"))
+        ]
+        
+        # Se for numérico, também busca por ID
+        if q.isdigit():
+            search_filters.append(models.Ticket.id == int(q))
+            
+        query = query.filter(or_(*search_filters))
     
     if status:
         query = query.filter(models.Ticket.status == status)
@@ -317,8 +324,25 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None
         query = query.filter(models.Ticket.priority == priority)
     if category_id:
         query = query.filter(models.Ticket.category_id == category_id)
+    if assigned_user_id:
+        query = query.filter(models.Ticket.assigned_user_id == assigned_user_id)
     if unassigned_only:
         query = query.filter(models.Ticket.assigned_user_id == None)
+    
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            query = query.filter(models.Ticket.created_at >= start_dt)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            # If it's just a date (YYYY-MM-DD), we might want to include the whole day.
+            # But the client will likely send a full ISO string.
+            query = query.filter(models.Ticket.created_at <= end_dt)
+        except ValueError:
+            pass
         
     if exclude_finalized:
         # Usamos outerjoin para evitar esconder tickets sem status_id (caso ocorra)
@@ -423,6 +447,9 @@ def get_ticket(db: Session, ticket_id: int):
         joinedload(models.Ticket.followers)
     ).filter(models.Ticket.id == ticket_id).first()
 
+def get_followed_tickets(db: Session, user_id: int):
+    return db.query(models.Ticket).filter(models.Ticket.followers.any(id=user_id)).all()
+
 def create_ticket_message(db: Session, message: schemas.TicketMessageCreate, ticket_id: int):
     db_message = models.TicketMessage(**message.dict(), ticket_id=ticket_id)
     db.add(db_message)
@@ -470,7 +497,7 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
             
         old_value = getattr(db_ticket, field)
         if old_value != new_value:
-            event_type = "status_change" if field == "status_id" else ("category_change" if field == "category_id" else f"{field}_change")
+            event_type = "status_change" if field == "status_id" else ("category_change" if field == "category_id" else ("sector_change" if field == "sector_id" else ("assigned_user_change" if field == "assigned_user_id" else f"{field}_change")))
             desc = f"Alterou {field} de '{old_value}' para '{new_value}'"
             
             # Nomes amigáveis para campos específicos
@@ -485,11 +512,15 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 new_status = db.query(models.Status).filter(models.Status.id == new_value).first()
                 old_label = old_status.name if old_status else str(old_value)
                 new_label = new_status.name if new_status else str(new_value)
-                desc = f"Alterou status de '{old_label}' para '{new_label}'"
+                desc = f"Alterou status de **{old_label}** para **{new_label}**"
             elif field == "assigned_user_id":
+                old_user = db.query(models.User).filter(models.User.id == old_value).first()
                 new_user = db.query(models.User).filter(models.User.id == new_value).first()
-                new_label = new_user.full_name or new_user.username if new_user else "Ninguém"
-                desc = f"Atribuiu o ticket para '{new_label}'"
+                
+                old_label = (old_user.full_name or old_user.username) if old_user else "Ninguém"
+                new_label = (new_user.full_name or new_user.username) if new_user else "Ninguém"
+                
+                desc = f"Alterou responsável de **{old_label}** para **{new_label}**"
                 
                 # Notify new assignee
                 if new_value and new_value != user_id:
@@ -502,9 +533,11 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                     ))
 
             elif field == "sector_id":
+                old_sector = db.query(models.Sector).filter(models.Sector.id == old_value).first()
                 new_sector = db.query(models.Sector).filter(models.Sector.id == new_value).first()
-                new_label = new_sector.name if new_sector else "Nenhum"
-                desc = f"Transferiu para o setor '{new_label}'"
+                old_label = old_sector.name if old_sector else "Global (Geral)"
+                new_label = new_sector.name if new_sector else "Global (Geral)"
+                desc = f"Transferiu do setor **{old_label}** para **{new_label}**"
             elif field == "priority":
                 p_labels = {
                     "low": "Baixa",
@@ -515,13 +548,13 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 # Tenta traduzir valor novo e antigo para um log amigável
                 old_label = p_labels.get(str(old_value).lower(), old_value)
                 new_label = p_labels.get(str(new_value).lower(), new_value)
-                desc = f"Alterou prioridade de '{old_label}' para '{new_label}'"
+                desc = f"Alterou prioridade de **{old_label}** para **{new_label}**"
             elif field == "category_id":
                 old_cat = db.query(models.Category).filter(models.Category.id == old_value).first()
                 new_cat = db.query(models.Category).filter(models.Category.id == new_value).first()
                 old_label = old_cat.name if old_cat else "Sem Categoria"
                 new_label = new_cat.name if new_cat else "Sem Categoria"
-                desc = f"Alterou categoria de '{old_label}' para '{new_label}'"
+                desc = f"Alterou categoria de **{old_label}** para **{new_label}**"
 
             create_ticket_history(db, schemas.TicketHistoryCreate(
                 ticket_id=ticket_id,
@@ -1069,10 +1102,30 @@ def mark_all_notifications_as_read(db: Session, user_id: int):
     return True
 
 def send_user_notification(db: Session, sender_id: int, data: schemas.NotificationSend):
-    """Send a notification from one user to another"""
-    # Validate recipient exists
-    recipient = db.query(models.User).filter(models.User.id == data.recipient_user_id).first()
-    if not recipient:
+    """Send a notification from one user to another (or multiple)"""
+    
+    target_user_ids = set()
+
+    # 1. Add individual recipients
+    if data.recipient_ids:
+        target_user_ids.update(data.recipient_ids)
+    
+    # Backward compatibility
+    if data.recipient_user_id:
+        target_user_ids.add(data.recipient_user_id)
+
+    # 2. Add recipients from sectors
+    if data.sector_ids:
+        # Get all users belonging to these sectors
+        sector_users = db.query(models.User).join(models.User.sectors).filter(
+            models.Sector.id.in_(data.sector_ids),
+            models.User.is_active == True
+        ).all()
+        
+        for user in sector_users:
+            target_user_ids.add(user.id)
+
+    if not target_user_ids:
         return None
     
     # Build link if ticket_id provided
@@ -1081,23 +1134,32 @@ def send_user_notification(db: Session, sender_id: int, data: schemas.Notificati
         ticket = db.query(models.Ticket).filter(models.Ticket.id == data.ticket_id).first()
         if ticket:
             link = f"/tickets/{data.ticket_id}"
+
+    notifications_created = []
+
+    for user_id in target_user_ids:
+        # Validate recipient exists
+        recipient = db.query(models.User).filter(models.User.id == user_id).first()
+        if not recipient:
+            continue
+
+        # Create notification
+        db_notification = models.Notification(
+            user_id=user_id,
+            created_by_user_id=sender_id,
+            title=data.title,
+            message=data.message,
+            type=data.type,
+            link=link,
+            read=False
+        )
+        db.add(db_notification)
+        notifications_created.append(db_notification)
     
-    # Create notification
-    db_notification = models.Notification(
-        user_id=data.recipient_user_id,
-        created_by_user_id=sender_id,
-        title=data.title,
-        message=data.message,
-        type=data.type,
-        link=link,
-        read=False
-    )
-    
-    db.add(db_notification)
     db.commit()
-    db.refresh(db_notification)
     
-    return db_notification
+    # Return the first one created to satisfy potential single-return expectations
+    return notifications_created[0] if notifications_created else None
 
 # --- System Settings CRUD ---
 def get_system_settings(db: Session):

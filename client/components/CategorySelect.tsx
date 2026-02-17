@@ -14,6 +14,7 @@ interface CategorySelectProps {
     className?: string;
     icon?: React.ReactNode;
     sectorId?: number;
+    disabled?: boolean;
 }
 
 export default function CategorySelect({
@@ -23,7 +24,8 @@ export default function CategorySelect({
     placeholder = 'Selecionar Categoria...',
     className,
     icon: MainIcon,
-    sectorId
+    sectorId,
+    disabled = false
 }: CategorySelectProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -204,10 +206,13 @@ export default function CategorySelect({
         <div className={clsx("relative w-full", className, isOpen && "z-[1001]")} ref={containerRef}>
             <button
                 type="button"
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => !disabled && setIsOpen(!isOpen)}
+                disabled={disabled}
                 className={clsx(
-                    "w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm font-bold flex items-center justify-between hover:bg-white/5 transition-all outline-none focus:ring-4 focus:ring-accent-theme/10 min-h-[56px] text-left",
-                    isOpen && "border-accent-theme/50 ring-4 ring-accent-theme/5"
+                    "w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm font-bold flex items-center justify-between transition-all outline-none focus:ring-4 focus:ring-accent-theme/10 min-h-[56px] text-left",
+                    !disabled && "hover:bg-white/5",
+                    isOpen && "border-accent-theme/50 ring-4 ring-accent-theme/5",
+                    disabled && "opacity-50 cursor-not-allowed bg-white/5"
                 )}
             >
                 <div className="flex items-center gap-3 truncate">
