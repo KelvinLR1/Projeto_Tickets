@@ -257,6 +257,7 @@ class TimeLogCreate(TimeLogBase):
 class TimeLog(TimeLogBase):
     id: int
     user_id: int
+    status_id: Optional[int] = None
     start_time: datetime
     end_time: Optional[datetime] = None
     duration: int
@@ -265,6 +266,18 @@ class TimeLog(TimeLogBase):
 
     class Config:
         from_attributes = True
+
+class UserTime(BaseModel):
+    user_id: int
+    full_name: str
+    duration: int
+
+class StatusTimeGroup(BaseModel):
+    status_id: int
+    status_name: str
+    status_color: str
+    total_duration: int
+    users: List[UserTime]
 
 class TicketTimerStatus(BaseModel):
     ticket_id: int

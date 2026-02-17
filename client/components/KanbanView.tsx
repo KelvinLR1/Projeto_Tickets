@@ -340,7 +340,7 @@ export default function KanbanView({
                                                                                         <div className="w-2.5 h-2.5 bg-red-500 rounded-[2px] animate-pulse" />
                                                                                     </button>
                                                                                 ) : (
-                                                                                    ticket.status !== 'Finalizado' && (
+                                                                                    ticket.status !== 'Finalizado' && ticket.assigned_user_id === user?.id && (
                                                                                         <button
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();

@@ -292,30 +292,32 @@ export default function TicketList({
                                             }}
                                             className="group hover:bg-white/[0.03] transition-colors duration-300 border-b border-border-theme/20 last:border-0"
                                         >
-                                            <td className="px-8 py-6 align-top">
+                                            <td className="px-8 py-6">
                                                 <div className="flex items-center gap-4">
-                                                    <span className="font-mono text-sm font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
+                                                    <div className="w-6 flex justify-center">
+                                                        <span className="font-mono text-xs font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors leading-none">{ticket.id}</span>
+                                                    </div>
 
                                                     {/* Timer Controls */}
-                                                    <div className="flex items-center min-w-[32px]">
+                                                    <div className="flex items-center justify-center min-w-[32px] h-8">
                                                         {activeTimers.find(t => t.ticket_id === ticket.id) ? (
                                                             <button
                                                                 onClick={() => handleStopTimer(ticket.id)}
-                                                                className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all shadow-lg shadow-red-500/10"
+                                                                className="p-2.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all shadow-lg shadow-red-500/10 flex items-center justify-center"
                                                                 title="Parar Cronômetro (Pausar)"
                                                             >
-                                                                <div className="w-3 h-3 bg-red-500 rounded-sm animate-pulse" />
+                                                                <div className="w-2.5 h-2.5 bg-red-500 rounded-sm animate-pulse" />
                                                             </button>
                                                         ) : (
-                                                            ticket.status !== 'Finalizado' && (
+                                                            ticket.status !== 'Finalizado' && ticket.assigned_user_id === user?.id && (
                                                                 <button
                                                                     onClick={() => {
                                                                         handleStartTimer(ticket.id);
                                                                     }}
-                                                                    className="p-2 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                                    className="p-2.5 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-lg transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"
                                                                     title="Iniciar Cronômetro"
                                                                 >
-                                                                    <Play className="w-3 h-3 fill-current" />
+                                                                    <Play className="w-2.5 h-2.5 fill-current" />
                                                                 </button>
                                                             )
                                                         )}

@@ -173,6 +173,7 @@ class TicketTimeLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticket_id = Column(Integer, ForeignKey("tickets.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
+    status_id = Column(Integer, ForeignKey("statuses.id"), nullable=True)
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
     duration = Column(Integer, default=0) # Duração em segundos
@@ -180,6 +181,7 @@ class TicketTimeLog(Base):
 
     ticket = relationship("Ticket", back_populates="time_logs")
     user = relationship("User", back_populates="time_logs")
+    status = relationship("Status")
 
 class TicketHistory(Base):
     __tablename__ = "ticket_history"

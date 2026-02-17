@@ -3,9 +3,9 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import func
 from datetime import datetime
 try:
-    from . import models, schemas
+    from . import models, schemas, rag
 except ImportError:
-    import models, schemas
+    import models, schemas, rag
 
 def get_detailed_report_stats(db: Session):
     # Tickets por Cliente (Top 10)
@@ -291,7 +291,14 @@ def get_or_create_default_status(db: Session):
     return db_status
 
 # --- Ticket CRUD ---
-def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, sector_id: int = None, priority: str = None, category_id: int = None, q: str = None, assigned_user_id: int = None, start_date: str = None, end_date: str = None):
+def get_tickets(db: Session, skip: int = 0, limit: int = 100, 
+                status: Optional[str] = None, client_id: Optional[int] = None, 
+                unassigned_only: bool = False, exclude_finalized: bool = False, 
+                sector_id: Optional[int] = None, priority: Optional[str] = None, 
+                category_id: Optional[int] = None, q: Optional[str] = None, 
+                assigned_user_id: Optional[int] = None, start_date: Optional[str] = None, 
+                end_date: Optional[str] = None, created_by_id: Optional[int] = None, 
+                follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None):
     from sqlalchemy.orm import joinedload
     from sqlalchemy import or_
     
@@ -324,8 +331,17 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None
         query = query.filter(models.Ticket.priority == priority)
     if category_id:
         query = query.filter(models.Ticket.category_id == category_id)
-    if assigned_user_id:
+    if my_plus_unassigned_id:
+        query = query.filter(or_(
+            models.Ticket.assigned_user_id == my_plus_unassigned_id,
+            models.Ticket.assigned_user_id == None
+        ))
+    elif assigned_user_id:
         query = query.filter(models.Ticket.assigned_user_id == assigned_user_id)
+    if created_by_id:
+        query = query.filter(models.Ticket.created_by_id == created_by_id)
+    if follower_id:
+        query = query.filter(models.Ticket.followers.any(models.User.id == follower_id))
     if unassigned_only:
         query = query.filter(models.Ticket.assigned_user_id == None)
     
@@ -862,7 +878,7 @@ def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
     db.refresh(db_user)
     return db_user
 
-def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate, hashed_password: str = None):
+def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate, hashed_password: Optional[str] = None):
     db_user = get_user(db, user_id)
     if db_user:
         update_data = user_update.dict(exclude_unset=True)
@@ -893,7 +909,7 @@ def delete_user(db: Session, user_id: int):
         return True
     return False
 def reset_entities(db: Session, entities: List[str], current_user_id: int):
-    results = {"total": 0, "deleted": [], "errors": []}
+    results: Dict[str, Any] = {"total": 0, "deleted": [], "errors": []}
     
     try:
         # Ordem de deleção é importante por causa de FKs
@@ -995,9 +1011,14 @@ def start_ticket_timer(db: Session, ticket_id: int, user_id: int):
     for timer in active_timers:
         stop_ticket_timer(db, timer.ticket_id, user_id)
 
+    db_ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    if not db_ticket:
+        return None
+
     db_log = models.TicketTimeLog(
         ticket_id=ticket_id,
         user_id=user_id,
+        status_id=db_ticket.status_id,
         start_time=datetime.utcnow(),
         is_active=True
     )
@@ -1185,3 +1206,56 @@ def update_system_settings(db: Session, update: schemas.SystemSettingsUpdate):
     db.commit()
     db.refresh(settings)
     return settings
+
+
+def get_ticket_timer_stats(db: Session, ticket_id: int):
+    # Logs finalizados agrupados por status e usuário
+    logs = db.query(models.TicketTimeLog).filter(
+        models.TicketTimeLog.ticket_id == ticket_id,
+        models.TicketTimeLog.is_active == False
+    ).all()
+
+    # Estrutura de retorno: List[schemas.StatusTimeGroup]
+    stats_map: Dict[int, Any] = {}
+
+    for log in logs:
+        status_name = "Sem Status"
+        status_color = "#9ca3af"
+        status_id = 0
+
+        if log.status:
+            status_name = log.status.name
+            status_color = log.status.color
+            status_id = log.status.id
+
+        if status_id not in stats_map:
+            stats_map[status_id] = {
+                "status_id": status_id,
+                "status_name": status_name,
+                "status_color": status_color,
+                "total_duration": 0,
+                "users": {}
+            }
+
+        group = stats_map[status_id]
+        group["total_duration"] += log.duration
+
+        user_id = log.user_id
+        user_name = log.user.full_name or log.user.username
+
+        if user_id not in group["users"]:
+            group["users"][user_id] = {
+                "user_id": user_id,
+                "full_name": user_name,
+                "duration": 0
+            }
+
+        group["users"][user_id]["duration"] += log.duration
+
+    # Converte maps para listas
+    result = []
+    for s_data in stats_map.values():
+        s_data["users"] = list(s_data["users"].values())
+        result.append(s_data)
+
+    return result

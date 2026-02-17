@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { TimeLog, Ticket, startTimer, stopTimer, getActiveTimers, getTicket } from '@/lib/api';
+import { TimeLog, Ticket, startTimer, stopTimer, getActiveTimers, getTicket, getTickets } from '@/lib/api';
 import { useAuth } from './AuthProvider';
 import { useNotification } from './NotificationProvider';
 import TimerWidget from './TimerWidget';
@@ -14,7 +14,9 @@ interface TrackedTicket {
     title: string;
     clientName: string;
     total_duration: number;
+    session_duration: number;
     status: string;
+    assigned_user_id?: number | null;
 }
 
 interface TimerContextType {
@@ -52,31 +54,46 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         try {
+            // Busca apenas timers ativos do usuário
             const timers = await getActiveTimers();
+
             setActiveTimers(timers);
 
-            // Sincroniza os tickets que já possuem timers ativos com o widget
-            if (timers.length > 0) {
-                setTrackedTickets(prev => {
-                    const newTracked = [...prev];
-                    timers.forEach(timer => {
-                        if (timer.ticket && !newTracked.find(t => t.id === timer.ticket_id)) {
-                            newTracked.push({
-                                id: timer.ticket_id,
-                                title: timer.ticket.title,
-                                clientName: timer.ticket.client?.name || 'Cliente não identificado',
-                                total_duration: timer.ticket.total_duration || 0,
-                                status: timer.ticket.status
-                            });
-                        }
-                    });
-                    return newTracked;
+            // Sincroniza trackedTickets com timers ativos e tickets atribuídos
+            setTrackedTickets(prev => {
+                const newTracked = [...prev];
+
+                // Função auxiliar para adicionar ticket se não existir
+                const addIfMissing = (ticket: any) => {
+                    if (ticket && !newTracked.find(t => t.id === ticket.id)) {
+                        newTracked.push({
+                            id: ticket.id,
+                            title: ticket.title,
+                            clientName: ticket.client?.name || 'Cliente externo',
+                            total_duration: ticket.total_duration || 0,
+                            session_duration: 0,
+                            status: ticket.status,
+                            assigned_user_id: ticket.assigned_user_id
+                        });
+                    }
+                };
+
+                // 1. Adiciona tickets com timers ativos
+                timers.forEach(timer => {
+                    if (timer.ticket) {
+                        addIfMissing({
+                            ...timer.ticket,
+                            id: timer.ticket_id // Garante ID correto
+                        });
+                    }
                 });
-            }
+
+                return newTracked;
+            });
         } catch (error: any) {
             // Silencia 401 pois o AuthProvider lida com redirecionamento
             if (error.response?.status !== 401) {
-                console.error('Erro ao buscar timers ativos:', error);
+                console.error('Erro ao buscar dados do widget:', error);
             }
         }
     }, [user, loading]);
@@ -98,6 +115,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 return;
             }
 
+            if (ticketData.assigned_user_id !== user?.id) {
+                showNotification('Apenas o responsável pelo chamado pode iniciar o cronômetro.', 'error');
+                return;
+            }
+
             const newTimer = await startTimer(ticketId);
             setActiveTimers(prev => [...prev.filter(t => t.ticket_id !== ticketId), newTimer]);
 
@@ -108,7 +130,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     title: ticketData.title,
                     clientName: ticketData.client?.name || 'Cliente não identificado',
                     total_duration: ticketData.total_duration || 0,
-                    status: ticketData.status
+                    session_duration: prev.find(t => t.id === ticketId)?.session_duration || 0,
+                    status: ticketData.status,
+                    assigned_user_id: ticketData.assigned_user_id
                 };
                 if (!prev.find(t => t.id === ticketId)) {
                     return [...prev, updated];
@@ -124,17 +148,37 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const handleStopTimer = async (ticketId: number, remove: boolean = false) => {
         try {
-            await stopTimer(ticketId);
+            // Tenta parar o cronômetro no backend. 
+            // Se já estiver parado, o backend retorna 400, mas ignoramos para permitir a finalização/limpeza local.
+            try {
+                await stopTimer(ticketId);
+            } catch (e) {
+                console.log('Cronômetro já estava parado ou erro ao parar:', e);
+            }
 
             // Busca dados atualizados do ticket para pegar o novo total_duration
             const ticketData = await getTicket(ticketId);
 
             // Atualiza trackedTickets antes para evitar o reset visual
-            setTrackedTickets(prev => prev.map(t => t.id === ticketId ? {
-                ...t,
-                total_duration: ticketData.total_duration || 0,
-                status: ticketData.status
-            } : t));
+            setTrackedTickets(prev => prev.map(t => {
+                if (t.id === ticketId) {
+                    const activeTimer = activeTimers.find(at => at.ticket_id === ticketId);
+                    let sessionDuration = t.session_duration;
+                    if (activeTimer) {
+                        const dateStr = activeTimer.start_time.endsWith('Z') ? activeTimer.start_time : activeTimer.start_time + 'Z';
+                        const start = new Date(dateStr).getTime();
+                        const elapsed = Math.max(0, Math.floor((Date.now() - start) / 1000));
+                        sessionDuration += elapsed;
+                    }
+                    return {
+                        ...t,
+                        total_duration: ticketData.total_duration || 0,
+                        session_duration: sessionDuration,
+                        status: ticketData.status
+                    };
+                }
+                return t;
+            }));
 
             // Só agora remove dos timers ativos
             setActiveTimers(prev => prev.filter(t => t.ticket_id !== ticketId));

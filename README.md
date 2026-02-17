@@ -111,4 +111,32 @@ O backend (FastAPI) gera automaticamente documentações interativas que permite
 ```
 
 ---
+
+## 🛠️ Scripts Auxiliares
+
+Na raiz do projeto, você encontrará diversos scripts Python criados para auxiliar no desenvolvimento, manutenção e diagnóstico do sistema:
+
+### 🔍 Diagnóstico e Ambiente
+- `check_env.py`: **O mais importante.** Verifica o ambiente (Python, Node, Ollama), venv e integridade do banco de dados com auto-correção de esquema.
+- `check_imports.py` & `diagnose.py`: Utilitários para validar se o sistema de módulos e imports está funcionando corretamente.
+- `debug_server.py`: Ferramenta para testar a inicialização do backend isoladamente.
+
+### 🗄️ Banco de Dados e Migração
+- `migrate_db.py` & `fix_schema_comprehensive.py`: Scripts para atualizar o banco de dados conforme o sistema evolui (migrações).
+- `backfill_status.py`: Converte tickets antigos para o novo sistema dinâmico de Status.
+- `check_schema.py`, `check_db_v2.py`: Permitem inspecionar rapidamente as tabelas e colunas do SQLite.
+- `list_users.py`: Lista todos os usuários cadastrados para conferência de acesso.
+
+### 🧪 Testes e Demonstração
+- `seed_demo_clients.py`: Popula automaticamente o sistema com clientes fictícios para demonstração.
+- `test_create_ticket.py`, `test_create_simple.py`: Simulam a criação de chamados via API.
+- `test_login_root.py`, `test_full_auth.py`: Validam o funcionamento do sistema de login e tokens JWT.
+- `test_timer_*.py`: Testam as funcionalidades de cronômetro e log de tempo nos tickets.
+
+### ✅ Verificação de Integridade
+- `verify_backup.py`: Testa o motor de compressão e restauração do banco de dados.
+- `verify_rbac_seed.py`: Garante que os perfis de acesso (RBAC) e permissões padrão foram semeados corretamente.
+- `check_tickets_debug.py`: Gera um relatório em TXT (`debug_formatted.txt`) sobre a consistência dos tickets no banco.
+
+---
 *Desenvolvido com foco em privacidade, velocidade e experiência estética premium.*

@@ -299,6 +299,9 @@ export interface GetTicketsParams {
   q?: string;
   status?: string;
   assignedUserId?: number;
+  createdById?: number;
+  followerId?: number;
+  myPlusUnassignedId?: number;
   startDate?: string;
   endDate?: string;
   skip?: number;
@@ -315,6 +318,9 @@ export const getTickets = async (params: GetTicketsParams = {}) => {
       priority: params.priority || undefined,
       category_id: params.categoryId,
       assigned_user_id: params.assignedUserId,
+      created_by_id: params.createdById,
+      follower_id: params.followerId,
+      my_plus_unassigned_id: params.myPlusUnassignedId,
       start_date: params.startDate,
       end_date: params.endDate,
       q: params.q || undefined,
@@ -612,6 +618,20 @@ export interface TimeLog {
   ticket?: Ticket;
 }
 
+export interface UserTime {
+  user_id: number;
+  full_name: string;
+  duration: number;
+}
+
+export interface StatusTimeGroup {
+  status_id: number;
+  status_name: string;
+  status_color: string;
+  total_duration: number;
+  users: UserTime[];
+}
+
 export interface Notification {
   id: number;
   user_id: number;
@@ -648,6 +668,11 @@ export const stopTimer = async (ticketId: number) => {
 
 export const getActiveTimers = async () => {
   const response = await api.get<TimeLog[]>('/tickets/timers/active');
+  return response.data;
+};
+
+export const getTicketTimerStats = async (ticketId: number) => {
+  const response = await api.get<StatusTimeGroup[]>(`/tickets/${ticketId}/timer/stats`);
   return response.data;
 };
 

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector, followTicket, unfollowTicket } from '@/lib/api';
+import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector, followTicket, unfollowTicket, getTicketTimerStats, StatusTimeGroup } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users } from 'lucide-react';
@@ -12,14 +12,16 @@ import clsx from 'clsx';
 import { useNotification } from '@/components/NotificationProvider';
 import CustomSelect from '@/components/CustomSelect';
 import CategorySelect from '@/components/CategorySelect';
+import { useTimer } from '@/components/TimerProvider';
 import { useAuth } from '@/components/AuthProvider';
-import { Flag } from 'lucide-react';
+import { Flag, Play, Pause } from 'lucide-react';
 
 export default function TicketDetailsPage() {
     const params = useParams();
     const router = useRouter();
     const { showNotification, confirm: askConfirm } = useNotification();
     const { user } = useAuth();
+    const { activeTimers, handleStartTimer, handleStopTimer } = useTimer();
 
     const [ticket, setTicket] = useState<Ticket | null>(null);
     const [loading, setLoading] = useState(true);
@@ -37,7 +39,9 @@ export default function TicketDetailsPage() {
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [updatingPriority, setUpdatingPriority] = useState(false);
     const [updatingCategory, setUpdatingCategory] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'history' | 'timer'>('details');
+    const [timerStats, setTimerStats] = useState<StatusTimeGroup[]>([]);
+    const [loadingTimerStats, setLoadingTimerStats] = useState(false);
     const [history, setHistory] = useState<TicketHistory[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
@@ -86,6 +90,42 @@ export default function TicketDetailsPage() {
             loadData();
         }
     }, [params.id]);
+
+    const formatDuration = (seconds: number) => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const fetchHistory = async () => {
+        setLoadingHistory(true);
+        try {
+            const data = await getTicketHistory(parseInt(params.id as string));
+            setHistory(data);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    const fetchTimerStats = async () => {
+        setLoadingTimerStats(true);
+        try {
+            const data = await getTicketTimerStats(parseInt(params.id as string));
+            setTimerStats(data);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoadingTimerStats(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'history') fetchHistory();
+        if (activeTab === 'timer') fetchTimerStats();
+    }, [activeTab]);
 
     const loadData = async (silent = false) => {
         if (!silent) setLoading(true);
@@ -150,8 +190,9 @@ export default function TicketDetailsPage() {
                 setCategory(foundCat || null);
             }
 
-            // Carrega histórico
-            fetchHistory();
+            // Carrega histórico e estatísticas se necessário
+            if (activeTab === 'history') fetchHistory();
+            if (activeTab === 'timer') fetchTimerStats();
 
         } catch (error) {
             console.error('Failed to load ticket details:', error);
@@ -262,17 +303,6 @@ export default function TicketDetailsPage() {
         }
     };
 
-    const fetchHistory = async () => {
-        setLoadingHistory(true);
-        try {
-            const historyData = await getTicketHistory(parseInt(params.id as string));
-            setHistory(historyData);
-        } catch (error) {
-            console.error('Erro ao buscar histórico:', error);
-        } finally {
-            setLoadingHistory(false);
-        }
-    };
 
     const loadClientTickets = async (clientId: number) => {
         setLoadingClientTickets(true);
@@ -711,6 +741,27 @@ export default function TicketDetailsPage() {
                                         {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'Não Atribuído'}
                                     </p>
                                 </div>
+                                {ticket.assigned_user_id === user?.id && (
+                                    <div className="flex items-center gap-2">
+                                        {activeTimers.some(t => t.ticket_id === ticket.id) ? (
+                                            <button
+                                                onClick={() => handleStopTimer(ticket.id)}
+                                                className="w-12 h-12 rounded-2xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 border border-orange-500/30 flex items-center justify-center transition-all active:scale-95 group/timer shadow-lg shadow-orange-500/5"
+                                                title="Pausar Cronômetro"
+                                            >
+                                                <Pause className="w-6 h-6 fill-current" />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleStartTimer(ticket.id)}
+                                                className="w-12 h-12 rounded-2xl bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/30 flex items-center justify-center transition-all active:scale-95 group/timer shadow-lg shadow-green-500/5"
+                                                title="Iniciar Cronômetro"
+                                            >
+                                                <Play className="w-6 h-6 fill-current ml-1" />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                                 {!ticket.assigned_user && (
                                     <button
                                         onClick={handleSelfAssignment}
@@ -770,6 +821,25 @@ export default function TicketDetailsPage() {
                                     </span>
                                 )}
                                 {activeTab === 'history' && (
+                                    <motion.div
+                                        layoutId="active-tab"
+                                        className="absolute inset-0 bg-foreground rounded-[1.5rem] -z-10 shadow-lg shadow-white/5"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('timer')}
+                                className={clsx(
+                                    "relative z-10 flex items-center gap-2.5 px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all",
+                                    activeTab === 'timer'
+                                        ? "text-background"
+                                        : "text-gray-500 hover:text-foreground hover:bg-white/5"
+                                )}
+                            >
+                                <Clock className="w-4 h-4" />
+                                Cronômetro
+                                {activeTab === 'timer' && (
                                     <motion.div
                                         layoutId="active-tab"
                                         className="absolute inset-0 bg-foreground rounded-[1.5rem] -z-10 shadow-lg shadow-white/5"
@@ -920,7 +990,7 @@ export default function TicketDetailsPage() {
                                             })()}
                                         </div>
                                     </motion.div>
-                                ) : (
+                                ) : activeTab === 'history' ? (
                                     <motion.div
                                         key="history"
                                         initial={{ opacity: 0, y: 10 }}
@@ -1015,6 +1085,65 @@ export default function TicketDetailsPage() {
                                                         </div>
                                                     );
                                                 })}
+                                            </div>
+                                        )}
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="timer"
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        transition={{ duration: 0.3 }}
+                                        className="flex-1 flex flex-col min-h-0"
+                                    >
+                                        <div className="flex items-center gap-3 pb-6 mb-4 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-6 pt-6">
+                                            <Clock className="w-4 h-4 text-accent-theme" />
+                                            Análise de Tempo por Etapa
+                                        </div>
+
+                                        {loadingTimerStats ? (
+                                            <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-30">
+                                                <Loader2 className="w-10 h-10 animate-spin" />
+                                                <p className="text-[10px] font-black uppercase tracking-widest">Carregando dados...</p>
+                                            </div>
+                                        ) : timerStats.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-20 italic">
+                                                <Clock className="w-16 h-16" />
+                                                <p className="text-sm">Nenhum registro de tempo finalizado.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-6 pr-4 flex-1 overflow-y-auto custom-scrollbar min-h-0">
+                                                {timerStats.map((group) => (
+                                                    <div key={group.status_id} className="glass-card p-6 rounded-[2rem] border border-white/5 bg-white/[0.01]">
+                                                        <div className="flex items-center justify-between mb-6">
+                                                            <div className="flex items-center gap-3">
+                                                                <div
+                                                                    className="w-3 h-3 rounded-full"
+                                                                    style={{ backgroundColor: group.status_color }}
+                                                                />
+                                                                <span className="text-xs font-black uppercase tracking-wider">{group.status_name}</span>
+                                                            </div>
+                                                            <div className="px-3 py-1.5 rounded-xl bg-accent-theme/10 border border-accent-theme/20">
+                                                                <span className="text-xs font-black text-accent-theme">{formatDuration(group.total_duration)}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-3">
+                                                            {group.users.map((userTime) => (
+                                                                <div key={userTime.user_id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
+                                                                            <User className="w-4 h-4 text-gray-500" />
+                                                                        </div>
+                                                                        <span className="text-[11px] font-bold text-gray-400">{userTime.full_name}</span>
+                                                                    </div>
+                                                                    <span className="text-[11px] font-black tabular-nums">{formatDuration(userTime.duration)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
                                     </motion.div>

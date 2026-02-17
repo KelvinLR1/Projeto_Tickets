@@ -3,10 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, Square, Clock, ChevronRight } from 'lucide-react';
 import { useTimer } from './TimerProvider';
+import { useAuth } from './AuthProvider';
 import clsx from 'clsx';
 
 const TimerWidget: React.FC = () => {
     const { activeTimers, trackedTickets, handleStartTimer, handleStopTimer, removeFromWidget } = useTimer();
+    const { user } = useAuth();
     const [currentTime, setCurrentTime] = useState(new Date());
 
     useEffect(() => {
@@ -23,16 +25,16 @@ const TimerWidget: React.FC = () => {
 
     const getTicketDisplayTime = (ticket: any) => {
         const activeTimer = activeTimers.find(t => t.ticket_id === ticket.id);
-        const baseDuration = ticket.total_duration || 0;
+        const sessionBase = ticket.session_duration || 0;
 
         if (activeTimer) {
             const dateStr = activeTimer.start_time.endsWith('Z') ? activeTimer.start_time : activeTimer.start_time + 'Z';
             const start = new Date(dateStr).getTime();
             const elapsedSinceStart = Math.max(0, Math.floor((currentTime.getTime() - start) / 1000));
-            return baseDuration + elapsedSinceStart;
+            return sessionBase + elapsedSinceStart;
         }
 
-        return baseDuration;
+        return sessionBase;
     };
 
     return (
@@ -99,13 +101,15 @@ const TimerWidget: React.FC = () => {
                                             <span className="text-[9px] font-black uppercase tracking-widest">Pausar</span>
                                         </button>
                                     ) : (
-                                        <button
-                                            onClick={() => handleStartTimer(ticket.id)}
-                                            className="flex-1 py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-xl transition-all flex items-center justify-center gap-2 border border-green-500/20"
-                                        >
-                                            <Play className="w-3 h-3 fill-current" />
-                                            <span className="text-[9px] font-black uppercase tracking-widest">Retomar</span>
-                                        </button>
+                                        ticket.assigned_user_id === user?.id && (
+                                            <button
+                                                onClick={() => handleStartTimer(ticket.id)}
+                                                className="flex-1 py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-xl transition-all flex items-center justify-center gap-2 border border-green-500/20"
+                                            >
+                                                <Play className="w-3 h-3 fill-current" />
+                                                <span className="text-[9px] font-black uppercase tracking-widest">Retomar</span>
+                                            </button>
+                                        )
                                     )}
 
                                     <button

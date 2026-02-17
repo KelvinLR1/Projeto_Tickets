@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import TicketList from '@/components/TicketList';
 import KanbanView from '@/components/KanbanView';
-import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag, LayoutGrid, List, Users } from 'lucide-react';
+import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCircle2, AlertOctagon, Tag, LayoutGrid, List, Users, User } from 'lucide-react';
 import { getCategories, Category, getStatuses, Status, getTickets, Ticket, getSectors, Sector } from '@/lib/api';
 import CustomSelect from '@/components/CustomSelect';
 import CategorySelect from '@/components/CategorySelect';
@@ -43,6 +43,12 @@ export default function TicketsPage() {
     const [assignedUserFilter, setAssignedUserFilter] = useState<number | undefined>(undefined);
     const [clientFilter, setClientFilter] = useState<number | undefined>(undefined);
     const [unassignedOnly, setUnassignedOnly] = useState(false);
+    const [filterScope, setFilterScope] = useState<'my_plus_unassigned' | 'all'>(() => {
+        if (typeof window !== 'undefined') {
+            return (localStorage.getItem('tickets_filter_scope') as 'my_plus_unassigned' | 'all') || 'my_plus_unassigned';
+        }
+        return 'my_plus_unassigned';
+    });
     const [attendants, setAttendants] = useState<{ id: number; name: string }[]>([]);
     const [clients, setClients] = useState<{ id: number; name: string }[]>([]);
     const [startDate, setStartDate] = useState('');
@@ -54,6 +60,10 @@ export default function TicketsPage() {
     useEffect(() => {
         localStorage.setItem('tickets_view_mode', viewMode);
     }, [viewMode]);
+
+    useEffect(() => {
+        localStorage.setItem('tickets_filter_scope', filterScope);
+    }, [filterScope]);
 
     useEffect(() => {
         if (sectorFilter !== undefined) {
@@ -98,19 +108,26 @@ export default function TicketsPage() {
 
             setLoading(true);
             try {
-                const params = {
+                const params: any = {
                     sectorId: sectorFilter,
                     priority: priorityFilter || undefined,
                     categoryId: categoryFilter,
                     q: searchTerm || undefined,
                     status: statusFilter || undefined,
                     excludeFinalized: excludeFinalized,
-                    assignedUserId: assignedUserFilter,
                     clientId: clientFilter,
                     unassignedOnly: unassignedOnly,
                     startDate: startDate || undefined,
                     endDate: endDate || undefined
                 };
+
+                // Aplica lógica de escopo
+                if (filterScope === 'all') {
+                    params.assignedUserId = assignedUserFilter;
+                } else {
+                    // Por padrão, mostra meus tickets + sem responsável
+                    params.myPlusUnassignedId = user?.id;
+                }
 
                 const [catsData, statusesData, ticketsData] = await Promise.all([
                     getCategories(sectorFilter),
@@ -139,7 +156,7 @@ export default function TicketsPage() {
             ignore = true;
             clearTimeout(timeoutId);
         };
-    }, [sectorFilter, statusFilter, priorityFilter, categoryFilter, searchTerm, excludeFinalized, assignedUserFilter, clientFilter, unassignedOnly, startDate, endDate]);
+    }, [sectorFilter, statusFilter, priorityFilter, categoryFilter, searchTerm, excludeFinalized, assignedUserFilter, clientFilter, unassignedOnly, startDate, endDate, filterScope, user?.id]);
 
     const loadData = () => {
         // Redundant
@@ -154,37 +171,82 @@ export default function TicketsPage() {
         setUnassignedOnly(false);
         setStartDate('');
         setEndDate('');
+        setFilterScope('my_plus_unassigned');
     };
 
-    const hasActiveFilters = !!(statusFilter || priorityFilter || categoryFilter || assignedUserFilter || clientFilter || unassignedOnly || startDate || endDate);
+    const hasActiveFilters = !!(statusFilter || priorityFilter || categoryFilter || assignedUserFilter || clientFilter || unassignedOnly || startDate || endDate || filterScope !== 'my_plus_unassigned');
 
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
             <div className="max-w-7xl mx-auto space-y-10">
 
                 {/* Header Area */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
+                <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-8 pb-10 border-b border-border-theme">
                     <div className="space-y-2">
                         <h1 className="text-5xl font-black font-display tracking-tight italic uppercase">
                             Gestão de <span className="text-accent-theme">Chamados</span>
                         </h1>
-                        <p className="text-[var(--color-text-muted)] text-sm font-medium mt-1">Monitore e resolva os tickets solicitados pelos clientes.</p>
+                        <p className="text-[var(--color-text-muted)] text-sm font-medium mt-1">
+                            Monitore e resolva os tickets solicitados pelos clientes.
+                        </p>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
+                        {/* Filter Scope Toggle */}
+                        <div className="flex bg-card/50 border border-border-theme p-1 rounded-2xl backdrop-blur-sm self-center h-fit shadow-inner">
+                            <button
+                                onClick={() => setFilterScope('my_plus_unassigned')}
+                                className={clsx(
+                                    "relative z-10 flex items-center justify-center w-12 h-12 rounded-xl transition-all",
+                                    filterScope === 'my_plus_unassigned'
+                                        ? "text-white"
+                                        : "text-[var(--color-text-muted)] hover:text-foreground"
+                                )}
+                                title="Meus Atendimentos"
+                            >
+                                <User className="w-5 h-5" />
+                                {filterScope === 'my_plus_unassigned' && (
+                                    <motion.div
+                                        layoutId="filter-scope-active"
+                                        className="absolute inset-0 bg-accent-theme rounded-xl -z-10 shadow-lg shadow-accent-theme/20"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setFilterScope('all')}
+                                className={clsx(
+                                    "relative z-10 flex items-center justify-center w-12 h-12 rounded-xl transition-all",
+                                    filterScope === 'all'
+                                        ? "text-white"
+                                        : "text-[var(--color-text-muted)] hover:text-foreground"
+                                )}
+                                title="Todos os Tickets"
+                            >
+                                <Users className="w-5 h-5 opacity-50" />
+                                {filterScope === 'all' && (
+                                    <motion.div
+                                        layoutId="filter-scope-active"
+                                        className="absolute inset-0 bg-accent-theme rounded-xl -z-10 shadow-lg shadow-accent-theme/20"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
+                            </button>
+                        </div>
+
                         {/* View Mode Toggle */}
-                        <div className="flex bg-card/50 border border-border-theme p-1.5 rounded-2xl backdrop-blur-sm self-center h-fit">
+                        <div className="flex bg-card/50 border border-border-theme p-1 rounded-2xl backdrop-blur-sm self-center h-fit shadow-inner">
                             <button
                                 onClick={() => setViewMode('list')}
                                 className={clsx(
-                                    "relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
+                                    "relative z-10 flex items-center justify-center w-12 h-12 rounded-xl transition-all",
                                     viewMode === 'list'
                                         ? "text-white"
                                         : "text-[var(--color-text-muted)] hover:text-foreground"
                                 )}
+                                title="Visualização em Lista"
                             >
-                                <List className="w-4 h-4" />
-                                <span className="hidden sm:inline">Lista</span>
+                                <List className="w-5 h-5" />
                                 {viewMode === 'list' && (
                                     <motion.div
                                         layoutId="view-mode-active"
@@ -196,14 +258,14 @@ export default function TicketsPage() {
                             <button
                                 onClick={() => setViewMode('kanban')}
                                 className={clsx(
-                                    "relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all",
+                                    "relative z-10 flex items-center justify-center w-12 h-12 rounded-xl transition-all",
                                     viewMode === 'kanban'
                                         ? "text-white"
                                         : "text-[var(--color-text-muted)] hover:text-foreground"
                                 )}
+                                title="Visualização em Kanban"
                             >
-                                <LayoutGrid className="w-4 h-4" />
-                                <span className="hidden sm:inline">Kanban</span>
+                                <LayoutGrid className="w-5 h-5" />
                                 {viewMode === 'kanban' && (
                                     <motion.div
                                         layoutId="view-mode-active"
@@ -216,10 +278,10 @@ export default function TicketsPage() {
 
                         <Link
                             href="/tickets/new"
-                            className="flex items-center justify-center gap-3 px-10 py-5 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95"
+                            className="flex items-center justify-center gap-3 px-8 h-12 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95 ml-2"
                         >
-                            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-                            NOVO TICKET
+                            <Plus className="w-5 h-5" />
+                            <span className="hidden md:inline">NOVO TICKET</span>
                         </Link>
                     </div>
                 </div>

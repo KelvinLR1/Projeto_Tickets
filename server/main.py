@@ -10,7 +10,7 @@ import asyncio
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from fastapi import Request, Response
 
 # Importando módulos locais (sem ponto inicial se rodar como script, 
@@ -413,8 +413,16 @@ def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depen
     return crud.create_ticket_simple(db=db, ticket=ticket)
 
 @app.get("/tickets/", response_model=List[schemas.Ticket])
-def read_tickets(skip: int = 0, limit: int = 100, q: str = None, status: str = None, client_id: int = None, sector_id: int = None, priority: str = None, category_id: int = None, assigned_user_id: int = None, start_date: str = None, end_date: str = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db)):
-    tickets = crud.get_tickets(db, skip=skip, limit=limit, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, assigned_user_id=assigned_user_id, start_date=start_date, end_date=end_date, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
+def read_tickets(skip: int = 0, limit: int = 100, 
+                 q: Optional[str] = None, status: Optional[str] = None, 
+                 client_id: Optional[int] = None, sector_id: Optional[int] = None, 
+                 priority: Optional[str] = None, category_id: Optional[int] = None, 
+                 assigned_user_id: Optional[int] = None, created_by_id: Optional[int] = None, 
+                 follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None, 
+                 start_date: Optional[str] = None, end_date: Optional[str] = None, 
+                 unassigned_only: bool = False, exclude_finalized: bool = False, 
+                 db: Session = Depends(get_db)):
+    tickets = crud.get_tickets(db, skip=skip, limit=limit, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, assigned_user_id=assigned_user_id, created_by_id=created_by_id, follower_id=follower_id, my_plus_unassigned_id=my_plus_unassigned_id, start_date=start_date, end_date=end_date, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
     return tickets
 
 @app.get("/dashboard/stats")
@@ -507,6 +515,8 @@ def export_tickets(format: str = "csv", db: Session = Depends(get_db), current_u
         )
     
     else: # Default CSV
+        output = StringIO()
+        df.to_csv(output, index=False, encoding='utf-8-sig')
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode('utf-8-sig')),
             media_type="text/csv",
@@ -612,6 +622,11 @@ def delete_ticket(ticket_id: int, db: Session = Depends(get_db)):
 # --- Timer Endpoints ---
 @app.post("/tickets/{ticket_id}/timer/start", response_model=schemas.TimeLog)
 def start_timer(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    db_ticket = crud.get_ticket(db, ticket_id=ticket_id)
+    if not db_ticket:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+    if db_ticket.assigned_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Apenas o responsável pelo chamado pode iniciar o cronômetro")
     return crud.start_ticket_timer(db=db, ticket_id=ticket_id, user_id=current_user.id)
 
 @app.post("/tickets/{ticket_id}/timer/stop", response_model=schemas.TimeLog)
@@ -624,6 +639,10 @@ def stop_timer(ticket_id: int, db: Session = Depends(get_db), current_user: mode
 @app.get("/tickets/timers/active", response_model=List[schemas.TimeLog])
 def get_active_timers(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_active_timers(db=db, user_id=current_user.id)
+
+@app.get("/tickets/{ticket_id}/timer/stats", response_model=List[schemas.StatusTimeGroup])
+def get_timer_stats(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_ticket_timer_stats(db=db, ticket_id=ticket_id)
 
 # --- Ticket Follower Endpoints ---
 @app.post("/tickets/{ticket_id}/follow", response_model=schemas.Ticket)
@@ -736,7 +755,7 @@ def search_knowledge(query: str, limit: int = 3):
             sql_kb_docs = crud.search_knowledge_documents(session, query=query, limit=limit)
             sql_tickets = crud.search_tickets(session, query=query, limit=limit)
 
-    unified_results = {
+    unified_results: Dict[str, Any] = {
         "documents": [[], []], # 0: KB, 1: Tickets
         "metadatas": [[], []],
         "ids": [[], []],
