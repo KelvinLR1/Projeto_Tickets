@@ -119,7 +119,7 @@ def health_check():
 
 # --- Auth Endpoints ---
 @app.post("/token", response_model=schemas.Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     # Na verdade, precisamos buscar o usuário primeiro
     db_user = crud.get_user_by_username(db, username=form_data.username)
     if not db_user or not auth.verify_password(form_data.password, db_user.hashed_password):
@@ -133,37 +133,37 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 # --- Users Endpoints ---
 @app.get("/users/me", response_model=schemas.User)
-async def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
+def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
 
 @app.get("/users/", response_model=List[schemas.User])
-async def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
 
 @app.get("/users/attendants")
-async def read_attendants(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    users = crud.get_users_short(db)
+def read_attendants(sector_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    users = crud.get_users_short(db, sector_id=sector_id)
     return [{"id": u[0], "name": u[1] or u[2]} for u in users]
 
 # --- Sectors Endpoints ---
 @app.get("/sectors/", response_model=List[schemas.Sector])
-async def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_sectors(db, skip=skip, limit=limit)
 
 @app.post("/sectors/", response_model=schemas.Sector)
-async def create_sector(sector: schemas.SectorCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def create_sector(sector: schemas.SectorCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_sector(db=db, sector=sector)
 
 @app.put("/sectors/{sector_id}", response_model=schemas.Sector)
-async def update_sector(sector_id: int, sector: schemas.SectorUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def update_sector(sector_id: int, sector: schemas.SectorUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_sector = crud.update_sector(db=db, sector_id=sector_id, sector_update=sector)
     if not db_sector:
         raise HTTPException(status_code=404, detail="Setor não encontrado")
     return db_sector
 
 @app.delete("/sectors/{sector_id}")
-async def delete_sector(sector_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def delete_sector(sector_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success, message = crud.delete_sector(db, sector_id)
     if not success:
         if "não encontrado" in message:
@@ -172,7 +172,7 @@ async def delete_sector(sector_id: int, db: Session = Depends(get_db), current_u
     return {"message": message}
 
 @app.post("/users/", response_model=schemas.User)
-async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_user = crud.get_user_by_username(db, username=user.username)
     if db_user:
         raise HTTPException(status_code=400, detail="Nome de usuário já registrado")
@@ -184,7 +184,7 @@ async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), c
     return crud.create_user(db=db, user=user, hashed_password=hashed_password)
 
 @app.put("/users/{user_id}", response_model=schemas.User)
-async def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     # Apenas ROOT pode editar outros ADMINs ou mudar roles para ROOT
     if user.role == "ROOT" and current_user.role != "ROOT":
          raise HTTPException(status_code=403, detail="Apenas usuários ROOT podem criar outros ROOT")
@@ -199,7 +199,7 @@ async def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Sessi
     return db_user
 
 @app.delete("/users/{user_id}")
-async def delete_user_endpoint(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+def delete_user_endpoint(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     success = crud.delete_user(db=db, user_id=user_id)
     if not success:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -374,8 +374,8 @@ def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depen
     return crud.create_ticket_simple(db=db, ticket=ticket)
 
 @app.get("/tickets/", response_model=List[schemas.Ticket])
-def read_tickets(skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db)):
-    tickets = crud.get_tickets(db, skip=skip, limit=limit, status=status, client_id=client_id, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
+def read_tickets(skip: int = 0, limit: int = 100, q: str = None, status: str = None, client_id: int = None, sector_id: int = None, priority: str = None, category_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db)):
+    tickets = crud.get_tickets(db, skip=skip, limit=limit, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
     return tickets
 
 @app.get("/dashboard/stats")
@@ -573,6 +573,63 @@ def stop_timer(ticket_id: int, db: Session = Depends(get_db), current_user: mode
 @app.get("/tickets/timers/active", response_model=List[schemas.TimeLog])
 def get_active_timers(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_active_timers(db=db, user_id=current_user.id)
+
+# --- Ticket Follower Endpoints ---
+@app.post("/tickets/{ticket_id}/follow", response_model=schemas.Ticket)
+def follow_ticket(
+    ticket_id: int, 
+    user_id: Optional[int] = None,
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    # Determine which user to add
+    target_user_id = user_id if user_id else current_user.id
+    
+    # If adding someone else, verify permissions
+    if target_user_id != current_user.id:
+        ticket = crud.get_ticket(db, ticket_id)
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket não encontrado")
+            
+        # Only assigned user or admin can add others
+        is_assigned = ticket.assigned_user_id == current_user.id
+        is_admin = current_user.role in ["ADMIN", "ROOT"]
+        
+        if not (is_assigned or is_admin):
+            raise HTTPException(status_code=403, detail="Apenas o responsável ou admins podem adicionar outros acompanhantes.")
+
+    success, ticket = crud.add_ticket_follower(db=db, ticket_id=ticket_id, user_id=target_user_id, actor_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Erro ao adicionar acompanhante ou usuário já segue o ticket.")
+    return ticket
+
+@app.post("/tickets/{ticket_id}/unfollow", response_model=schemas.Ticket)
+def unfollow_ticket(
+    ticket_id: int, 
+    user_id: Optional[int] = None,
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    # Determine which user to remove
+    target_user_id = user_id if user_id else current_user.id
+    
+    # If removing someone else, verify permissions
+    if target_user_id != current_user.id:
+        ticket = crud.get_ticket(db, ticket_id)
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket não encontrado")
+            
+        # Only assigned user or admin can remove others
+        is_assigned = ticket.assigned_user_id == current_user.id
+        is_admin = current_user.role in ["ADMIN", "ROOT"]
+        
+        if not (is_assigned or is_admin):
+            raise HTTPException(status_code=403, detail="Apenas o responsável ou admins podem remover outros acompanhantes.")
+
+    success, ticket = crud.remove_ticket_follower(db=db, ticket_id=ticket_id, user_id=target_user_id, actor_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Erro ao remover acompanhante ou usuário não segue o ticket.")
+    return ticket
 
 # --- Knowledge Base Endpoints ---
 @app.get("/knowledge/", response_model=List[schemas.KnowledgeDocument])

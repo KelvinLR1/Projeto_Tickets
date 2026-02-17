@@ -143,6 +143,7 @@ class Ticket(TicketBase):
     created_by_id: Optional[int] = None
     created_by: Optional['User'] = None
     messages: List[TicketMessage] = []
+    followers: List['User'] = []
     total_duration: int = 0
     active_timer: Optional['TimeLog'] = None
 

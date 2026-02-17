@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, JSON, Table
 from sqlalchemy.orm import relationship
 from typing import Optional
 from datetime import datetime
@@ -57,6 +57,14 @@ class Status(Base):
     tickets = relationship("Ticket", back_populates="status_obj")
     sector = relationship("Sector")
 
+
+ticket_followers = Table(
+    "ticket_followers",
+    Base.metadata,
+    Column("ticket_id", Integer, ForeignKey("tickets.id"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True)
+)
+
 class Ticket(Base):
     __tablename__ = "tickets"
 
@@ -83,6 +91,7 @@ class Ticket(Base):
     created_by = relationship("User", foreign_keys=[created_by_id])
     messages = relationship("TicketMessage", back_populates="ticket")
     time_logs = relationship("TicketTimeLog", back_populates="ticket")
+    followers = relationship("User", secondary=ticket_followers, back_populates="followed_tickets")
 
     @property
     def total_duration(self) -> int:
@@ -130,13 +139,15 @@ class Profile(Base):
     
     users = relationship("User", back_populates="profile")
 
-from sqlalchemy import Table
+
 user_sectors = Table(
     "user_sectors",
     Base.metadata,
     Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
     Column("sector_id", Integer, ForeignKey("sectors.id"), primary_key=True)
 )
+
+
 
 class User(Base):
     __tablename__ = "users"
@@ -154,6 +165,7 @@ class User(Base):
     profile = relationship("Profile", back_populates="users")
     sectors = relationship("Sector", secondary="user_sectors", back_populates="users")
     time_logs = relationship("TicketTimeLog", back_populates="user")
+    followed_tickets = relationship("Ticket", secondary=ticket_followers, back_populates="followers")
 
 class TicketTimeLog(Base):
     __tablename__ = "ticket_time_logs"

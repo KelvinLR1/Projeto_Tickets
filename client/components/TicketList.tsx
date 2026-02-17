@@ -18,7 +18,8 @@ export default function TicketList({
     status,
     priority,
     categoryId,
-    sectorId
+    sectorId,
+    loading: loadingProp
 }: {
     tickets?: Ticket[];
     statuses?: Status[];
@@ -27,12 +28,13 @@ export default function TicketList({
     priority?: string;
     categoryId?: number;
     sectorId?: number;
+    loading?: boolean;
 }) {
     const { showNotification, confirm: askConfirm } = useNotification();
     const { user } = useAuth();
     const { activeTimers, handleStartTimer, handleStopTimer } = useTimer();
     const [tickets, setTickets] = useState<Ticket[]>(initialTickets || []);
-    const [loading, setLoading] = useState(!initialTickets);
+    const [loading, setLoading] = useState(loadingProp ?? !initialTickets);
     const [actionId, setActionId] = useState<number | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' });
 
@@ -42,9 +44,14 @@ export default function TicketList({
     useEffect(() => {
         if (initialTickets) {
             setTickets(initialTickets);
-            setLoading(false);
         }
     }, [initialTickets]);
+
+    useEffect(() => {
+        if (loadingProp !== undefined) {
+            setLoading(loadingProp);
+        }
+    }, [loadingProp]);
 
     useEffect(() => {
         if (initialStatuses) {
@@ -62,7 +69,7 @@ export default function TicketList({
         setLoading(true);
         try {
             const [ticketsData, catsData, statusesData] = await Promise.all([
-                getTickets(),
+                getTickets({}),
                 getCategories(),
                 getStatuses()
             ]);
@@ -189,17 +196,7 @@ export default function TicketList({
         return 0;
     });
 
-    const filteredTickets = sortedTickets.filter(t => {
-        const matchSearch = !searchTerm ||
-            t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.description.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchStatus = !status || t.status === status;
-        const matchPriority = !priority || t.priority === priority;
-        const matchCategory = !categoryId || t.category_id === categoryId;
-        const matchSector = !sectorId || t.sector_id === sectorId;
-
-        return matchSearch && matchStatus && matchPriority && matchCategory && matchSector;
-    });
+    const filteredTickets = sortedTickets;
 
     if (loading && tickets.length === 0) {
         return (
@@ -227,7 +224,10 @@ export default function TicketList({
 
     return (
         <>
-            <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl transition-all duration-500">
+            <div className={clsx(
+                "glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl transition-all duration-500",
+                loading && "opacity-60 cursor-wait pointer-events-none"
+            )}>
                 <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left text-sm border-collapse">
                         <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
@@ -260,18 +260,7 @@ export default function TicketList({
                                 <th className="px-8 py-6 text-right w-24">Ações</th>
                             </tr>
                         </thead>
-                        <motion.tbody
-                            variants={{
-                                show: {
-                                    transition: {
-                                        staggerChildren: 0.05
-                                    }
-                                }
-                            }}
-                            initial="hidden"
-                            animate="show"
-                            className="divide-y divide-border-theme/30"
-                        >
+                        <tbody className="divide-y divide-border-theme/30">
                             {filteredTickets.length === 0 && !loading && (
                                 <motion.tr
                                     initial={{ opacity: 0 }}
@@ -285,127 +274,134 @@ export default function TicketList({
                                     </td>
                                 </motion.tr>
                             )}
-                            {filteredTickets.map((ticket) => {
-                                const style = getStatusStyle(ticket.status, ticket.status_obj);
+                            <AnimatePresence mode="popLayout">
+                                {filteredTickets.map((ticket) => {
+                                    const style = getStatusStyle(ticket.status, ticket.status_obj);
 
-                                return (
-                                    <motion.tr
-                                        key={ticket.id}
-                                        variants={{
-                                            hidden: { opacity: 0, x: -10 },
-                                            show: { opacity: 1, x: 0 }
-                                        }}
-                                        className="group hover:bg-white/[0.03] transition-all duration-300 border-b border-border-theme/20 last:border-0"
-                                    >
-                                        <td className="px-8 py-6 align-top">
-                                            <div className="flex items-center gap-4">
-                                                <span className="font-mono text-sm font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
+                                    return (
+                                        <motion.tr
+                                            key={ticket.id}
+                                            layout
+                                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                                            transition={{
+                                                duration: 0.5,
+                                                ease: [0.22, 1, 0.36, 1],
+                                                layout: { duration: 0.7, ease: [0.22, 1, 0.36, 1] }
+                                            }}
+                                            className="group hover:bg-white/[0.03] transition-colors duration-300 border-b border-border-theme/20 last:border-0"
+                                        >
+                                            <td className="px-8 py-6 align-top">
+                                                <div className="flex items-center gap-4">
+                                                    <span className="font-mono text-sm font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors">{ticket.id}</span>
 
-                                                {/* Timer Controls */}
-                                                <div className="flex items-center min-w-[32px]">
-                                                    {activeTimers.find(t => t.ticket_id === ticket.id) ? (
-                                                        <button
-                                                            onClick={() => handleStopTimer(ticket.id)}
-                                                            className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all shadow-lg shadow-red-500/10"
-                                                            title="Parar Cronômetro (Pausar)"
-                                                        >
-                                                            <div className="w-3 h-3 bg-red-500 rounded-sm animate-pulse" />
-                                                        </button>
-                                                    ) : (
-                                                        ticket.status !== 'Finalizado' && (
+                                                    {/* Timer Controls */}
+                                                    <div className="flex items-center min-w-[32px]">
+                                                        {activeTimers.find(t => t.ticket_id === ticket.id) ? (
                                                             <button
-                                                                onClick={() => {
-                                                                    handleStartTimer(ticket.id);
-                                                                }}
-                                                                className="p-2 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                                                title="Iniciar Cronômetro"
+                                                                onClick={() => handleStopTimer(ticket.id)}
+                                                                className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 transition-all shadow-lg shadow-red-500/10"
+                                                                title="Parar Cronômetro (Pausar)"
                                                             >
-                                                                <Play className="w-3 h-3 fill-current" />
+                                                                <div className="w-3 h-3 bg-red-500 rounded-sm animate-pulse" />
                                                             </button>
-                                                        )
+                                                        ) : (
+                                                            ticket.status !== 'Finalizado' && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        handleStartTimer(ticket.id);
+                                                                    }}
+                                                                    className="p-2 bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                                    title="Iniciar Cronômetro"
+                                                                >
+                                                                    <Play className="w-3 h-3 fill-current" />
+                                                                </button>
+                                                            )
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-8 py-6 max-w-md">
+                                                <Link href={`/tickets/${ticket.id}`} className="block space-y-1 group/link">
+                                                    <div className="font-black text-foreground group-hover/link:text-accent-theme transition-all flex items-center gap-2 uppercase tracking-tight italic">
+                                                        {ticket.title}
+                                                        <ExternalLink className="w-3 h-3 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all text-accent-theme" />
+                                                    </div>
+                                                    <div className="text-[10px] font-bold text-accent-theme/70 flex items-center gap-1.5">
+                                                        <User className="w-3 h-3" />
+                                                        {ticket.client?.name || 'Cliente Desconhecido'}
+                                                    </div>
+                                                </Link>
+                                            </td>
+                                            <td className="px-8 py-6 text-center">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleStatusChange(ticket.id, ticket.status);
+                                                    }}
+                                                    disabled={actionId === ticket.id}
+                                                    className={clsx(
+                                                        "inline-flex items-center gap-2.5 px-4 py-2 bg-background/40 rounded-xl border border-border-theme/50 w-32 justify-center transition-all hover:bg-white/5",
+                                                        actionId === ticket.id && "animate-pulse opacity-50 cursor-wait"
                                                     )}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-6 max-w-md">
-                                            <Link href={`/tickets/${ticket.id}`} className="block space-y-1 group/link">
-                                                <div className="font-black text-foreground group-hover/link:text-accent-theme transition-all flex items-center gap-2 uppercase tracking-tight italic">
-                                                    {ticket.title}
-                                                    <ExternalLink className="w-3 h-3 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all text-accent-theme" />
-                                                </div>
-                                                <div className="text-[10px] font-bold text-accent-theme/70 flex items-center gap-1.5">
-                                                    <User className="w-3 h-3" />
-                                                    {ticket.client?.name || 'Cliente Desconhecido'}
-                                                </div>
-                                            </Link>
-                                        </td>
-                                        <td className="px-8 py-6 text-center">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleStatusChange(ticket.id, ticket.status);
-                                                }}
-                                                disabled={actionId === ticket.id}
-                                                className={clsx(
-                                                    "inline-flex items-center gap-2.5 px-4 py-2 bg-background/40 rounded-xl border border-border-theme/50 w-32 justify-center transition-all hover:bg-white/5",
-                                                    actionId === ticket.id && "animate-pulse opacity-50 cursor-wait"
-                                                )}
-                                            >
-                                                <div
-                                                    className="w-2 h-2 rounded-full"
-                                                    style={{ backgroundColor: style.color, boxShadow: `0 0 10px ${style.color}40` }}
-                                                />
-                                                <span
-                                                    className="text-[9px] font-black uppercase tracking-widest"
-                                                    style={{ color: style.color }}
                                                 >
-                                                    {style.name.toUpperCase()}
-                                                </span>
-                                            </button>
-                                        </td>
-                                        <td className="px-8 py-6 text-center">
-                                            <span className={clsx(
-                                                "inline-block px-4 py-2 rounded-xl text-[9px] font-black uppercase border tracking-widest w-28 text-center",
-                                                priorityColor(ticket.priority)
-                                            )}>
-                                                {ticket.priority.toUpperCase()}
-                                            </span>
-                                        </td>
-                                        <td className="px-8 py-6">
-                                            <div className="flex items-center gap-3">
-                                                <div className={clsx(
-                                                    "w-8 h-8 rounded-full flex items-center justify-center border shrink-0 transition-all",
-                                                    ticket.assigned_user
-                                                        ? "bg-accent-theme/10 text-accent-theme border-accent-theme/20 shadow-lg shadow-accent-theme/5"
-                                                        : "bg-background/20 text-[var(--color-text-muted)] border-border-theme/30 opacity-40 shrink-0"
+                                                    <div
+                                                        className="w-2 h-2 rounded-full"
+                                                        style={{ backgroundColor: style.color, boxShadow: `0 0 10px ${style.color}40` }}
+                                                    />
+                                                    <span
+                                                        className="text-[9px] font-black uppercase tracking-widest"
+                                                        style={{ color: style.color }}
+                                                    >
+                                                        {style.name.toUpperCase()}
+                                                    </span>
+                                                </button>
+                                            </td>
+                                            <td className="px-8 py-6 text-center">
+                                                <span className={clsx(
+                                                    "inline-block px-4 py-2 rounded-xl text-[9px] font-black uppercase border tracking-widest w-28 text-center",
+                                                    priorityColor(ticket.priority)
                                                 )}>
-                                                    <User className="w-4 h-4" />
-                                                </div>
-                                                <div className="space-y-0.5">
-                                                    <p className={clsx(
-                                                        "text-[10px] font-black uppercase tracking-tight leading-none",
-                                                        ticket.assigned_user ? "text-foreground" : "text-[var(--color-text-muted)] opacity-70"
+                                                    {ticket.priority.toUpperCase()}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={clsx(
+                                                        "w-8 h-8 rounded-full flex items-center justify-center border shrink-0 transition-all",
+                                                        ticket.assigned_user
+                                                            ? "bg-accent-theme/10 text-accent-theme border-accent-theme/20 shadow-lg shadow-accent-theme/5"
+                                                            : "bg-background/20 text-[var(--color-text-muted)] border-border-theme/30 opacity-40 shrink-0"
                                                     )}>
-                                                        {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'NÃO ATRIBUÍDO'}
-                                                    </p>
-                                                    <p className="text-[8px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
-                                                        Responsável
-                                                    </p>
+                                                        <User className="w-4 h-4" />
+                                                    </div>
+                                                    <div className="space-y-0.5">
+                                                        <p className={clsx(
+                                                            "text-[10px] font-black uppercase tracking-tight leading-none",
+                                                            ticket.assigned_user ? "text-foreground" : "text-[var(--color-text-muted)] opacity-70"
+                                                        )}>
+                                                            {ticket.assigned_user?.full_name || ticket.assigned_user?.username || 'NÃO ATRIBUÍDO'}
+                                                        </p>
+                                                        <p className="text-[8px] font-bold uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                            Responsável
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-6 text-right">
-                                            <button
-                                                onClick={() => { }} // TODO: Add more actions or menu
-                                                className="p-3 text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                            >
-                                                <RefreshCw className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </motion.tr>
-                                )
-                            })}
-                        </motion.tbody>
+                                            </td>
+                                            <td className="px-8 py-6 text-right">
+                                                <button
+                                                    onClick={() => { }} // TODO: Add more actions or menu
+                                                    className="p-3 text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                                >
+                                                    <RefreshCw className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </motion.tr>
+                                    )
+                                })}
+                            </AnimatePresence>
+                        </tbody>
                     </table>
                 </div>
             </div>

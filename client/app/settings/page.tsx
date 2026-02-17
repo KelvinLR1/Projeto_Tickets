@@ -968,17 +968,17 @@ export default function SettingsPage() {
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id)}
                                     className={clsx(
-                                        "w-full flex items-center gap-4 px-6 py-4 rounded-3xl transition-all duration-300 group relative active:scale-95",
+                                        "w-full flex items-center gap-4 px-6 py-4 rounded-3xl transition-colors duration-200 group relative",
                                         activeTab === tab.id
                                             ? "text-white z-20"
-                                            : "glass-card hover:bg-white/5 text-[var(--color-text-muted)] hover:text-foreground"
+                                            : "glass-card hover:bg-white/5 text-[var(--color-text-muted)] hover:text-foreground hover:scale-[1.02] active:scale-95"
                                     )}
                                 >
                                     {activeTab === tab.id && (
                                         <motion.div
                                             layoutId="activeTabBackground"
                                             className="absolute inset-0 bg-accent-theme shadow-xl shadow-accent-theme/20 rounded-3xl"
-                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                            transition={{ type: "spring", stiffness: 350, damping: 30 }}
                                         />
                                     )}
                                     <tab.icon className={clsx("w-5 h-5 relative z-10", activeTab === tab.id ? "text-white" : tab.color)} />
@@ -986,8 +986,8 @@ export default function SettingsPage() {
                                     {activeTab === tab.id && (
                                         <motion.div
                                             layoutId="activeTabSideIndicator"
-                                            className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white/40 rounded-r-full shadow-[2px_0_8px_rgba(255,255,255,0.3)] z-10"
-                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                            className="absolute left-0 top-4 bottom-4 w-1 bg-white/40 rounded-r-full shadow-[2px_0_8px_rgba(255,255,255,0.3)] z-10"
+                                            transition={{ type: "spring", stiffness: 350, damping: 30 }}
                                         />
                                     )}
                                 </button>

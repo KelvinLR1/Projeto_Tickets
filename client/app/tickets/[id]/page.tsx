@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector } from '@/lib/api';
+import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector, followTicket, unfollowTicket } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users } from 'lucide-react';
@@ -51,7 +51,34 @@ export default function TicketDetailsPage() {
     const [uploadingImage, setUploadingImage] = useState(false);
     const [targetSectorId, setTargetSectorId] = useState<string>('');
     const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+    const [loadingAttendants, setLoadingAttendants] = useState(false);
+    const [isAddFollowerModalOpen, setIsAddFollowerModalOpen] = useState(false);
+    const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+    const [selectedUserId, setSelectedUserId] = useState<string>('');
     const infoDescriptionRef = React.useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        if (isTransferModalOpen) {
+            const fetchFilteredAttendants = async () => {
+                setLoadingAttendants(true);
+                try {
+                    const sectorId = targetSectorId === '' ? undefined : parseInt(targetSectorId);
+                    const data = await getAttendants(sectorId);
+                    setAttendants(data);
+
+                    // If current target attendant is not in the new list, clear it
+                    if (targetAttendantId && !data.find(a => a.id.toString() === targetAttendantId)) {
+                        setTargetAttendantId('');
+                    }
+                } catch (error) {
+                    console.error('Error fetching attendants:', error);
+                } finally {
+                    setLoadingAttendants(false);
+                }
+            };
+            fetchFilteredAttendants();
+        }
+    }, [targetSectorId, isTransferModalOpen]);
 
     useEffect(() => {
         if (params.id) {
@@ -133,6 +160,93 @@ export default function TicketDetailsPage() {
         }
     };
 
+
+
+    const fetchAvailableUsers = async () => {
+        try {
+            const allUsers = await getAttendants(); // Reusing getAttendants to get simple user list
+            // Filter out users who are already following
+            const currentFollowerIds = ticket?.followers?.map(f => f.id) || [];
+            // Also filter out the assigned user (can't follow own ticket largely redundant but good for UI)
+            // AND filter out the current user if they are the assigned one (which they must be to see this)
+            const filtered = allUsers.filter(u => !currentFollowerIds.includes(u.id) && u.id !== ticket?.assigned_user_id);
+            setAvailableUsers(filtered);
+        } catch (error) {
+            console.error('Error fetching users:', error);
+            showNotification('Erro ao buscar usuários', 'error');
+        }
+    };
+
+    const handleOpenAddFollowerModal = () => {
+        fetchAvailableUsers();
+        setIsAddFollowerModalOpen(true);
+        setSelectedUserId('');
+    };
+
+    const handleAddFollower = async () => {
+        if (!ticket || !selectedUserId) return;
+        setPerformingAction(true);
+        try {
+            const updatedTicket = await followTicket(ticket.id, parseInt(selectedUserId));
+            setTicket(updatedTicket);
+            showNotification('Acompanhante adicionado com sucesso.', 'success');
+            setIsAddFollowerModalOpen(false);
+            fetchHistory();
+        } catch (error) {
+            console.error(error);
+            showNotification('Erro ao adicionar acompanhante.', 'error');
+        } finally {
+            setPerformingAction(false);
+        }
+    };
+
+    const handleRemoveFollower = async (followerId: number) => {
+        if (!ticket) return;
+        if (!await askConfirm({
+            title: 'Remover Acompanhante',
+            message: 'Tem certeza que deseja remover este acompanhante?',
+            type: 'danger',
+            confirmText: 'Remover',
+            cancelText: 'Cancelar'
+        })) return;
+
+        setPerformingAction(true);
+        try {
+            const updatedTicket = await unfollowTicket(ticket.id, followerId);
+            setTicket(updatedTicket);
+            showNotification('Acompanhante removido com sucesso.', 'success');
+            fetchHistory();
+        } catch (error) {
+            console.error(error);
+            showNotification('Erro ao remover acompanhante.', 'error');
+        } finally {
+            setPerformingAction(false);
+        }
+    };
+
+    const handleFollowToggle = async () => {
+        if (!ticket || !user) return;
+        setPerformingAction(true);
+        try {
+            const isFollowing = ticket.followers?.some(f => f.id === user.id);
+            const updatedTicket = isFollowing
+                ? await unfollowTicket(ticket.id)
+                : await followTicket(ticket.id);
+
+            setTicket(updatedTicket);
+            showNotification(
+                isFollowing ? "Você deixou de acompanhar este ticket." : "Você agora está acompanhando este ticket.",
+                "success"
+            );
+            fetchHistory();
+        } catch (error) {
+            console.error(error);
+            showNotification("Erro ao processar ação de acompanhamento.", "error");
+        } finally {
+            setPerformingAction(false);
+        }
+    };
+
     const handleSelfAssignment = async () => {
         if (!user || !ticket) return;
         setPerformingAction(true);
@@ -162,7 +276,7 @@ export default function TicketDetailsPage() {
     const loadClientTickets = async (clientId: number) => {
         setLoadingClientTickets(true);
         try {
-            const tickets = await getTickets(clientId);
+            const tickets = await getTickets({ clientId });
             // Ordena por data e pega os últimos 5 (exceto o atual)
             const filtered = tickets
                 .filter((t: Ticket) => t.id !== ticket?.id)
@@ -858,6 +972,8 @@ export default function TicketDetailsPage() {
                                                                                     'PRIORITY_CHANGE': 'MUDANÇA DE PRIORIDADE',
                                                                                     'CATEGORY_CHANGE': 'MUDANÇA DE CATEGORIA',
                                                                                     'CATEGORY_ID_CHANGE': 'MUDANÇA DE CATEGORIA',
+                                                                                    'FOLLOW': 'NOVO ACOMPANHANTE',
+                                                                                    'UNFOLLOW': 'SAÍDA DE ACOMPANHANTE',
 
                                                                                     'ASSIGNED_USER_CHANGE': 'TROCA DE TÉCNICO',
                                                                                     'SECTOR_CHANGE': 'TRANSFERÊNCIA DE SETOR'
@@ -928,6 +1044,8 @@ export default function TicketDetailsPage() {
                                     </div>
                                 </button>
 
+
+
                                 <button
                                     onClick={handleCloseTicket}
                                     className="w-full flex items-center justify-between p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all group mt-2"
@@ -944,20 +1062,12 @@ export default function TicketDetailsPage() {
                             <div className="space-y-4">
                                 <div>
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/50 mb-3 font-shadow-none">Setor Responsável</p>
-                                    <CustomSelect
-                                        value={ticket.sector_id || ''}
-                                        onChange={handleSectorChange}
-                                        placeholder="Global (Geral)"
-                                        className="!space-y-0"
-                                        options={[
-                                            { value: '', label: 'Global (Geral)', icon: <Users className="w-3 h-3 opacity-50" /> },
-                                            ...sectors.map(s => ({
-                                                value: s.id,
-                                                label: s.name,
-                                                icon: <Users className="w-3 h-3" />
-                                            }))
-                                        ]}
-                                    />
+                                    <div className="flex items-center gap-2 py-1 select-none">
+                                        <Users className="w-4 h-4 text-accent-theme/70" />
+                                        <span className="text-sm font-bold text-foreground/90 uppercase tracking-wide italic">
+                                            {ticket.sector?.name || 'Global (Geral)'}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/50 mb-3 font-shadow-none">Categoria Técnica</p>
@@ -996,6 +1106,79 @@ export default function TicketDetailsPage() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Card de Acompanhantes */}
+                        {/* Card de Acompanhantes */}
+                        {/* Card de Acompanhantes */}
+                        <div className="glass-card p-8 rounded-[2rem] border border-border-theme relative z-10">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Acompanhantes</h3>
+                                {ticket.assigned_user_id === user?.id ? (
+                                    <button
+                                        onClick={handleOpenAddFollowerModal}
+                                        className="p-1.5 rounded-lg hover:bg-white/5 text-accent-theme transition-colors"
+                                        title="Adicionar Acompanhante"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={handleFollowToggle}
+                                        disabled={performingAction}
+                                        className={clsx(
+                                            "p-1.5 rounded-lg transition-colors flex items-center gap-2 px-3",
+                                            ticket.followers?.some(f => f.id === user?.id)
+                                                ? "bg-red-500/10 text-red-500 hover:bg-red-500/20"
+                                                : "bg-accent-theme/10 text-accent-theme hover:bg-accent-theme/20"
+                                        )}
+                                        title={ticket.followers?.some(f => f.id === user?.id) ? "Deixar de acompanhar" : "Acompanhar este ticket"}
+                                    >
+                                        {ticket.followers?.some(f => f.id === user?.id) ? (
+                                            <>
+                                                <X className="w-3 h-3" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest">Sair</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <UserPlus className="w-3 h-3" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest">Acompanhar</span>
+                                            </>
+                                        )}
+                                    </button>
+                                )}
+                            </div>
+                            <div className="space-y-3">
+                                {ticket.followers && ticket.followers.length > 0 ? (
+                                    ticket.followers.map(follower => (
+                                        <div key={follower.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-border-theme/30 group/follower relative">
+                                            <div className="w-8 h-8 rounded-lg bg-accent-theme/10 flex items-center justify-center border border-accent-theme/20">
+                                                <User className="w-4 h-4 text-accent-theme" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="text-[11px] font-bold text-foreground/90 truncate">{follower.full_name || follower.username}</span>
+                                                <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">{follower.username}</span>
+                                            </div>
+
+                                            {ticket.assigned_user_id === user?.id && (
+                                                <button
+                                                    onClick={() => handleRemoveFollower(follower.id)}
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-red-500/10 text-red-500 opacity-0 group-hover/follower:opacity-100 transition-opacity hover:bg-red-500/20"
+                                                    title="Remover Acompanhante"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-[10px] text-gray-500 font-bold italic opacity-50 text-center py-4">
+                                        Nenhum acompanhante neste ticket
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+
                     </div>
                 </div>
 
@@ -1229,23 +1412,6 @@ export default function TicketDetailsPage() {
                             <div className="p-8 space-y-8">
                                 <div className="space-y-3">
                                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
-                                        <User className="w-3 h-3 text-accent-theme" />
-                                        Novo Atendente Responsável
-                                    </label>
-                                    <CustomSelect
-                                        value={targetAttendantId}
-                                        onChange={setTargetAttendantId}
-                                        placeholder="Selecionar atendente..."
-                                        options={attendants.map(a => ({
-                                            value: a.id,
-                                            label: a.name,
-                                            icon: <User className="w-3 h-3" />
-                                        }))}
-                                    />
-                                </div>
-
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
                                         <Briefcase className="w-3 h-3 text-accent-theme font-shadow-none" />
                                         Novo Setor Responsável
                                     </label>
@@ -1254,67 +1420,158 @@ export default function TicketDetailsPage() {
                                         onChange={setTargetSectorId}
                                         placeholder="Manter setor atual..."
                                         options={[
-                                            { value: '', label: 'Manter atual / Global', icon: <Users className="w-3 h-3 opacity-50" /> },
                                             ...sectors.map(s => ({
-                                                value: s.id,
+                                                value: s.id.toString(),
                                                 label: s.name,
                                                 icon: <Users className="w-3 h-3" />
                                             }))
                                         ]}
                                     />
                                 </div>
-                            </div>
-                            <div className="p-8 border-t border-border-theme flex justify-end gap-4">
-                                <button
-                                    onClick={() => setIsTransferModalOpen(false)}
-                                    className="px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    onClick={handleTransferTicket}
-                                    disabled={performingAction || !targetAttendantId}
-                                    className="px-10 py-4 rounded-2xl bg-foreground text-background text-[10px] font-black uppercase tracking-widest hover:bg-foreground/90 transition-all flex items-center gap-3 disabled:opacity-50"
-                                >
-                                    {performingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                    Confirmar Transferência
-                                </button>
+
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
+                                        <User className="w-3 h-3 text-accent-theme font-shadow-none" />
+                                        Novo Atendente Responsável
+                                    </label>
+                                    <CustomSelect
+                                        value={targetAttendantId}
+                                        onChange={setTargetAttendantId}
+                                        placeholder={loadingAttendants ? "Carregando..." : "Selecione um atendente..."}
+                                        disabled={loadingAttendants}
+                                        options={[
+                                            ...attendants.map(a => ({
+                                                value: a.id.toString(),
+                                                label: a.name,
+                                                icon: <User className="w-3 h-3" />
+                                            }))
+                                        ]}
+                                    />
+                                </div>
+
+                                <div className="flex justify-end gap-3 pt-4 border-t border-border-theme/50">
+                                    <button
+                                        onClick={() => !performingAction && setIsTransferModalOpen(false)}
+                                        disabled={performingAction}
+                                        className="px-6 py-3 rounded-xl font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-sm uppercase tracking-widest"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleTransferTicket}
+                                        disabled={performingAction}
+                                        className="px-6 py-3 rounded-xl bg-accent-theme text-white font-bold shadow-lg shadow-accent-theme/20 hover:shadow-accent-theme/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm uppercase tracking-widest"
+                                    >
+                                        {performingAction ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Transferindo...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send className="w-4 h-4" />
+                                                Transferir
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 )}
-            </div>
 
-            {/* Image Zoom Modal */}
-            <AnimatePresence>
-                {zoomedImage && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setZoomedImage(null)}
-                        className="fixed inset-0 z-[2000] bg-background/95 backdrop-blur-xl flex items-center justify-center p-8 cursor-zoom-out"
-                    >
-                        <motion.button
-                            initial={{ scale: 0.5, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.5, opacity: 0 }}
-                            className="absolute top-8 right-8 w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-colors"
-                        >
-                            <X className="w-6 h-6" />
-                        </motion.button>
-                        <motion.img
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            exit={{ scale: 0.9, y: 20 }}
-                            src={zoomedImage}
-                            alt="Zoomed"
-                            className="max-w-full max-h-full rounded-3xl shadow-2xl border border-white/10"
-                            onClick={(e) => e.stopPropagation()}
+                {/* Modal de Adicionar Acompanhante */}
+                {isAddFollowerModalOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <div
+                            className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-fade-in"
+                            onClick={() => setIsAddFollowerModalOpen(false)}
                         />
-                    </motion.div>
+                        <div className="relative w-full max-w-md glass-card rounded-[2.5rem] border border-border-theme shadow-2xl p-8 animate-modal-in">
+                            <h2 className="text-xl font-black text-foreground mb-6 uppercase tracking-wider">Adicionar Acompanhante</h2>
+
+                            <div className="space-y-6">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Usuário</label>
+                                    <CustomSelect
+                                        options={[
+                                            { value: '', label: 'Selecione um usuário' },
+                                            ...availableUsers.map(u => ({ value: u.id.toString(), label: u.name || u.full_name || u.username }))
+                                        ]}
+                                        value={selectedUserId}
+                                        onChange={setSelectedUserId}
+                                        placeholder="Selecione..."
+                                    />
+                                    {availableUsers.length === 0 && (
+                                        <p className="text-[10px] text-yellow-500 font-bold mt-2 flex items-center gap-1">
+                                            <AlertCircle className="w-3 h-3" />
+                                            Nenhum usuário disponível para adicionar.
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="flex justify-end gap-3 pt-4 border-t border-border-theme/50">
+                                    <button
+                                        onClick={() => setIsAddFollowerModalOpen(false)}
+                                        className="px-6 py-3 rounded-xl font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-xs uppercase tracking-widest"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleAddFollower}
+                                        disabled={!selectedUserId || performingAction}
+                                        className="px-6 py-3 rounded-xl bg-accent-theme text-white font-bold shadow-lg shadow-accent-theme/20 hover:shadow-accent-theme/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xs uppercase tracking-widest"
+                                    >
+                                        {performingAction ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Adicionando...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <UserPlus className="w-4 h-4" />
+                                                Adicionar
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
-            </AnimatePresence>
+
+
+                {/* Image Zoom Modal */}
+                <AnimatePresence>
+                    {zoomedImage && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setZoomedImage(null)}
+                            className="fixed inset-0 z-[2000] bg-background/95 backdrop-blur-xl flex items-center justify-center p-8 cursor-zoom-out"
+                        >
+                            <motion.button
+                                initial={{ scale: 0.5, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.5, opacity: 0 }}
+                                className="absolute top-8 right-8 w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-colors"
+                            >
+                                <X className="w-6 h-6" />
+                            </motion.button>
+                            <motion.img
+                                initial={{ scale: 0.9, y: 20 }}
+                                animate={{ scale: 1, y: 0 }}
+                                exit={{ scale: 0.9, y: 20 }}
+                                src={zoomedImage}
+                                alt="Zoomed"
+                                className="max-w-full max-h-full rounded-3xl shadow-2xl border border-white/10"
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
         </main>
     );
 }

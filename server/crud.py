@@ -291,26 +291,38 @@ def get_or_create_default_status(db: Session):
     return db_status
 
 # --- Ticket CRUD ---
-def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False):
+def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None, client_id: int = None, unassigned_only: bool = False, exclude_finalized: bool = False, sector_id: int = None, priority: str = None, category_id: int = None, q: str = None):
     from sqlalchemy.orm import joinedload
+    from sqlalchemy import or_
+    
     query = db.query(models.Ticket).options(
         joinedload(models.Ticket.client),
         joinedload(models.Ticket.assigned_user),
         joinedload(models.Ticket.status_obj)
-    ).order_by(models.Ticket.created_at.desc())
+    )
+    
+    if q:
+        query = query.filter(or_(
+            models.Ticket.title.ilike(f"%{q}%"),
+            models.Ticket.description.ilike(f"%{q}%")
+        ))
     
     if status:
         query = query.filter(models.Ticket.status == status)
     if client_id:
         query = query.filter(models.Ticket.client_id == client_id)
+    if sector_id:
+        query = query.filter(models.Ticket.sector_id == sector_id)
+    if priority:
+        query = query.filter(models.Ticket.priority == priority)
+    if category_id:
+        query = query.filter(models.Ticket.category_id == category_id)
     if unassigned_only:
         query = query.filter(models.Ticket.assigned_user_id == None)
-    
+        
     if exclude_finalized:
         # Usamos outerjoin para evitar esconder tickets sem status_id (caso ocorra)
         # e filtramos apenas aqueles que explicitamente NÃO são finais.
-        # Se t.status_obj for None, is_final também será None (que não é True)
-        from sqlalchemy import or_
         query = query.outerjoin(models.Status, models.Ticket.status_id == models.Status.id).filter(
             or_(
                 models.Status.is_final == False,
@@ -321,8 +333,8 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100, status: str = None
         final_keywords = ["encerrado", "finalizado", "concluido", "resolvido", "cancelado"]
         for kw in final_keywords:
             query = query.filter(models.Ticket.status.ilike(f"%{kw}%") == False)
-        
-    return query.offset(skip).limit(limit).all()
+            
+    return query.order_by(models.Ticket.created_at.desc()).offset(skip).limit(limit).all()
 
 def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int = None):
     ticket_data = ticket.dict()
@@ -404,7 +416,12 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
     return db_ticket
 
 def get_ticket(db: Session, ticket_id: int):
-    return db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    return db.query(models.Ticket).options(
+        joinedload(models.Ticket.client),
+        joinedload(models.Ticket.assigned_user),
+        joinedload(models.Ticket.status_obj),
+        joinedload(models.Ticket.followers)
+    ).filter(models.Ticket.id == ticket_id).first()
 
 def create_ticket_message(db: Session, message: schemas.TicketMessageCreate, ticket_id: int):
     db_message = models.TicketMessage(**message.dict(), ticket_id=ticket_id)
@@ -588,6 +605,64 @@ def add_user_to_sector(db: Session, user_id: int, sector_id: int):
             return True
     return False
 
+def add_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: Optional[int] = None):
+    ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    
+    if ticket and user:
+        if user not in ticket.followers:
+            ticket.followers.append(user)
+            
+            # Determine history message
+            description = "Começou a acompanhar este ticket."
+            if actor_id and actor_id != user_id:
+                actor = db.query(models.User).filter(models.User.id == actor_id).first()
+                actor_name = actor.full_name or actor.username if actor else "Um usuário"
+                user_name = user.full_name or user.username
+                description = f"O usuário {actor_name} adicionou {user_name} como acompanhante."
+            
+            # Log history
+            create_ticket_history(db, schemas.TicketHistoryCreate(
+                ticket_id=ticket_id,
+                user_id=actor_id if actor_id else user_id,
+                event_type="FOLLOW",
+                description=description
+            ))
+            
+            db.commit()
+            db.refresh(ticket)
+            return True, ticket
+    return False, None
+
+def remove_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: Optional[int] = None):
+    ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    
+    if ticket and user:
+        if user in ticket.followers:
+            ticket.followers.remove(user)
+            
+            # Determine history message
+            description = "Deixou de acompanhar este ticket."
+            if actor_id and actor_id != user_id:
+                actor = db.query(models.User).filter(models.User.id == actor_id).first()
+                actor_name = actor.full_name or actor.username if actor else "Um usuário"
+                user_name = user.full_name or user.username
+                description = f"O usuário {actor_name} removeu {user_name} dos acompanhantes."
+
+            # Log history
+            create_ticket_history(db, schemas.TicketHistoryCreate(
+                ticket_id=ticket_id,
+                user_id=actor_id if actor_id else user_id,
+                event_type="UNFOLLOW",
+                description=description
+            ))
+            
+            db.commit()
+            db.refresh(ticket)
+            return True, ticket
+    return False, None
+
 def delete_ticket(db: Session, ticket_id: int):
     db_ticket = get_ticket(db, ticket_id)
     if db_ticket:
@@ -721,9 +796,12 @@ def get_user(db: Session, user_id: int):
 def get_user_by_username(db: Session, username: str):
     return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.username == username).first()
 
-def get_users_short(db: Session):
+def get_users_short(db: Session, sector_id: Optional[int] = None):
     # Retorna uma lista de tuplas (id, full_name, username)
-    return db.query(models.User.id, models.User.full_name, models.User.username).filter(models.User.is_active == True).all()
+    query = db.query(models.User.id, models.User.full_name, models.User.username).filter(models.User.is_active == True)
+    if sector_id:
+        query = query.filter(models.User.sectors.any(id=sector_id))
+    return query.all()
 
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.email == email).first()

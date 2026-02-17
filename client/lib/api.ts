@@ -16,7 +16,7 @@ export const getDefaultBaseURL = () => {
 
 const api = axios.create({
   baseURL: getDefaultBaseURL(),
-  timeout: 20000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -129,6 +129,7 @@ export interface User {
   email: string;
   full_name?: string;
   role: string;
+  sectors?: Sector[];
 }
 
 export interface Ticket {
@@ -152,6 +153,7 @@ export interface Ticket {
   active_timer?: TimeLog;
   client?: Client;
   created_by?: User;
+  followers?: User[];
 }
 
 export interface TicketHistory {
@@ -287,9 +289,33 @@ export const exportTickets = async (format: string = 'csv') => {
   link.remove();
 };
 
-export const getTickets = async (clientId?: number, unassignedOnly: boolean = false, excludeFinalized: boolean = false) => {
+export interface GetTicketsParams {
+  clientId?: number;
+  unassignedOnly?: boolean;
+  excludeFinalized?: boolean;
+  sectorId?: number;
+  priority?: string;
+  categoryId?: number;
+  q?: string;
+  status?: string;
+  skip?: number;
+  limit?: number;
+}
+
+export const getTickets = async (params: GetTicketsParams = {}) => {
   const response = await api.get<Ticket[]>('/tickets/', {
-    params: { client_id: clientId, unassigned_only: unassignedOnly, exclude_finalized: excludeFinalized }
+    params: {
+      client_id: params.clientId,
+      unassigned_only: params.unassignedOnly,
+      exclude_finalized: params.excludeFinalized,
+      sector_id: params.sectorId,
+      priority: params.priority || undefined,
+      category_id: params.categoryId,
+      q: params.q || undefined,
+      status: params.status || undefined,
+      skip: params.skip,
+      limit: params.limit
+    }
   });
   return response.data;
 };
@@ -318,6 +344,8 @@ export const deleteTicket = async (id: number) => {
   const response = await api.delete(`/tickets/${id}`);
   return response.data;
 };
+
+
 
 export const getDashboardStats = async () => {
   const response = await api.get<DashboardStats>('/dashboard/stats');
@@ -491,8 +519,9 @@ export const getUsers = async () => {
   return response.data;
 };
 
-export const getAttendants = async () => {
-  const response = await api.get<{ id: number; name: string }[]>('/users/attendants');
+export const getAttendants = async (sectorId?: number) => {
+  const url = sectorId ? `/users/attendants?sector_id=${sectorId}` : '/users/attendants';
+  const response = await api.get<{ id: number; name: string }[]>(url);
   return response.data;
 };
 
@@ -658,6 +687,19 @@ export const uploadFile = async (file: File) => {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return response.data;
+};
+
+// --- Ticket Followers ---
+export const followTicket = async (ticketId: number, userId?: number): Promise<Ticket> => {
+  const query = userId ? `?user_id=${userId}` : '';
+  const response = await api.post(`/tickets/${ticketId}/follow${query}`);
+  return response.data;
+};
+
+export const unfollowTicket = async (ticketId: number, userId?: number): Promise<Ticket> => {
+  const query = userId ? `?user_id=${userId}` : '';
+  const response = await api.post(`/tickets/${ticketId}/unfollow${query}`);
   return response.data;
 };
 

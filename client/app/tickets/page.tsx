@@ -7,15 +7,22 @@ import { Search, Plus, SlidersHorizontal, X as CloseIcon, Circle, Clock, CheckCi
 import { getCategories, Category, getStatuses, Status, getTickets, Ticket, getSectors, Sector } from '@/lib/api';
 import CustomSelect from '@/components/CustomSelect';
 import CategorySelect from '@/components/CategorySelect';
+import { useAuth } from '@/components/AuthProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { TicketRowSkeleton, KanbanColumnSkeleton } from '@/components/Skeleton';
 
 export default function TicketsPage() {
+    const { user } = useAuth();
     const [searchTerm, setSearchTerm] = useState('');
     const [showAdvanced, setShowAdvanced] = useState(false);
-    const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+    const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() => {
+        if (typeof window !== 'undefined') {
+            return (localStorage.getItem('tickets_view_mode') as 'list' | 'kanban') || 'list';
+        }
+        return 'list';
+    });
     const [loading, setLoading] = useState(true);
     const [tickets, setTickets] = useState<Ticket[]>([]);
 
@@ -25,41 +32,97 @@ export default function TicketsPage() {
     const [categoryFilter, setCategoryFilter] = useState<number | undefined>(undefined);
     const [categories, setCategories] = useState<Category[]>([]);
     const [statuses, setStatuses] = useState<Status[]>([]);
-    const [sectors, setSectors] = useState<Sector[]>([]);
-    const [sectorFilter, setSectorFilter] = useState<number | undefined>(undefined);
+    const [sectorFilter, setSectorFilter] = useState<number | undefined>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('tickets_last_sector');
+            return saved ? parseInt(saved) : undefined;
+        }
+        return undefined;
+    });
+    const [excludeFinalized, setExcludeFinalized] = useState(true);
+
+    const availableSectors = user?.sectors || [];
+
+    // Persistir preferências
+    useEffect(() => {
+        localStorage.setItem('tickets_view_mode', viewMode);
+    }, [viewMode]);
 
     useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const [catsData, statusesData, ticketsData, sectorsData] = await Promise.all([
-                getCategories(),
-                getStatuses(),
-                getTickets(),
-                getSectors()
-            ]);
-            setCategories(catsData);
-            setStatuses(statusesData);
-            setTickets(ticketsData);
-            setSectors(sectorsData);
-        } catch (error) {
-            console.error('Failed to load tickets data:', error);
-        } finally {
-            setLoading(false);
+        if (sectorFilter !== undefined) {
+            localStorage.setItem('tickets_last_sector', sectorFilter.toString());
         }
+    }, [sectorFilter]);
+
+    // Garantir que o filtro de setor seja válido para o usuário logado
+    useEffect(() => {
+        if (availableSectors.length > 0) {
+            const isCurrentValid = sectorFilter !== undefined && availableSectors.some(s => s.id === sectorFilter);
+            if (!isCurrentValid) {
+                // Se o salvo no localStorage não for válido para este usuário, usa o primeiro disponível
+                setSectorFilter(availableSectors[0].id);
+            }
+        }
+    }, [user, availableSectors]);
+
+    useEffect(() => {
+        let ignore = false;
+
+        async function fetchData() {
+            // Só busca se tivermos um setor selecionado 
+            if (sectorFilter === undefined) return;
+
+            setLoading(true);
+            try {
+                const params = {
+                    sectorId: sectorFilter,
+                    priority: priorityFilter || undefined,
+                    categoryId: categoryFilter,
+                    q: searchTerm || undefined,
+                    status: statusFilter || undefined,
+                    excludeFinalized: excludeFinalized
+                };
+
+                const [catsData, statusesData, ticketsData] = await Promise.all([
+                    getCategories(sectorFilter),
+                    getStatuses(sectorFilter),
+                    getTickets(params)
+                ]);
+
+                if (!ignore) {
+                    setCategories(catsData);
+                    setStatuses(statusesData);
+                    setTickets(ticketsData);
+                    setLoading(false);
+                }
+            } catch (error) {
+                if (!ignore) {
+                    console.error('Failed to load tickets data:', error);
+                    setLoading(false);
+                }
+            }
+        }
+
+        const delay = searchTerm ? 400 : 0;
+        const timeoutId = setTimeout(fetchData, delay);
+
+        return () => {
+            ignore = true;
+            clearTimeout(timeoutId);
+        };
+    }, [sectorFilter, statusFilter, priorityFilter, categoryFilter, searchTerm, excludeFinalized]);
+
+    const loadData = () => {
+        // Redundant
     };
 
     const clearFilters = () => {
         setStatusFilter('');
         setPriorityFilter('');
         setCategoryFilter(undefined);
-        setSectorFilter(undefined);
     };
 
-    const hasActiveFilters = statusFilter || priorityFilter || (categoryFilter !== undefined) || (sectorFilter !== undefined);
+    const hasActiveFilters = !!(statusFilter || priorityFilter || categoryFilter);
 
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
@@ -129,172 +192,198 @@ export default function TicketsPage() {
 
                 {/* Filters and Search Bar Container */}
                 <div className="flex flex-col gap-6">
-                    <div className="glass-card p-6 rounded-3xl border border-border-theme flex flex-col md:flex-row gap-6 shadow-2xl relative overflow-hidden group">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-accent-theme" />
-                            <input
-                                type="text"
-                                placeholder="Buscar por assunto ou descrição..."
-                                className="w-full bg-background/50 border border-border-theme rounded-2xl pl-14 pr-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                        </div>
-                        <button
-                            onClick={() => setShowAdvanced(!showAdvanced)}
-                            className={clsx(
-                                "flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border",
-                                showAdvanced || hasActiveFilters
-                                    ? "bg-accent-theme/10 text-accent-theme border-accent-theme/30 shadow-lg shadow-accent-theme/5"
-                                    : "bg-background/20 border-border-theme text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5"
+                    <div className="flex flex-col lg:flex-row gap-6">
+                        {/* Search and Sector - Main Area */}
+                        <div className="glass-card p-6 rounded-3xl border border-border-theme flex flex-col md:flex-row gap-6 shadow-2xl relative z-40 group flex-1">
+                            <div className="relative flex-[2]">
+                                <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-accent-theme" />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar por assunto ou descrição..."
+                                    className="w-full bg-background/50 border border-border-theme rounded-2xl pl-14 pr-14 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                                {searchTerm && (
+                                    <button
+                                        onClick={() => setSearchTerm('')}
+                                        className="absolute right-5 top-1/2 -translate-y-1/2 p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all"
+                                    >
+                                        <CloseIcon className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {availableSectors.length > 1 && (
+                                <div className="flex-1 min-w-[240px]">
+                                    <CustomSelect
+                                        value={sectorFilter?.toString() || ''}
+                                        onChange={val => setSectorFilter(val ? parseInt(val) : undefined)}
+                                        placeholder="SELECIONE O SETOR"
+                                        options={availableSectors.map(s => ({
+                                            value: s.id.toString(),
+                                            label: s.name,
+                                            icon: <Users className="w-3 h-3" />
+                                        }))}
+                                    />
+                                </div>
                             )}
-                        >
-                            <SlidersHorizontal className="w-4 h-4" />
-                            {showAdvanced ? 'Ocultar Filtros' : 'Filtros Avançados'}
-                            {hasActiveFilters && <div className="w-2 h-2 rounded-full bg-accent-theme ml-2 animate-ping" />}
-                        </button>
-                    </div>
+                        </div>
 
-                    {/* Advanced Filters Panel */}
-                    <AnimatePresence>
-                        {showAdvanced && (
-                            <motion.div
-                                initial={{ opacity: 0, y: -20, height: 0 }}
-                                animate={{ opacity: 1, y: 0, height: 'auto' }}
-                                exit={{ opacity: 0, y: -20, height: 0 }}
-                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                                className="overflow-hidden"
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setExcludeFinalized(!excludeFinalized)}
+                                title={excludeFinalized ? "Mostrar Tickets Finalizados" : "Ocultar Tickets Finalizados"}
+                                className={clsx(
+                                    "flex items-center justify-center w-14 h-14 rounded-2xl transition-all active:scale-95 border shrink-0",
+                                    !excludeFinalized
+                                        ? "bg-accent-theme text-white border-accent-theme shadow-lg shadow-accent-theme/20"
+                                        : "glass-card border-border-theme text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5"
+                                )}
                             >
-                                <div className="glass-card p-10 rounded-3xl border border-border-theme shadow-2xl space-y-10 relative z-30">
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
-                                        <div className="space-y-3">
-                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                                <Users className="w-3 h-3 text-accent-theme/50" />
-                                                Setor Responsável
-                                            </label>
-                                            <CustomSelect
-                                                value={sectorFilter || ''}
-                                                onChange={val => setSectorFilter(val ? parseInt(val) : undefined)}
-                                                placeholder="TODOS OS SETORES"
-                                                options={[
-                                                    { value: '', label: 'TODOS OS SETORES', icon: <Users className="w-4 h-4 opacity-50" /> },
-                                                    ...sectors.map(s => ({
-                                                        value: s.id.toString(),
-                                                        label: s.name,
-                                                        icon: <Users className="w-3 h-3" />
-                                                    }))
-                                                ]}
-                                            />
-                                        </div>
-                                        <div className="space-y-3">
-                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                                <Circle className="w-3 h-3 text-accent-theme/50" />
-                                                Status do Chamado
-                                            </label>
-                                            <CustomSelect
-                                                value={statusFilter}
-                                                onChange={setStatusFilter}
-                                                placeholder="TODOS OS STATUS"
-                                                options={[
-                                                    { value: '', label: 'TODOS OS STATUS', icon: <Circle className="w-4 h-4 opacity-50" /> },
-                                                    ...statuses.map(s => ({
-                                                        value: s.name,
-                                                        label: s.name,
-                                                        icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
-                                                    }))
-                                                ]}
-                                            />
-                                        </div>
+                                <CheckCircle2 className={clsx("w-6 h-6 transition-transform", !excludeFinalized ? "scale-110" : "scale-100 opacity-50")} />
+                            </button>
 
-                                        <div className="space-y-3">
-                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                                <Tag className="w-3 h-3 text-accent-theme/50" />
-                                                Nível de Prioridade
-                                            </label>
-                                            <CustomSelect
-                                                value={priorityFilter}
-                                                onChange={setPriorityFilter}
-                                                placeholder="TODAS AS PRIORIDADES"
-                                                options={[
-                                                    { value: '', label: 'TODAS AS PRIORIDADES', icon: <Tag className="w-4 h-4 opacity-50" /> },
-                                                    { value: 'Baixa', label: 'Baixa', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
-                                                    { value: 'Média', label: 'Média', icon: <Circle className="w-4 h-4 text-accent-theme" /> },
-                                                    { value: 'Alta', label: 'Alta', icon: <Circle className="w-4 h-4 text-orange-500" /> },
-                                                    { value: 'Crítica', label: 'Crítica', icon: <AlertOctagon className="w-4 h-4 text-red-500" /> },
-                                                ]}
-                                            />
-                                        </div>
-
-                                        <div className="space-y-3">
-                                            <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                                <Tag className="w-3 h-3 text-accent-theme/50" />
-                                                Categoria do Ticket
-                                            </label>
-                                            <CategorySelect
-                                                value={categoryFilter || ''}
-                                                onChange={val => setCategoryFilter(val || undefined)}
-                                                categories={categories}
-                                                sectorId={sectorFilter}
-                                                placeholder="TODAS AS CATEGORIAS"
-                                            />
-                                        </div>
-                                    </div>
-
+                            <button
+                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                title="Filtros Avançados"
+                                className={clsx(
+                                    "flex items-center justify-center w-14 h-14 rounded-2xl transition-all active:scale-95 border shrink-0",
+                                    showAdvanced || hasActiveFilters
+                                        ? "bg-accent-theme/10 text-accent-theme border-accent-theme/30 shadow-lg shadow-accent-theme/5"
+                                        : "glass-card border-border-theme text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5"
+                                )}
+                            >
+                                <div className="relative">
+                                    <SlidersHorizontal className="w-6 h-6" />
                                     {hasActiveFilters && (
-                                        <div className="pt-8 border-t border-border-theme flex justify-end">
-                                            <button
-                                                onClick={clearFilters}
-                                                className="flex items-center gap-3 px-6 py-3 rounded-xl border border-red-500/20 text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-all active:scale-95"
-                                            >
-                                                <CloseIcon className="w-4 h-4" />
-                                                Limpar Filtros ativos
-                                            </button>
-                                        </div>
+                                        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-accent-theme border-2 border-background animate-pulse" />
                                     )}
                                 </div>
-                            </motion.div>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Advanced Filters Modal */}
+                    <AnimatePresence>
+                        {showAdvanced && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+                                {/* Backdrop */}
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    onClick={() => setShowAdvanced(false)}
+                                    className="absolute inset-0 bg-background/60 backdrop-blur-xl"
+                                />
+
+                                {/* Modal Card */}
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                    className="glass-card w-full max-w-4xl rounded-[2.5rem] border border-white/10 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden relative z-10"
+                                >
+                                    <div className="p-8 sm:p-12 space-y-10">
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-1">
+                                                <h2 className="text-3xl font-black uppercase italic tracking-tight">Filtros <span className="text-accent-theme">Avançados</span></h2>
+                                                <p className="text-[var(--color-text-muted)] text-[10px] font-bold uppercase tracking-widest">Refine sua busca por chamados</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setShowAdvanced(false)}
+                                                className="p-4 bg-white/5 hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-500 rounded-2xl transition-all"
+                                            >
+                                                <CloseIcon className="w-6 h-6" />
+                                            </button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Circle className="w-3 h-3 text-accent-theme/50" />
+                                                    Status do Chamado
+                                                </label>
+                                                <CustomSelect
+                                                    value={statusFilter}
+                                                    onChange={setStatusFilter}
+                                                    placeholder="TODOS OS STATUS"
+                                                    options={[
+                                                        { value: '', label: 'TODOS OS STATUS', icon: <Circle className="w-4 h-4 opacity-50" /> },
+                                                        ...statuses.map(s => ({
+                                                            value: s.name,
+                                                            label: s.name,
+                                                            icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
+                                                        }))
+                                                    ]}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Tag className="w-3 h-3 text-accent-theme/50" />
+                                                    Nível de Prioridade
+                                                </label>
+                                                <CustomSelect
+                                                    value={priorityFilter}
+                                                    onChange={setPriorityFilter}
+                                                    placeholder="TODAS AS PRIORIDADES"
+                                                    options={[
+                                                        { value: '', label: 'TODAS AS PRIORIDADES', icon: <Tag className="w-4 h-4 opacity-50" /> },
+                                                        { value: 'Baixa', label: 'Baixa', icon: <Circle className="w-4 h-4 text-emerald-500" /> },
+                                                        { value: 'Média', label: 'Média', icon: <Circle className="w-4 h-4 text-accent-theme" /> },
+                                                        { value: 'Alta', label: 'Alta', icon: <Circle className="w-4 h-4 text-orange-500" /> },
+                                                        { value: 'Crítica', label: 'Crítica', icon: <AlertOctagon className="w-4 h-4 text-red-500" /> },
+                                                    ]}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    <Tag className="w-3 h-3 text-accent-theme/50" />
+                                                    Categoria do Ticket
+                                                </label>
+                                                <CategorySelect
+                                                    value={categoryFilter || ''}
+                                                    onChange={val => setCategoryFilter(val || undefined)}
+                                                    categories={categories}
+                                                    sectorId={sectorFilter}
+                                                    placeholder="TODAS AS CATEGORIAS"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-8 border-t border-border-theme flex flex-col sm:flex-row items-center justify-between gap-6">
+                                            {hasActiveFilters ? (
+                                                <button
+                                                    onClick={clearFilters}
+                                                    className="flex items-center gap-3 px-8 py-4 rounded-2xl border border-red-500/20 text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-all active:scale-95 w-full sm:w-auto"
+                                                >
+                                                    <CloseIcon className="w-4 h-4" />
+                                                    Limpar Filtros ativos
+                                                </button>
+                                            ) : (
+                                                <div />
+                                            )}
+
+                                            <button
+                                                onClick={() => setShowAdvanced(false)}
+                                                className="px-12 py-4 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-widest shadow-xl shadow-accent-theme/20 hover:brightness-110 transition-all active:scale-95 w-full sm:w-auto"
+                                            >
+                                                Aplicar Filtros
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            </div>
                         )}
                     </AnimatePresence>
                 </div>
 
                 {/* View Switcher */}
-                <div>
+                <div className="relative min-h-[600px]">
                     <AnimatePresence mode="wait">
-                        {loading ? (
-                            <motion.div
-                                key="loading-skeletons"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.3 }}
-                            >
-                                {viewMode === 'list' ? (
-                                    <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl">
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left text-sm border-collapse">
-                                                <thead className="bg-background/20 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] border-b border-border-theme">
-                                                    <tr>
-                                                        <th className="px-8 py-6 w-16">ID</th>
-                                                        <th className="px-8 py-6">Ticket / Cliente</th>
-                                                        <th className="px-8 py-6 w-40 text-center">Status</th>
-                                                        <th className="px-8 py-6 w-36 text-center">Prioridade</th>
-                                                        <th className="px-8 py-6 w-48">Responsável</th>
-                                                        <th className="px-8 py-6 text-right w-24">Ações</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-border-theme/30">
-                                                    {[1, 2, 3, 4, 5].map(i => <TicketRowSkeleton key={i} />)}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="flex gap-6 overflow-x-auto pb-8 custom-scrollbar min-h-[700px] items-start">
-                                        {[1, 2, 3, 4].map(i => <KanbanColumnSkeleton key={i} />)}
-                                    </div>
-                                )}
-                            </motion.div>
-                        ) : viewMode === 'list' ? (
+                        {viewMode === 'list' ? (
                             <motion.div
                                 key="list-view"
                                 initial={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
@@ -310,15 +399,16 @@ export default function TicketsPage() {
                                     priority={priorityFilter}
                                     categoryId={categoryFilter}
                                     sectorId={sectorFilter}
+                                    loading={loading}
                                 />
                             </motion.div>
                         ) : (
                             <motion.div
                                 key="kanban-view"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.3 }}
+                                initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                                exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
+                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                             >
                                 <KanbanView
                                     tickets={tickets}
@@ -327,6 +417,8 @@ export default function TicketsPage() {
                                     status={statusFilter}
                                     priority={priorityFilter}
                                     categoryId={categoryFilter}
+                                    sectorId={sectorFilter}
+                                    loading={loading}
                                 />
                             </motion.div>
                         )}
