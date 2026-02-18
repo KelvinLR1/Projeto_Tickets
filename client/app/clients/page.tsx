@@ -3,12 +3,16 @@
 import React, { useEffect, useState } from 'react';
 import { getClients, createClient, updateClient, deleteClient, importClientsExcel, importClientsDB, Client } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
+import { useAuth } from '@/components/AuthProvider';
 import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ClientRowSkeleton } from '@/components/Skeleton';
+import Pagination from '@/components/Pagination';
+import { getClientsCount } from '@/lib/api';
 import clsx from 'clsx';
 
 export default function ClientsPage() {
+    const { user } = useAuth();
     const { showNotification, confirm: askConfirm } = useNotification();
     const [clients, setClients] = useState<Client[]>([]);
     const [loading, setLoading] = useState(true);
@@ -16,6 +20,11 @@ export default function ClientsPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [actionId, setActionId] = useState<number | null>(null);
+
+    // Paginação
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [totalCount, setTotalCount] = useState(0);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -51,15 +60,40 @@ export default function ClientsPage() {
         mapping: { name: 'name', email: 'email', cpf_cnpj: 'cpf_cnpj', phone: 'phone' }
     });
 
+    // Reset page on filter change
     useEffect(() => {
-        loadClients();
-    }, []);
+        setCurrentPage(1);
+    }, [searchTerm, filters]);
+
+    useEffect(() => {
+        if (user) {
+            loadClients();
+        }
+    }, [currentPage, pageSize, user, searchTerm, filters]);
 
     const loadClients = async () => {
         setLoading(true);
         try {
-            const data = await getClients();
+            const [data, countData] = await Promise.all([
+                getClients(
+                    (currentPage - 1) * pageSize,
+                    pageSize,
+                    searchTerm,
+                    filters.docType === 'all' ? undefined : filters.docType,
+                    filters.hasPhone === 'all' ? undefined : filters.hasPhone,
+                    filters.startDate || undefined,
+                    filters.endDate || undefined
+                ),
+                getClientsCount(
+                    searchTerm,
+                    filters.docType === 'all' ? undefined : filters.docType,
+                    filters.hasPhone === 'all' ? undefined : filters.hasPhone,
+                    filters.startDate || undefined,
+                    filters.endDate || undefined
+                )
+            ]);
             setClients(data);
+            setTotalCount(countData.count);
         } catch (error) {
             showNotification('Erro ao carregar clientes', 'error');
         } finally {
@@ -131,27 +165,8 @@ export default function ClientsPage() {
         }
     };
 
-    const filteredClients = clients.filter(c => {
-        const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase());
-
-        const matchesDocType = filters.docType === 'all' ||
-            (filters.docType === 'cpf' && c.cpf_cnpj?.length === 11) ||
-            (filters.docType === 'cnpj' && c.cpf_cnpj?.length === 14) ||
-            (filters.docType === 'cpf' && c.cpf_cnpj?.replace(/\D/g, '').length === 11) ||
-            (filters.docType === 'cnpj' && c.cpf_cnpj?.replace(/\D/g, '').length === 14);
-
-        const matchesPhone = filters.hasPhone === 'all' ||
-            (filters.hasPhone === 'yes' && c.phone) ||
-            (filters.hasPhone === 'no' && !c.phone);
-
-        const clientDate = c.created_at ? new Date(c.created_at).getTime() : 0;
-        const matchesStartDate = !filters.startDate || clientDate >= new Date(filters.startDate).getTime();
-        const matchesEndDate = !filters.endDate || clientDate <= new Date(filters.endDate).setHours(23, 59, 59, 999);
-
-        return matchesSearch && matchesDocType && matchesPhone && matchesStartDate && matchesEndDate;
-    });
+    // Client-side filtering removed in favor of server-side filtering
+    const filteredClients = clients;
 
     const clearFilters = () => {
         setFilters({
@@ -401,10 +416,9 @@ export default function ClientsPage() {
                             </motion.div>
                         ) : (
                             <motion.div
-                                key="clients-content"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                                animate={{ opacity: loading ? 0.5 : 1, filter: loading ? 'blur(2px)' : 'blur(0px)' }}
+                                transition={{ duration: 0.2 }}
+                                className="relative"
                             >
                                 <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden shadow-2xl transition-all duration-500">
                                     <div className="overflow-x-auto custom-scrollbar">
@@ -418,25 +432,10 @@ export default function ClientsPage() {
                                                     <th className="px-8 py-6 text-right">Controle</th>
                                                 </tr>
                                             </thead>
-                                            <motion.tbody
-                                                variants={{
-                                                    show: {
-                                                        transition: {
-                                                            staggerChildren: 0.05
-                                                        }
-                                                    }
-                                                }}
-                                                initial="hidden"
-                                                animate="show"
-                                                className="divide-y divide-border-theme/30"
-                                            >
+                                            <tbody className="divide-y divide-border-theme/30">
                                                 {filteredClients.map((client) => (
-                                                    <motion.tr
+                                                    <tr
                                                         key={client.id}
-                                                        variants={{
-                                                            hidden: { opacity: 0, x: -10 },
-                                                            show: { opacity: 1, x: 0 }
-                                                        }}
                                                         className="group hover:bg-background/50 transition-all duration-300 cursor-default"
                                                     >
                                                         <td className="px-8 py-5">
@@ -495,26 +494,57 @@ export default function ClientsPage() {
                                                                 </button>
                                                             </div>
                                                         </td>
-                                                    </motion.tr>
+                                                    </tr>
                                                 ))}
 
                                                 {filteredClients.length === 0 && !loading && (
-                                                    <motion.tr
-                                                        initial={{ opacity: 0 }}
-                                                        animate={{ opacity: 1 }}
-                                                    >
+                                                    <tr>
                                                         <td colSpan={5} className="py-24 text-center">
                                                             <div className="w-24 h-24 bg-background/30 rounded-full mx-auto flex items-center justify-center border border-border-theme shadow-inner opacity-20 mb-6 group-hover:scale-110 transition-transform">
                                                                 <User className="w-12 h-12" />
                                                             </div>
                                                             <p className="text-[var(--color-text-muted)] text-sm font-medium italic">Nenhum parceiro encontrado nos registros.</p>
                                                         </td>
-                                                    </motion.tr>
+                                                    </tr>
                                                 )}
-                                            </motion.tbody>
+                                            </tbody>
                                         </table>
                                     </div>
+
+                                    {/* Loading Overlay */}
+                                    <AnimatePresence>
+                                        {loading && (
+                                            <motion.div
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                exit={{ opacity: 0 }}
+                                                className="absolute inset-0 z-10 flex items-center justify-center bg-background/10 backdrop-blur-[1px]"
+                                            >
+                                                <div className="bg-background/80 p-4 rounded-2xl shadow-2xl border border-border-theme flex items-center gap-3">
+                                                    <Loader2 className="w-5 h-5 animate-spin text-accent-theme" />
+                                                    <span className="text-xs font-black uppercase tracking-widest text-[var(--color-text-muted)]">Carregando...</span>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
                                 </div>
+
+                                {!loading && totalCount > 0 && (
+                                    <div className="mt-8 px-2">
+                                        <Pagination
+                                            currentPage={currentPage}
+                                            totalPages={Math.ceil(totalCount / pageSize)}
+                                            onPageChange={(page) => {
+                                                setLoading(true); // Start loading state
+                                                // Do NOT clear clients here to prevent layout collapse
+                                                setCurrentPage(page);
+                                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                                            }}
+                                            totalCount={totalCount}
+                                            pageSize={pageSize}
+                                        />
+                                    </div>
+                                )}
                             </motion.div>
                         )}
                     </AnimatePresence>

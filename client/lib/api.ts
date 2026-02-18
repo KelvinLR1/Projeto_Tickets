@@ -231,6 +231,15 @@ export interface ReportSummary {
   by_status: Record<string, number>;
   by_date: Record<string, number>;
   status_priority_matrix: { status: string, priority: string, count: number, is_final?: boolean }[];
+  avg_attendance_time: number;
+  by_user: {
+    id: number;
+    name: string;
+    tickets_assigned: number;
+    tickets_created: number;
+    total_duration: number;
+    avg_ticket_time: number;
+  }[];
 }
 
 export const getReportSummary = async () => {
@@ -265,8 +274,17 @@ export interface KnowledgeDocument {
   created_at: string;
 }
 
-export const getClients = async () => {
-  const response = await api.get<Client[]>('/clients/');
+export const getClients = async (skip: number = 0, limit: number = 100, q?: string, docType?: string, hasPhone?: string, startDate?: string, endDate?: string) => {
+  const response = await api.get<Client[]>('/clients/', {
+    params: { skip, limit, q, doc_type: docType, has_phone: hasPhone, start_date: startDate, end_date: endDate }
+  });
+  return response.data;
+};
+
+export const getClientsCount = async (q?: string, docType?: string, hasPhone?: string, startDate?: string, endDate?: string) => {
+  const response = await api.get<{ count: number }>('/clients/count', {
+    params: { q, doc_type: docType, has_phone: hasPhone, start_date: startDate, end_date: endDate }
+  });
   return response.data;
 };
 
@@ -327,6 +345,28 @@ export const getTickets = async (params: GetTicketsParams = {}) => {
       status: params.status || undefined,
       skip: params.skip,
       limit: params.limit
+    }
+  });
+  return response.data;
+};
+
+export const getTicketsCount = async (params: GetTicketsParams = {}) => {
+  const response = await api.get<{ count: number }>('/tickets/count', {
+    params: {
+      client_id: params.clientId,
+      unassigned_only: params.unassignedOnly,
+      exclude_finalized: params.excludeFinalized,
+      sector_id: params.sectorId,
+      priority: params.priority || undefined,
+      category_id: params.categoryId,
+      assigned_user_id: params.assignedUserId,
+      created_by_id: params.createdById,
+      follower_id: params.followerId,
+      my_plus_unassigned_id: params.myPlusUnassignedId,
+      start_date: params.startDate,
+      end_date: params.endDate,
+      q: params.q || undefined,
+      status: params.status || undefined
     }
   });
   return response.data;

@@ -26,13 +26,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        # Expira ao final do dia atual (23:59:59) no horário local do servidor
-        now = datetime.now()
-        expire = datetime(now.year, now.month, now.day, 23, 59, 59)
-        
-        # Se já passou das 23:59:59, coloca para o fim do próximo dia
-        if expire <= now:
-            expire += timedelta(days=1)
+        # Use config defined expiration (default 8 hours)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -54,14 +49,18 @@ def get_current_user(db: Session = Depends(database.get_db), token: str = Depend
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
+            print(f"[AUTH ERROR] Token payload missing 'sub': {payload}")
             raise credentials_exception
-    except JWTError:
+    except JWTError as e:
+        print(f"[AUTH ERROR] JWT Decoding failed: {str(e)}")
         raise credentials_exception
     
     user = crud.get_user_by_username(db, username=username)
     if user is None:
+        print(f"[AUTH ERROR] User not found for username: {username}")
         raise credentials_exception
     if not user.is_active:
+        print(f"[AUTH ERROR] User inactive: {username}")
         raise HTTPException(status_code=400, detail="Inactive user")
     return user
 

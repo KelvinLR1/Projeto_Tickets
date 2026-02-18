@@ -62,6 +62,69 @@ def get_detailed_report_stats(db: Session):
             key = priority_map.get(p_name, p_name.lower())
             normalized_priority[key] = count
 
+    # Estatísticas por Usuário - Tickets Atribuídos
+    assigned_stats = db.query(
+        models.User.id,
+        models.User.username,
+        func.count(models.Ticket.id).label("tickets_assigned")
+    ).outerjoin(models.Ticket, models.Ticket.assigned_user_id == models.User.id).group_by(models.User.id).all()
+    
+    assigned_map = {row.id: {"username": row.username, "count": row[2]} for row in assigned_stats}
+
+    # Estatísticas por Usuário - Tempo Total (via TimeLog)
+    time_stats = db.query(
+        models.TicketTimeLog.user_id,
+        func.sum(models.TicketTimeLog.duration).label("total_duration")
+    ).group_by(models.TicketTimeLog.user_id).all()
+
+    time_map = {row.user_id: row.total_duration for row in time_stats}
+
+    # Estatísticas de Criação por Usuário
+    creation_stats = db.query(
+        models.User.id,
+        func.count(models.Ticket.id).label("tickets_created")
+    ).outerjoin(models.Ticket, models.Ticket.created_by_id == models.User.id).group_by(models.User.id).all()
+    
+    creation_map = {row.id: row.tickets_created for row in creation_stats}
+
+    by_user_data = []
+
+    # Get all unique user IDs from the maps
+    all_user_ids = set(assigned_map.keys()) | set(time_map.keys()) | set(creation_map.keys())
+
+    for uid in all_user_ids:
+        # Default user data if only present in one list
+        username = assigned_map.get(uid, {}).get("username", "Unknown")
+        # Se username for Unknown, tentar pegar via User query ou assumir que é ID system
+        # Mas assigned_map vem de User query, então só será Unknown se o user não tiver ticket atribuído mas tiver log/criação.
+        # Nesse caso, TimeLog tem user_id, mas não username.
+        # Vamos assumir que users ativos estão em assigned_stats (mesmo com count 0 se outerjoin funcionar bem)
+        # O outerjoin acima é User -> Ticket, então Users sem tickets APARECEM com count 0.
+        # Logo, assigned_map deve ter todos os users.
+
+        t_assigned = assigned_map.get(uid, {}).get("count", 0)
+        t_duration = time_map.get(uid, 0)
+        t_created = creation_map.get(uid, 0)
+        
+        # Média por ticket deste usuário
+        avg_user = t_duration / t_assigned if t_assigned > 0 else 0
+        
+        by_user_data.append({
+            "id": uid,
+            "name": username,
+            "tickets_assigned": t_assigned,
+            "tickets_created": t_created,
+            "total_duration": t_duration or 0, # Ensure int
+            "avg_ticket_time": avg_user
+        })
+
+    # Média Geral do Sistema Baseada em TimeLogs Reais
+    # Soma total de duração / Número de tickets que tiveram apontamento
+    total_duration_query = db.query(func.sum(models.TicketTimeLog.duration)).scalar() or 0
+    total_tickets_with_log = db.query(func.count(func.distinct(models.TicketTimeLog.ticket_id))).scalar() or 0
+    
+    avg_system_time = total_duration_query / total_tickets_with_log if total_tickets_with_log > 0 else 0
+
     return {
         "by_client": [{"name": row[0], "count": row[1]} for row in client_stats],
         "by_category": [{"name": row[0] or "Sem Categoria", "count": row[1]} for row in category_stats],
@@ -70,7 +133,9 @@ def get_detailed_report_stats(db: Session):
         "by_date": {str(row[0]): row[1] for row in date_stats},
         "status_priority_matrix": [
             {"status": row[0], "priority": row[1], "count": row[2], "is_final": row[3]} for row in status_priority_stats
-        ]
+        ],
+        "avg_attendance_time": avg_system_time,
+        "by_user": by_user_data
     }
 
 # --- Client CRUD ---
@@ -85,8 +150,54 @@ def get_client_by_cpf_cnpj(db: Session, cpf_cnpj: str):
         return None
     return db.query(models.Client).filter(models.Client.cpf_cnpj == cpf_cnpj).first()
 
-def get_clients(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Client).offset(skip).limit(limit).all()
+def _apply_client_filters(query, q=None, doc_type=None, has_phone=None, start_date=None, end_date=None):
+    if q:
+        from sqlalchemy import or_
+        search = f"%{q}%"
+        query = query.filter(or_(
+            models.Client.name.ilike(search),
+            models.Client.email.ilike(search),
+            models.Client.cpf_cnpj.ilike(search)
+        ))
+    
+    if doc_type:
+        if doc_type == 'cpf':
+            query = query.filter(func.length(func.replace(models.Client.cpf_cnpj, '.', '')) <= 12) 
+        elif doc_type == 'cnpj':
+            query = query.filter(func.length(func.replace(models.Client.cpf_cnpj, '.', '')) > 12)
+
+    if has_phone:
+        if has_phone == 'yes':
+            query = query.filter(models.Client.phone != None, models.Client.phone != "")
+        elif has_phone == 'no':
+            from sqlalchemy import or_
+            query = query.filter(or_(models.Client.phone == None, models.Client.phone == ""))
+            
+    if start_date:
+        # Assumes start_date is a string 'YYYY-MM-DD' or datetime object
+        # If it's a string from query param, we might need to cast or rely on SQLAlchemy/driver
+        # Usually params coming from main.py will be str.
+        query = query.filter(models.Client.created_at >= start_date)
+        
+    if end_date:
+        # If end_date is just YYYY-MM-DD, we might miss the later hours?
+        # Typically handled by frontend adding time or backend adjusting.
+        # Check how tickets do it.
+        # Ticket params: start_date: Optional[str], end_date: Optional[str]
+        # logic in get_tickets uses them directly.
+        query = query.filter(models.Client.created_at <= end_date)
+            
+    return query
+
+def get_clients(db: Session, skip: int = 0, limit: int = 100, q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
+    query = db.query(models.Client)
+    query = _apply_client_filters(query, q, doc_type, has_phone, start_date, end_date)
+    return query.order_by(models.Client.name.asc()).offset(skip).limit(limit).all()
+
+def get_clients_count(db: Session, q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
+    query = db.query(models.Client)
+    query = _apply_client_filters(query, q, doc_type, has_phone, start_date, end_date)
+    return query.count()
 
 def create_client(db: Session, client: schemas.ClientCreate):
     db_client = models.Client(
@@ -291,14 +402,14 @@ def get_or_create_default_status(db: Session):
     return db_status
 
 # --- Ticket CRUD ---
-def get_tickets(db: Session, skip: int = 0, limit: int = 100, 
-                status: Optional[str] = None, client_id: Optional[int] = None, 
-                unassigned_only: bool = False, exclude_finalized: bool = False, 
-                sector_id: Optional[int] = None, priority: Optional[str] = None, 
-                category_id: Optional[int] = None, q: Optional[str] = None, 
-                assigned_user_id: Optional[int] = None, start_date: Optional[str] = None, 
-                end_date: Optional[str] = None, created_by_id: Optional[int] = None, 
-                follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None):
+def _get_tickets_base_query(db: Session, 
+                            status: Optional[str] = None, client_id: Optional[int] = None, 
+                            unassigned_only: bool = False, exclude_finalized: bool = False, 
+                            sector_id: Optional[int] = None, priority: Optional[str] = None, 
+                            category_id: Optional[int] = None, q: Optional[str] = None, 
+                            assigned_user_id: Optional[int] = None, start_date: Optional[str] = None, 
+                            end_date: Optional[str] = None, created_by_id: Optional[int] = None, 
+                            follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None):
     from sqlalchemy.orm import joinedload
     from sqlalchemy import or_
     
@@ -354,27 +465,33 @@ def get_tickets(db: Session, skip: int = 0, limit: int = 100,
     if end_date:
         try:
             end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            # If it's just a date (YYYY-MM-DD), we might want to include the whole day.
-            # But the client will likely send a full ISO string.
             query = query.filter(models.Ticket.created_at <= end_dt)
         except ValueError:
             pass
         
     if exclude_finalized:
-        # Usamos outerjoin para evitar esconder tickets sem status_id (caso ocorra)
-        # e filtramos apenas aqueles que explicitamente NÃO são finais.
         query = query.outerjoin(models.Status, models.Ticket.status_id == models.Status.id).filter(
             or_(
                 models.Status.is_final == False,
                 models.Status.id == None
             )
         )
-        # Fallback de segurança: se a string do status indicar finalização, exclude também
         final_keywords = ["encerrado", "finalizado", "concluido", "resolvido", "cancelado"]
         for kw in final_keywords:
             query = query.filter(models.Ticket.status.ilike(f"%{kw}%") == False)
             
+    return query
+
+def get_tickets(db: Session, skip: int = 0, limit: int = 100, **kwargs):
+    query = _get_tickets_base_query(db, **kwargs)
     return query.order_by(models.Ticket.created_at.desc()).offset(skip).limit(limit).all()
+
+def get_tickets_count(db: Session, **kwargs):
+    # Removendo offset e limit para contagem total
+    kwargs.pop('skip', None)
+    kwargs.pop('limit', None)
+    query = _get_tickets_base_query(db, **kwargs)
+    return query.count()
 
 def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int = None):
     ticket_data = ticket.dict()

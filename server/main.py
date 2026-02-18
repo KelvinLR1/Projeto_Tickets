@@ -276,9 +276,18 @@ def create_client(client: schemas.ClientCreate, db: Session = Depends(get_db)):
     return crud.create_client(db=db, client=client)
 
 @app.get("/clients/", response_model=List[schemas.Client])
-def read_clients(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    clients = crud.get_clients(db, skip=skip, limit=limit)
+def read_clients(skip: int = 0, limit: int = 100, 
+                 q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None,
+                 start_date: Optional[str] = None, end_date: Optional[str] = None,
+                 db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    clients = crud.get_clients(db, skip=skip, limit=limit, q=q, doc_type=doc_type, has_phone=has_phone, start_date=start_date, end_date=end_date)
     return clients
+
+@app.get("/clients/count")
+def read_clients_count(q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None,
+                       start_date: Optional[str] = None, end_date: Optional[str] = None,
+                       db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    return {"count": crud.get_clients_count(db, q=q, doc_type=doc_type, has_phone=has_phone, start_date=start_date, end_date=end_date)}
 
 @app.put("/clients/{client_id}", response_model=schemas.Client)
 def update_client(client_id: int, client: schemas.ClientCreate, db: Session = Depends(get_db)):
@@ -421,9 +430,23 @@ def read_tickets(skip: int = 0, limit: int = 100,
                  follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None, 
                  start_date: Optional[str] = None, end_date: Optional[str] = None, 
                  unassigned_only: bool = False, exclude_finalized: bool = False, 
-                 db: Session = Depends(get_db)):
+                 db: Session = Depends(get_db),
+                 current_user: models.User = Depends(auth.get_current_user)):
     tickets = crud.get_tickets(db, skip=skip, limit=limit, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, assigned_user_id=assigned_user_id, created_by_id=created_by_id, follower_id=follower_id, my_plus_unassigned_id=my_plus_unassigned_id, start_date=start_date, end_date=end_date, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
     return tickets
+
+@app.get("/tickets/count")
+def read_tickets_count(q: Optional[str] = None, status: Optional[str] = None, 
+                       client_id: Optional[int] = None, sector_id: Optional[int] = None, 
+                       priority: Optional[str] = None, category_id: Optional[int] = None, 
+                       assigned_user_id: Optional[int] = None, created_by_id: Optional[int] = None, 
+                       follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None, 
+                       start_date: Optional[str] = None, end_date: Optional[str] = None, 
+                       unassigned_only: bool = False, exclude_finalized: bool = False, 
+                       db: Session = Depends(get_db),
+                       current_user: models.User = Depends(auth.get_current_user)):
+    count = crud.get_tickets_count(db, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, assigned_user_id=assigned_user_id, created_by_id=created_by_id, follower_id=follower_id, my_plus_unassigned_id=my_plus_unassigned_id, start_date=start_date, end_date=end_date, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
+    return {"count": count}
 
 @app.get("/dashboard/stats")
 def read_stats(db: Session = Depends(get_db)):
@@ -1007,10 +1030,6 @@ def mark_all_notifications_read(
     crud.mark_all_notifications_as_read(db, user_id=current_user.id)
     return {"message": "Todas as notificações marcadas como lidas"}
 
-@app.get("/sectors", response_model=List[schemas.Sector])
-def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    sectors = crud.get_sectors(db, skip=skip, limit=limit)
-    return sectors
 
 @app.post("/notifications/send", response_model=schemas.Notification)
 def send_notification(

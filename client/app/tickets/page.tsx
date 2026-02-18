@@ -12,6 +12,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { TicketRowSkeleton, KanbanColumnSkeleton } from '@/components/Skeleton';
+import Pagination from '@/components/Pagination';
+import { getTicketsCount } from '@/lib/api';
 
 export default function TicketsPage() {
     const { user } = useAuth();
@@ -54,6 +56,11 @@ export default function TicketsPage() {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
 
+    // Paginação
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(25);
+    const [totalCount, setTotalCount] = useState(0);
+
     const availableSectors = user?.sectors || [];
 
     // Persistir preferências
@@ -85,6 +92,7 @@ export default function TicketsPage() {
     // Buscar atendentes e clientes
     useEffect(() => {
         const fetchFilterData = async () => {
+            if (!user) return; // Wait for user session
             try {
                 const [usersData, clientsData] = await Promise.all([
                     import('@/lib/api').then(m => m.getAttendants()),
@@ -97,14 +105,17 @@ export default function TicketsPage() {
             }
         };
         fetchFilterData();
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         let ignore = false;
 
         async function fetchData() {
             // Só busca se tivermos um setor selecionado 
-            if (sectorFilter === undefined) return;
+            if (sectorFilter === undefined) {
+                setLoading(false);
+                return;
+            }
 
             setLoading(true);
             try {
@@ -129,16 +140,24 @@ export default function TicketsPage() {
                     params.myPlusUnassignedId = user?.id;
                 }
 
-                const [catsData, statusesData, ticketsData] = await Promise.all([
+                const isKanban = viewMode === 'kanban';
+
+                const [catsData, statusesData, ticketsData, countData] = await Promise.all([
                     getCategories(sectorFilter),
                     getStatuses(sectorFilter),
-                    getTickets(params)
+                    getTickets({
+                        ...params,
+                        skip: isKanban ? 0 : (currentPage - 1) * pageSize,
+                        limit: isKanban ? 1000 : pageSize // Fetch substantially more for Kanban
+                    }),
+                    getTicketsCount(params)
                 ]);
 
                 if (!ignore) {
                     setCategories(catsData);
                     setStatuses(statusesData);
                     setTickets(ticketsData);
+                    setTotalCount(countData.count);
                     setLoading(false);
                 }
             } catch (error) {
@@ -607,6 +626,21 @@ export default function TicketsPage() {
                             </motion.div>
                         )}
                     </AnimatePresence>
+
+                    {!loading && totalCount > 0 && viewMode === 'list' && (
+                        <div className="mt-8 px-2">
+                            <Pagination
+                                currentPage={currentPage}
+                                totalPages={Math.ceil(totalCount / pageSize)}
+                                onPageChange={(page) => {
+                                    setCurrentPage(page);
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                totalCount={totalCount}
+                                pageSize={pageSize}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
         </main>

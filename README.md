@@ -81,6 +81,24 @@ npm run dev
 
 ---
 
+## 🔄 Manutenção e Atualização
+
+### Atualizando o Banco de Dados
+Caso você baixe uma nova versão do projeto e encontre erros relacionados ao banco de dados (ex: "no such column"), execute o script de correção de esquema:
+
+```bash
+cd server
+python fix_db_schema.py
+```
+
+Este script verifica e cria automaticamente as colunas e tabelas necessárias para a versão atual do sistema.
+
+**Outros scripts úteis de migração:**
+- `python migrate_ticket_meta.py` → Garante que a estrutura de metadados dos tickets está correta.
+- `python migrate_sectors.py` → Sincroniza a estrutura de setores se houver mudanças.
+
+---
+
 ## 📖 Documentação da API
 
 O backend (FastAPI) gera automaticamente documentações interativas que permitem testar os endpoints:

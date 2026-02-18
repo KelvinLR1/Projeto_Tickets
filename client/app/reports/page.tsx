@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getReportSummary, ReportSummary, exportTickets, getStatuses, Status, getIdleClientsReport } from '@/lib/api';
-import { BarChart3, Download, FileText, Users, Tag, AlertCircle, Loader2, Calendar, FileSpreadsheet, FileJson, PieChart, X, ArrowLeft, ChevronRight } from 'lucide-react';
+import { BarChart3, Download, FileText, Users, Tag, AlertCircle, Loader2, Calendar, FileSpreadsheet, FileJson, PieChart, X, ArrowLeft, ChevronRight, Activity, CheckCircle2, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 
@@ -11,6 +11,14 @@ const PRIORITY_MAP: Record<string, string> = {
     'medium': 'Média',
     'high': 'Alta',
     'critical': 'Crítica'
+};
+
+const formatDuration = (seconds: number) => {
+    if (!seconds) return "00:00:00";
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60); // Arredonda para baixo para evitar decimais
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
 export default function ReportsPage() {
@@ -80,6 +88,12 @@ export default function ReportsPage() {
             </div>
         );
     }
+
+    const totalTickets = Object.values(summary?.by_priority || {}).reduce((a, b) => a + b, 0);
+    const finalizedTickets = summary?.status_priority_matrix.filter(s => s.is_final).reduce((acc, curr) => acc + curr.count, 0) || 0;
+    const activeTickets = totalTickets - finalizedTickets;
+    const resolutionRate = totalTickets > 0 ? Math.round((finalizedTickets / totalTickets) * 100) : 0;
+    const totalHours = summary?.by_user.reduce((acc, user) => acc + user.total_duration, 0) || 0;
 
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
@@ -167,25 +181,98 @@ export default function ReportsPage() {
                     />
                     <StatCard
                         title="Total de Tickets"
-                        value={Object.values(summary?.by_priority || {}).reduce((a, b) => a + b, 0)}
+                        value={totalTickets}
                         subtitle="Volume Total"
                         icon={<FileText className="w-5 h-5 text-accent-theme" />}
                     />
+
+                    {/* Linha 2 de Stats */}
+                    <StatCard
+                        title="Tempo Médio"
+                        value={summary?.avg_attendance_time ? formatDuration(summary.avg_attendance_time) : "00:00:00"}
+                        subtitle="Por Ticket (Geral)"
+                        icon={<Calendar className="w-5 h-5 text-green-500" />}
+                    />
+                    <StatCard
+                        title="Chamados Ativos"
+                        value={activeTickets}
+                        subtitle="Tickets não finalizados"
+                        icon={<Activity className="w-5 h-5 text-blue-400" />}
+                    />
+                    <StatCard
+                        title="Taxa de Resolução"
+                        value={`${resolutionRate}%`}
+                        subtitle="Tickets Finalizados"
+                        icon={<CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+                    />
+                    <StatCard
+                        title="Tempo Total Investido"
+                        value={formatDuration(totalHours)}
+                        subtitle="Horas Totais da Equipe"
+                        icon={<Clock className="w-5 h-5 text-purple-400" />}
+                    />
                 </div>
+
+                {/* Desempenho da Equipe */}
+                <ReportSection title="Desempenho da Equipe" icon={<Users className="w-4 h-4" />}>
+                    <div className="max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {summary?.by_user.map((user) => (
+                                <div key={user.id} className="glass-card p-6 rounded-2xl border border-border-theme/50 hover:border-accent-theme/30 transition-all group flex flex-col gap-4">
+                                    <div className="flex items-center gap-4 border-b border-border-theme/30 pb-4">
+                                        <div className="w-10 h-10 rounded-full bg-accent-theme/10 flex items-center justify-center text-accent-theme font-black text-sm">
+                                            {user.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-black uppercase tracking-tight">{user.name}</div>
+                                            <div className="text-[10px] text-[var(--color-text-muted)] font-mono">ID: #{user.id}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center text-xs">
+                                            <span className="text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-[10px]">Tickets Atribuídos</span>
+                                            <span className="font-black bg-accent-theme/10 text-accent-theme px-2 py-0.5 rounded-md">{user.tickets_assigned}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-xs">
+                                            <span className="text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-[10px]">Tickets Criados</span>
+                                            <span className="font-bold">{user.tickets_created}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-xs">
+                                            <span className="text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-[10px]">Tempo Total</span>
+                                            <span className="font-mono">{formatDuration(user.total_duration)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-xs pt-2 border-t border-border-theme/30">
+                                            <span className="text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-[10px]">Média / Ticket</span>
+                                            <span className={clsx("font-mono font-bold", user.avg_ticket_time > 0 ? "text-green-500" : "text-[var(--color-text-muted)]")}>
+                                                {formatDuration(user.avg_ticket_time)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {summary?.by_user.length === 0 && (
+                                <div className="col-span-full py-12 text-center text-[var(--color-text-muted)] text-[10px] uppercase tracking-widest italic opacity-50">
+                                    Nenhum dado de usuário disponível.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </ReportSection>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     {/* Tickets por Cliente */}
                     <ReportSection title="Top 5 Clientes (Maior Volume)" icon={<Users className="w-4 h-4" />}>
-                        <div className="space-y-6">
+                        <div className="flex flex-col justify-between gap-4 h-full min-h-[400px]">
                             {summary?.by_client.map((client, i) => (
-                                <div key={client.name} className="flex items-center gap-6 group">
-                                    <div className="w-10 text-[10px] font-black text-[var(--color-text-muted)] font-mono opacity-50">#{i + 1}</div>
+                                <div key={client.name} className="flex items-center gap-4 p-4 rounded-2xl bg-background/50 border border-border-theme/50 hover:border-accent-theme/30 transition-all group shadow-sm">
+                                    <div className="w-8 text-[10px] font-black text-[var(--color-text-muted)] font-mono opacity-50">#{i + 1}</div>
                                     <div className="flex-1">
                                         <div className="flex justify-between text-xs font-black mb-2 uppercase tracking-tight">
                                             <span>{client.name}</span>
                                             <span className="text-accent-theme">{client.count}</span>
                                         </div>
-                                        <div className="h-3 bg-background rounded-full overflow-hidden border border-border-theme p-0.5">
+                                        <div className="h-2 bg-background rounded-full overflow-hidden border border-border-theme p-[1px]">
                                             <div
                                                 className="h-full premium-gradient rounded-full transition-all duration-1000 shadow-lg shadow-accent-theme/20"
                                                 style={{ width: `${(client.count / (summary.by_client[0]?.count || 1)) * 100}%` }}
@@ -199,7 +286,7 @@ export default function ReportsPage() {
 
                     {/* Tickets por Categoria */}
                     <ReportSection title="Top 5 Categorias (Mais Chamados)" icon={<Tag className="w-4 h-4" />}>
-                        <div className="grid grid-cols-1 gap-4">
+                        <div className="flex flex-col justify-between gap-4 h-full min-h-[400px]">
                             {summary?.by_category.map((cat) => (
                                 <div key={cat.name} className="flex items-center justify-between p-5 rounded-2xl bg-background/50 border border-border-theme group hover:border-accent-theme/30 transition-all shadow-sm">
                                     <div className="flex items-center gap-4">
@@ -499,7 +586,7 @@ function StatCard({ title, value, subtitle, icon }: { title: string, value: stri
 
 function ReportSection({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) {
     return (
-        <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-2xl space-y-10 relative overflow-hidden group">
+        <div className="glass-card p-8 rounded-[2.5rem] border border-border-theme shadow-2xl flex flex-col h-full relative overflow-hidden group">
             {/* Watermark Icon - Exact match to Settings Page */}
             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-all duration-700 pointer-events-none">
                 {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement, {
@@ -508,13 +595,13 @@ function ReportSection({ title, icon, children }: { title: string, icon: React.R
                     strokeWidth: 1.5
                 }) : null}
             </div>
-            <div className="flex items-center gap-4 relative">
+            <div className="flex items-center gap-4 relative mb-8">
                 <div className="p-3 bg-accent-theme/10 rounded-2xl text-accent-theme shadow-inner border border-accent-theme/20">
                     {icon}
                 </div>
                 <h2 className="text-xl font-black font-display uppercase tracking-tight italic">{title}</h2>
             </div>
-            <div className="relative">
+            <div className="relative flex-1">
                 {children}
             </div>
         </div>
