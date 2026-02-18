@@ -64,9 +64,27 @@ class Sector(SectorBase):
 # --- Client Schemas ---
 class ClientBase(BaseModel):
     name: str
-    email: str
+    nickname: Optional[str] = None
+    email: Optional[str] = None
     cpf_cnpj: Optional[str] = None
     phone: Optional[str] = None
+    
+    # Endereço
+    cep: Optional[str] = None
+    city: Optional[str] = None
+    uf: Optional[str] = None
+    street: Optional[str] = None
+    number: Optional[str] = None
+    complement: Optional[str] = None
+    neighborhood: Optional[str] = None
+    
+    # Tributário
+    state_registration: Optional[str] = None
+    tax_regime: Optional[str] = None
+    
+    # Listas
+    extra_contacts: Optional[List[dict]] = []
+    contracted_items: Optional[List[dict]] = []
 
 class ClientCreate(ClientBase):
     pass
@@ -113,6 +131,7 @@ class TicketCreateSimple(TicketBase):
     category: Optional[str] = "Suporte"
     category_id: Optional[int] = None
     sector_id: Optional[int] = None
+    assigned_user_id: Optional[int] = None
 
 class TicketUpdate(BaseModel):
     title: Optional[str] = None

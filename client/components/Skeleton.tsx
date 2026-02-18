@@ -107,12 +107,6 @@ export function ClientRowSkeleton() {
             <td className="px-8 py-5 hidden lg:table-cell">
                 <Skeleton className="w-24 h-3" />
             </td>
-            <td className="px-8 py-5">
-                <div className="flex justify-end gap-3">
-                    <Skeleton className="w-10 h-10 rounded-2xl" />
-                    <Skeleton className="w-10 h-10 rounded-2xl" />
-                </div>
-            </td>
         </tr>
     );
 }

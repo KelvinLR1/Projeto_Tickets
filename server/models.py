@@ -12,9 +12,28 @@ class Client(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    email = Column(String, unique=True, index=True)
-    cpf_cnpj = Column(String, unique=True, index=True, nullable=True) # Verificação principal
+    nickname = Column(String, index=True, nullable=True)
+    email = Column(String, index=True, nullable=True)
+    cpf_cnpj = Column(String, unique=True, index=True, nullable=True)
     phone = Column(String, index=True)
+    
+    # Endereço
+    cep = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    uf = Column(String, nullable=True)
+    street = Column(String, nullable=True)
+    number = Column(String, nullable=True)
+    complement = Column(String, nullable=True)
+    neighborhood = Column(String, nullable=True)
+    
+    # Tributário
+    state_registration = Column(String, nullable=True)
+    tax_regime = Column(String, nullable=True)
+    
+    # Listas (JSON)
+    extra_contacts = Column(JSON, default=[]) # List of {type: 'phone'|'email', value: ''}
+    contracted_items = Column(JSON, default=[]) # List of {name: '', description: ''}
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     
     tickets = relationship("Ticket", back_populates="client")

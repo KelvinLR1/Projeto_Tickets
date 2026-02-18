@@ -200,12 +200,7 @@ def get_clients_count(db: Session, q: Optional[str] = None, doc_type: Optional[s
     return query.count()
 
 def create_client(db: Session, client: schemas.ClientCreate):
-    db_client = models.Client(
-        name=client.name, 
-        email=client.email, 
-        cpf_cnpj=client.cpf_cnpj,
-        phone=client.phone
-    )
+    db_client = models.Client(**client.dict())
     db.add(db_client)
     db.commit()
     db.refresh(db_client)
@@ -214,10 +209,9 @@ def create_client(db: Session, client: schemas.ClientCreate):
 def update_client(db: Session, client_id: int, client_update: schemas.ClientCreate):
     db_client = get_client(db, client_id)
     if db_client:
-        db_client.name = client_update.name
-        db_client.email = client_update.email
-        db_client.cpf_cnpj = client_update.cpf_cnpj
-        db_client.phone = client_update.phone
+        update_data = client_update.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_client, key, value)
         db.commit()
         db.refresh(db_client)
     return db_client
@@ -240,12 +234,7 @@ def bulk_create_clients(db: Session, clients_data: List[dict]):
                 results["duplicates"] += 1
                 continue
             
-            db_client = models.Client(
-                name=c_data["name"],
-                email=c_data["email"],
-                cpf_cnpj=doc,
-                phone=c_data.get("phone")
-            )
+            db_client = models.Client(**c_data)
             db.add(db_client)
             results["imported"] += 1
         except Exception as e:
@@ -331,14 +320,17 @@ def update_category(db: Session, cat_id: int, cat_update: schemas.CategoryCreate
     db.refresh(db_cat)
     return db_cat
 
-def get_or_create_default_category(db: Session):
+def get_or_create_default_category(db: Session, sector_id: Optional[int] = None):
     default_cat_name = "Sem Categoria"
     db_cat = db.query(models.Category).filter(models.Category.name == default_cat_name).first()
     if not db_cat:
-        db_cat = models.Category(name=default_cat_name)
+        db_cat = models.Category(name=default_cat_name, sector_id=sector_id)
         db.add(db_cat)
         db.commit()
         db.refresh(db_cat)
+    elif sector_id and not db_cat.sector_id:
+        db_cat.sector_id = sector_id
+        db.commit()
     return db_cat
 
 # --- Status CRUD ---
@@ -391,14 +383,17 @@ def update_status(db: Session, status_id: int, status_update: schemas.StatusBase
     db.refresh(db_status)
     return db_status
 
-def get_or_create_default_status(db: Session):
+def get_or_create_default_status(db: Session, sector_id: Optional[int] = None):
     default_name = "Aberto"
     db_status = db.query(models.Status).filter(models.Status.name == default_name).first()
     if not db_status:
-        db_status = models.Status(name=default_name, color="#3b82f6", is_final=False)
+        db_status = models.Status(name=default_name, color="#3b82f6", is_final=False, sector_id=sector_id)
         db.add(db_status)
         db.commit()
         db.refresh(db_status)
+    elif sector_id and not db_status.sector_id:
+        db_status.sector_id = sector_id
+        db.commit()
     return db_status
 
 # --- Ticket CRUD ---
@@ -562,11 +557,18 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
     # Lógica de status padrão
     default_status = get_or_create_default_status(db)
     
-    # Simple ticket geralmente vem do form público ou rápido, pode não ter user logado (definir como None ou Admin)
-    # Se quiser forçar um user, pode ser o ID 1 (Admin)
+    # Responsável: Se vier no ticket_data, usa. Se não, tenta o created_by (Admin 1 fallback)
+    assigned_user = ticket_data.get("assigned_user_id")
     created_by = ticket_data.get("created_by_id", 1) 
 
-    db_ticket = models.Ticket(**ticket_data, client_id=client.id, status_id=default_status.id, status=default_status.name, created_by_id=created_by)
+    db_ticket = models.Ticket(
+        **ticket_data, 
+        client_id=client.id, 
+        status_id=default_status.id, 
+        status=default_status.name, 
+        created_by_id=created_by,
+        assigned_user_id=assigned_user
+    )
     db.add(db_ticket)
     db.commit()
     db.refresh(db_ticket)

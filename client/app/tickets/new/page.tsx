@@ -25,6 +25,7 @@ export default function NewTicket() {
     const [selectedSectorId, setSelectedSectorId] = useState<number | undefined>(undefined);
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [attendants, setAttendants] = useState<{ id: number; name: string }[]>([]);
     const [isAiActive, setIsAiActive] = useState(false);
     const [isClosingModal, setIsClosingModal] = useState(false);
     const [showClientResults, setShowClientResults] = useState(false);
@@ -45,17 +46,26 @@ export default function NewTicket() {
         loadCategories();
         loadClients();
         loadSectors();
+        loadAttendants();
     }, []);
 
-    // Atualiza categorias quando o setor selecionado mudar
+    // Atualiza categorias e atendentes quando o setor selecionado mudar
     React.useEffect(() => {
         loadCategories(selectedSectorId);
+        loadAttendants(selectedSectorId);
+        // Reset do responsável ao trocar setor para evitar atribuições inválidas
+        setFormData(prev => ({ ...prev, assigned_user_id: undefined }));
     }, [selectedSectorId]);
 
     const loadSectors = async () => {
         try {
             const data = await getSectors();
             setSectors(data);
+            if (data.length > 0 && !selectedSectorId) {
+                const firstSector = data[0];
+                setSelectedSectorId(firstSector.id);
+                setFormData(prev => ({ ...prev, sector_id: firstSector.id }));
+            }
         } catch (error) {
             console.error('Error fetching sectors:', error);
         }
@@ -79,6 +89,16 @@ export default function NewTicket() {
         }
     };
 
+    const loadAttendants = async (sectorId?: number) => {
+        try {
+            const getAtts = await import('@/lib/api').then(m => m.getAttendants);
+            const data = await getAtts(sectorId);
+            setAttendants(data);
+        } catch (error) {
+            console.error('Error fetching attendants:', error);
+        }
+    };
+
     // Ticket Form States
     const [formData, setFormData] = useState({
         title: '',
@@ -86,7 +106,8 @@ export default function NewTicket() {
         priority: 'Média',
         client_name: '',
         category_id: undefined as number | undefined,
-        sector_id: undefined as number | undefined
+        sector_id: undefined as number | undefined,
+        assigned_user_id: undefined as number | undefined
     });
 
     const handleSave = async (e: React.FormEvent) => {
@@ -98,6 +119,11 @@ export default function NewTicket() {
 
         if (!formData.title || !formData.description) {
             showNotification('Por favor, preencha o título e a descrição.', 'warning');
+            return;
+        }
+
+        if (!formData.sector_id) {
+            showNotification('Por favor, selecione um setor para o chamado.', 'warning');
             return;
         }
 
@@ -452,16 +478,15 @@ Note: Be concise in the title and detailed in the description.`;
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <CustomSelect
-                                    label="Setor Responsável"
+                                    label="Setor Responsável (Obrigatório)*"
                                     value={selectedSectorId || ''}
                                     onChange={(val) => {
                                         const sId = val === '' ? undefined : Number(val);
                                         setSelectedSectorId(sId);
                                         setFormData({ ...formData, sector_id: sId, category_id: undefined });
                                     }}
-                                    placeholder="Todos os Setores"
+                                    placeholder="Selecione o Setor"
                                     options={[
-                                        { value: '', label: 'Global (Geral)', icon: <Users className="w-4 h-4 opacity-50" /> },
                                         ...sectors.map(s => ({
                                             value: s.id,
                                             label: s.name,
@@ -471,19 +496,38 @@ Note: Be concise in the title and detailed in the description.`;
                                 />
 
                                 <CustomSelect
+                                    label="Responsável pelo Atendimento"
+                                    value={formData.assigned_user_id || ''}
+                                    onChange={val => setFormData({ ...formData, assigned_user_id: val ? Number(val) : undefined })}
+                                    placeholder="Aguardando (Sem Responsável)"
+                                    options={[
+                                        { value: '', label: 'Sem Responsável (Fila)', icon: <User className="w-4 h-4 opacity-50" /> },
+                                        ...attendants.map(att => ({
+                                            value: att.id,
+                                            label: att.name,
+                                            icon: <User className="w-4 h-4 text-accent-theme" />
+                                        }))
+                                    ]}
+                                />
+                            </div>
+
+                            <div className="space-y-3">
+                                <CustomSelect
                                     label="Categoria Técnica"
                                     value={formData.category_id || ''}
                                     onChange={val => setFormData({ ...formData, category_id: val ? parseInt(val) : undefined })}
                                     placeholder="Selecione categoria..."
-                                    options={categories.flatMap(cat => [
-                                        { value: cat.id, label: cat.name, icon: <Tag className="w-4 h-4" /> },
-                                        ...(cat.subcategories?.map(sub => ({
-                                            value: sub.id,
-                                            label: sub.name,
-                                            icon: <Tag className="w-3 h-3 ml-2" />,
-                                            className: "pl-8 opacity-80"
-                                        })) || [])
-                                    ])}
+                                    options={[
+                                        ...categories.flatMap(cat => [
+                                            { value: cat.id, label: cat.name, icon: <Tag className="w-4 h-4" /> },
+                                            ...(cat.subcategories?.map(sub => ({
+                                                value: sub.id,
+                                                label: sub.name,
+                                                icon: <Tag className="w-3 h-3 ml-2" />,
+                                                className: "pl-8 opacity-80"
+                                            })) || [])
+                                        ])
+                                    ]}
                                 />
                             </div>
 
@@ -534,14 +578,24 @@ Note: Be concise in the title and detailed in the description.`;
                             </div>
                         </div>
 
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full flex items-center justify-center gap-3 py-6 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all shadow-2xl shadow-emerald-500/20 active:scale-95"
-                        >
-                            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <CheckCircle2 className="w-6 h-6" />}
-                            {loading ? 'PROCESSANDO...' : 'FINALIZAR E CRIAR CHAMADO'}
-                        </button>
+                        <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-border-theme">
+                            <button
+                                type="button"
+                                onClick={() => router.push('/tickets')}
+                                className="flex-1 flex items-center justify-center gap-2 py-6 bg-background border border-border-theme hover:bg-white/5 text-[var(--color-text-muted)] rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all active:scale-95"
+                            >
+                                <ArrowLeft className="w-5 h-5" />
+                                CANCELAR
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-[2] flex items-center justify-center gap-3 py-6 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all shadow-2xl shadow-emerald-500/20 active:scale-95"
+                            >
+                                {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <CheckCircle2 className="w-6 h-6" />}
+                                {loading ? 'PROCESSANDO...' : 'FINALIZAR E CRIAR CHAMADO'}
+                            </button>
+                        </div>
                     </form>
 
                     {/* Coluna 2: Status/Infos do Cliente */}

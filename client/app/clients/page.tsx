@@ -4,12 +4,45 @@ import React, { useEffect, useState } from 'react';
 import { getClients, createClient, updateClient, deleteClient, importClientsExcel, importClientsDB, Client } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
 import { useAuth } from '@/components/AuthProvider';
-import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser } from 'lucide-react';
+import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, Server, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser, MapPin, Hash, Plus, Package, Briefcase } from 'lucide-react';
+import CustomSelect from '@/components/CustomSelect';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ClientRowSkeleton } from '@/components/Skeleton';
 import Pagination from '@/components/Pagination';
 import { getClientsCount } from '@/lib/api';
 import clsx from 'clsx';
+
+// --- Constants ---
+const TAX_REGIME_OPTIONS = [
+    { value: '', label: 'Não informado', subtitle: 'Indefinido' },
+    { value: 'Simples Nacional', label: 'Simples Nacional', subtitle: 'Regime Simplificado' },
+    { value: 'Lucro Presumido', label: 'Lucro Presumido', subtitle: 'Tributação Simplificada' },
+    { value: 'Lucro Real', label: 'Lucro Real', subtitle: 'Tributação sobre o lucro' },
+    { value: 'MEI', label: 'MEI', subtitle: 'Microempreendedor Individual' },
+];
+
+const UF_OPTIONS = [
+    { value: 'AC', label: 'Acre (AC)' }, { value: 'AL', label: 'Alagoas (AL)' },
+    { value: 'AP', label: 'Amapá (AP)' }, { value: 'AM', label: 'Amazonas (AM)' },
+    { value: 'BA', label: 'Bahia (BA)' }, { value: 'CE', label: 'Ceará (CE)' },
+    { value: 'DF', label: 'Distrito Federal (DF)' }, { value: 'ES', label: 'Espírito Santo (ES)' },
+    { value: 'GO', label: 'Goiás (GO)' }, { value: 'MA', label: 'Maranhão (MA)' },
+    { value: 'MT', label: 'Mato Grosso (MT)' }, { value: 'MS', label: 'Mato Grosso do Sul (MS)' },
+    { value: 'MG', label: 'Minas Gerais (MG)' }, { value: 'PA', label: 'Pará (PA)' },
+    { value: 'PB', label: 'Paraíba (PB)' }, { value: 'PR', label: 'Paraná (PR)' },
+    { value: 'PE', label: 'Pernambuco (PE)' }, { value: 'PI', label: 'Piauí (PI)' },
+    { value: 'RJ', label: 'Rio de Janeiro (RJ)' }, { value: 'RN', label: 'Rio Grande do Norte (RN)' },
+    { value: 'RS', label: 'Rio Grande do Sul (RS)' }, { value: 'RO', label: 'Rondônia (RO)' },
+    { value: 'RR', label: 'Roraima (RR)' }, { value: 'SC', label: 'Santa Catarina (SC)' },
+    { value: 'SP', label: 'São Paulo (SP)' }, { value: 'SE', label: 'Sergipe (SE)' },
+    { value: 'TO', label: 'Tocantins (TO)' },
+];
+
+const DB_ENGINE_OPTIONS = [
+    { value: 'mysql', label: 'MySQL / MariaDB', icon: <Database className="w-4 h-4" /> },
+    { value: 'postgresql', label: 'PostgreSQL', icon: <Database className="w-4 h-4" /> },
+    { value: 'sqlserver', label: 'SQL Server (MSSQL)', icon: <Server className="w-4 h-4" /> },
+];
 
 export default function ClientsPage() {
     const { user } = useAuth();
@@ -26,12 +59,42 @@ export default function ClientsPage() {
     const [pageSize, setPageSize] = useState(25);
     const [totalCount, setTotalCount] = useState(0);
 
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<{
+        name: string;
+        nickname: string;
+        email: string;
+        cpf_cnpj: string;
+        phone: string;
+        cep: string;
+        city: string;
+        uf: string;
+        street: string;
+        number: string;
+        complement: string;
+        neighborhood: string;
+        state_registration: string;
+        tax_regime: string;
+        extra_contacts: { type: 'phone' | 'email', value: string }[];
+        contracted_items: { name: string, description: string }[];
+    }>({
         name: '',
+        nickname: '',
         email: '',
         cpf_cnpj: '',
-        phone: ''
+        phone: '',
+        cep: '',
+        city: '',
+        uf: '',
+        street: '',
+        number: '',
+        complement: '',
+        neighborhood: '',
+        state_registration: '',
+        tax_regime: '',
+        extra_contacts: [],
+        contracted_items: []
     });
+    const [isSearchingCNPJ, setIsSearchingCNPJ] = useState(false);
 
     // Advanced Filter states
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -101,26 +164,164 @@ export default function ClientsPage() {
         }
     };
 
+    const formatCPFCNPJ = (value: string) => {
+        const digits = value.replace(/\D/g, '');
+        if (digits.length <= 11) {
+            // CPF: 000.000.000-00
+            return digits
+                .replace(/(\d{3})(\d)/, '$1.$2')
+                .replace(/(\d{3})(\d)/, '$1.$2')
+                .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+                .replace(/(-\d{2})\d+?$/, '$1');
+        } else {
+            // CNPJ: 00.000.000/0000-00
+            return digits
+                .replace(/(\d{2})(\d)/, '$1.$2')
+                .replace(/(\d{3})(\d)/, '$1.$2')
+                .replace(/(\d{3})(\d)/, '$1/$2')
+                .replace(/(\d{4})(\d{1,2})/, '$1-$2')
+                .replace(/(-\d{2})\d+?$/, '$1');
+        }
+    };
+
     const handleOpenModal = (client: Client | null = null) => {
         if (client) {
             setEditingClient(client);
             setFormData({
                 name: client.name,
+                nickname: client.nickname || '',
                 email: client.email,
                 cpf_cnpj: client.cpf_cnpj || '',
-                phone: client.phone || ''
+                phone: client.phone || '',
+                cep: client.cep || '',
+                city: client.city || '',
+                uf: client.uf || '',
+                street: client.street || '',
+                number: client.number || '',
+                complement: client.complement || '',
+                neighborhood: client.neighborhood || '',
+                state_registration: client.state_registration || '',
+                tax_regime: client.tax_regime || '',
+                extra_contacts: client.extra_contacts || [],
+                contracted_items: client.contracted_items || []
             });
         } else {
             setEditingClient(null);
-            setFormData({ name: '', email: '', cpf_cnpj: '', phone: '' });
+            setFormData({
+                name: '',
+                nickname: '',
+                email: '',
+                cpf_cnpj: '',
+                phone: '',
+                cep: '',
+                city: '',
+                uf: '',
+                street: '',
+                number: '',
+                complement: '',
+                neighborhood: '',
+                state_registration: '',
+                tax_regime: '',
+                extra_contacts: [],
+                contracted_items: []
+            });
         }
         setIsModalOpen(true);
     };
 
+    const handleCNPJLookup = async () => {
+        const cnpj = formData.cpf_cnpj.replace(/\D/g, '');
+        if (cnpj.length !== 14) {
+            showNotification('O CNPJ deve ter 14 dígitos para a busca', 'warning');
+            return;
+        }
+
+        if (typeof window !== 'undefined' && !window.navigator.onLine) {
+            showNotification('Falha de conexão: Verifique sua internet', 'error');
+            return;
+        }
+
+        setIsSearchingCNPJ(true);
+        try {
+            const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    throw new Error('CNPJ não encontrado na base do governo');
+                }
+                throw new Error('Erro ao consultar API do governo');
+            }
+
+            const data = await response.json();
+
+            setFormData(prev => ({
+                ...prev,
+                name: data.razao_social || prev.name,
+                nickname: data.nome_fantasia || prev.nickname,
+                email: data.email || prev.email,
+                phone: data.ddd_telefone_1 || prev.phone,
+                cep: data.cep || prev.cep,
+                city: data.municipio || prev.city,
+                uf: data.uf || prev.uf,
+                street: data.logradouro || prev.street,
+                neighborhood: data.bairro || prev.neighborhood,
+                number: data.numero || prev.number,
+                complement: data.complemento || prev.complement,
+            }));
+
+            showNotification('Dados importados com sucesso!', 'success');
+        } catch (error: any) {
+            showNotification(error.message || 'Erro ao buscar dados do CNPJ', 'error');
+        } finally {
+            setIsSearchingCNPJ(false);
+        }
+    };
+
+    const addContact = () => {
+        setFormData(prev => ({
+            ...prev,
+            extra_contacts: [...prev.extra_contacts, { type: 'phone', value: '' }]
+        }));
+    };
+
+    const removeContact = (index: number) => {
+        setFormData(prev => ({
+            ...prev,
+            extra_contacts: prev.extra_contacts.filter((_, i) => i !== index)
+        }));
+    };
+
+    const updateContact = (index: number, field: 'type' | 'value', val: string) => {
+        setFormData(prev => ({
+            ...prev,
+            extra_contacts: prev.extra_contacts.map((c, i) => i === index ? { ...c, [field]: val } : c)
+        }));
+    };
+
+    const addItem = () => {
+        setFormData(prev => ({
+            ...prev,
+            contracted_items: [...prev.contracted_items, { name: '', description: '' }]
+        }));
+    };
+
+    const removeItem = (index: number) => {
+        setFormData(prev => ({
+            ...prev,
+            contracted_items: prev.contracted_items.filter((_, i) => i !== index)
+        }));
+    };
+
+    const updateItem = (index: number, field: 'name' | 'description', val: string) => {
+        setFormData(prev => ({
+            ...prev,
+            contracted_items: prev.contracted_items.map((it, i) => i === index ? { ...it, [field]: val } : it)
+        }));
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.email || !formData.cpf_cnpj) {
-            showNotification('Nome, Email e CPF/CNPJ são obrigatórios', 'warning');
+        if (!formData.name || !formData.cpf_cnpj) {
+            showNotification('Nome e CPF/CNPJ são obrigatórios', 'warning');
             return;
         }
 
@@ -405,7 +606,6 @@ export default function ClientsPage() {
                                                 <th className="px-8 py-6 hidden md:table-cell">Identificação</th>
                                                 <th className="px-8 py-6 hidden md:table-cell">Comunicação</th>
                                                 <th className="px-8 py-6 hidden lg:table-cell">Integração</th>
-                                                <th className="px-8 py-6 text-right">Controle</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-border-theme/30">
@@ -429,7 +629,6 @@ export default function ClientsPage() {
                                                     <th className="px-8 py-6 hidden md:table-cell">Identificação</th>
                                                     <th className="px-8 py-6 hidden md:table-cell">Comunicação</th>
                                                     <th className="px-8 py-6 hidden lg:table-cell">Integração</th>
-                                                    <th className="px-8 py-6 text-right">Controle</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-border-theme/30">
@@ -439,12 +638,15 @@ export default function ClientsPage() {
                                                         className="group hover:bg-background/50 transition-all duration-300 cursor-default"
                                                     >
                                                         <td className="px-8 py-5">
-                                                            <div className="flex items-center gap-5">
-                                                                <div className="w-12 h-12 rounded-[1rem] bg-accent-theme/10 flex items-center justify-center text-accent-theme group-hover:scale-110 transition-transform flex-shrink-0 shadow-inner border border-accent-theme/10">
+                                                            <div
+                                                                className="flex items-center gap-5 cursor-pointer group/name"
+                                                                onClick={() => handleOpenModal(client)}
+                                                            >
+                                                                <div className="w-12 h-12 rounded-[1rem] bg-accent-theme/10 flex items-center justify-center text-accent-theme group-hover/name:scale-110 transition-transform flex-shrink-0 shadow-inner border border-accent-theme/10">
                                                                     <User className="w-6 h-6" />
                                                                 </div>
                                                                 <div>
-                                                                    <div className="font-black text-foreground group-hover:text-accent-theme transition-colors font-display uppercase tracking-tight italic">{client.name}</div>
+                                                                    <div className="font-black text-foreground group-hover/name:text-accent-theme transition-colors font-display uppercase tracking-tight italic">{client.name}</div>
                                                                     <div className="text-[10px] text-[var(--color-text-muted)] md:hidden font-mono">#{client.id} | {client.cpf_cnpj}</div>
                                                                 </div>
                                                             </div>
@@ -473,25 +675,6 @@ export default function ClientsPage() {
                                                             <div className="flex items-center gap-3 text-[var(--color-text-muted)] font-mono text-[11px] uppercase tracking-widest">
                                                                 <Calendar className="w-3.5 h-3.5" />
                                                                 {client.created_at ? new Date(client.created_at).toLocaleDateString() : 'LEGACY'}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-8 py-5">
-                                                            <div className="flex items-center justify-end gap-3">
-                                                                <button
-                                                                    onClick={() => handleOpenModal(client)}
-                                                                    className="p-3 bg-background/50 hover:bg-accent-theme/10 rounded-2xl transition-all text-[var(--color-text-muted)] hover:text-accent-theme shadow-sm"
-                                                                    title="Editar Cliente"
-                                                                >
-                                                                    <Pencil className="w-4 h-4" />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleDelete(client.id)}
-                                                                    disabled={actionId === client.id}
-                                                                    className="p-3 bg-background/50 hover:bg-red-500/10 rounded-2xl transition-all text-[var(--color-text-muted)] hover:text-red-500 shadow-sm"
-                                                                    title="Remover Cliente"
-                                                                >
-                                                                    {actionId === client.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                                                </button>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -554,7 +737,7 @@ export default function ClientsPage() {
             {/* Modal de Cadastro/Edição */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-                    <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 text-foreground relative group">
+                    <div className="glass-card w-full max-w-5xl rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 text-foreground relative group">
                         <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform pointer-events-none">
                             <UserPlus className="w-20 h-20 text-accent-theme" />
                         </div>
@@ -572,52 +755,271 @@ export default function ClientsPage() {
                                 </button>
                             </div>
 
-                            <div className="p-10 space-y-8">
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Identificação Nome Completo</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
-                                        placeholder="Ex: Dr. João Henrique silva"
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    />
+                            <div className="p-10 space-y-12 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                                {/* Seção: Identificação */}
+                                <div className="space-y-6">
+                                    <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-accent-theme border-b border-border-theme pb-2">
+                                        <User className="w-4 h-4" /> Identificação
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-3 md:col-span-2">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Razão Social / Nome Completo</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="Ex: Empresa de Tecnologia Ltda"
+                                                value={formData.name}
+                                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Nome Fantasia / Apelido</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="Ex: TechFlow"
+                                                value={formData.nickname}
+                                                onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Documento (CPF / CNPJ)</label>
+                                            <div className="relative group/input">
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold pr-14"
+                                                    placeholder="00.000.000/0001-00"
+                                                    value={formData.cpf_cnpj}
+                                                    onChange={(e) => setFormData({ ...formData, cpf_cnpj: formatCPFCNPJ(e.target.value) })}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCNPJLookup}
+                                                    disabled={isSearchingCNPJ || formData.cpf_cnpj.replace(/\D/g, '').length !== 14}
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-accent-theme/10 text-accent-theme hover:bg-accent-theme hover:text-white transition-all disabled:opacity-30"
+                                                >
+                                                    {isSearchingCNPJ ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Inscrição Estadual</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="Ex: 123.456.789.110"
+                                                value={formData.state_registration}
+                                                onChange={(e) => setFormData({ ...formData, state_registration: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-0">
+                                            <CustomSelect
+                                                label="Regime Tributário"
+                                                value={formData.tax_regime}
+                                                onChange={(val) => setFormData({ ...formData, tax_regime: val })}
+                                                options={TAX_REGIME_OPTIONS}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Documento (CPF / CNPJ)</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
-                                        placeholder="00.000.000/0001-00"
-                                        value={formData.cpf_cnpj}
-                                        onChange={(e) => setFormData({ ...formData, cpf_cnpj: e.target.value })}
-                                    />
+                                {/* Seção: Endereço */}
+                                <div className="space-y-6">
+                                    <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-accent-theme border-b border-border-theme pb-2">
+                                        <MapPin className="w-4 h-4" /> Localização / Endereço
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">CEP</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="00000-000"
+                                                value={formData.cep}
+                                                onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3 md:col-span-2">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Logradouro (Rua/Av)</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="Rua das Flores"
+                                                value={formData.street}
+                                                onChange={(e) => setFormData({ ...formData, street: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Número</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="123"
+                                                value={formData.number}
+                                                onChange={(e) => setFormData({ ...formData, number: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Complemento</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="Sala 101"
+                                                value={formData.complement}
+                                                onChange={(e) => setFormData({ ...formData, complement: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Bairro</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="Centro"
+                                                value={formData.neighborhood}
+                                                onChange={(e) => setFormData({ ...formData, neighborhood: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3 md:col-span-2">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Cidade</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="São Paulo"
+                                                value={formData.city}
+                                                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-0">
+                                            <CustomSelect
+                                                label="UF"
+                                                value={formData.uf}
+                                                onChange={(val) => setFormData({ ...formData, uf: val })}
+                                                options={UF_OPTIONS}
+                                                placeholder="Estado"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Canal de E-mail Corporativo</label>
-                                    <input
-                                        type="email"
-                                        required
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
-                                        placeholder="corporativo@empresa.com.br"
-                                        value={formData.email}
-                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                    />
+                                {/* Seção: Contatos */}
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-center border-b border-border-theme pb-2">
+                                        <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-accent-theme">
+                                            <Mail className="w-4 h-4" /> Canais de Comunicação
+                                        </h4>
+                                        <button type="button" onClick={addContact} className="flex items-center gap-2 text-[10px] font-black text-accent-theme hover:brightness-125 transition-all uppercase tracking-widest bg-accent-theme/5 px-3 py-1.5 rounded-lg border border-accent-theme/10">
+                                            <Plus className="w-3.5 h-3.5" /> Adicionar Contato
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">E-mail Principal</label>
+                                            <input
+                                                type="email"
+                                                required
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="contato@empresa.com"
+                                                value={formData.email}
+                                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Telefone Principal</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="(00) 00000-0000"
+                                                value={formData.phone}
+                                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {formData.extra_contacts.map((contact, idx) => (
+                                            <div key={idx} className="flex gap-4 items-end animate-in slide-in-from-left-4 duration-300">
+                                                <div className="w-32">
+                                                    <select
+                                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-4 py-4 text-xs font-bold focus:outline-none"
+                                                        value={contact.type}
+                                                        onChange={(e) => updateContact(idx, 'type', e.target.value as any)}
+                                                    >
+                                                        <option value="phone">Telefone</option>
+                                                        <option value="email">E-mail</option>
+                                                    </select>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <input
+                                                        type="text"
+                                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                        placeholder={contact.type === 'email' ? 'outro@email.com' : '(00) 0000-0000'}
+                                                        value={contact.value}
+                                                        onChange={(e) => updateContact(idx, 'value', e.target.value)}
+                                                    />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeContact(idx)}
+                                                    className="p-4 bg-red-500/5 text-red-500 border border-red-500/10 rounded-2xl hover:bg-red-500/10 transition-all"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Linha de Contato Direto</label>
-                                    <input
-                                        type="text"
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
-                                        placeholder="+55 (00) 00000-0000"
-                                        value={formData.phone}
-                                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                    />
+                                {/* Seção: Contratos / Serviços */}
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-center border-b border-border-theme pb-2">
+                                        <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-accent-theme">
+                                            <Package className="w-4 h-4" /> Serviços / Produtos Contratados
+                                        </h4>
+                                        <button type="button" onClick={addItem} className="flex items-center gap-2 text-[10px] font-black text-accent-theme hover:brightness-125 transition-all uppercase tracking-widest bg-accent-theme/5 px-3 py-1.5 rounded-lg border border-accent-theme/10">
+                                            <Plus className="w-3.5 h-3.5" /> Adicionar Item
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {formData.contracted_items.map((item, idx) => (
+                                            <div key={idx} className="bg-white/[0.02] border border-white/5 p-6 rounded-[2rem] space-y-4 animate-in slide-in-from-right-4 duration-300 relative group/item">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeItem(idx)}
+                                                    className="absolute top-4 right-4 p-2 text-red-500/50 hover:text-red-500 transition-colors"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                                <div className="space-y-3">
+                                                    <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Nome do Serviço/Produto</label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-sm font-bold focus:outline-none"
+                                                        placeholder="Ex: Consultoria Semanal"
+                                                        value={item.name}
+                                                        onChange={(e) => updateItem(idx, 'name', e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Descrição / Observação</label>
+                                                    <textarea
+                                                        className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-sm font-bold focus:outline-none h-20 resize-none"
+                                                        placeholder="Detalhes sobre o contrato..."
+                                                        value={item.description}
+                                                        onChange={(e) => updateItem(idx, 'description', e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {formData.contracted_items.length === 0 && (
+                                            <div className="text-center py-10 bg-background/20 rounded-[2rem] border border-dashed border-border-theme/30">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Nenhum serviço registrado</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -767,17 +1169,13 @@ export default function ClientsPage() {
                         {!importResult ? (
                             <form onSubmit={handleDBImport} className="p-10 space-y-8">
                                 <div className="grid grid-cols-2 gap-8">
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Motor do Banco</label>
-                                        <select
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-accent-theme/10 appearance-none transition-all"
+                                    <div className="space-y-0">
+                                        <CustomSelect
+                                            label="Motor do Banco"
                                             value={dbConfig.db_type}
-                                            onChange={(e) => setDbConfig({ ...dbConfig, db_type: e.target.value })}
-                                        >
-                                            <option value="mysql">MySQL / MariaDB</option>
-                                            <option value="postgresql">PostgreSQL</option>
-                                            <option value="sqlserver">SQL Server (MSSQL)</option>
-                                        </select>
+                                            onChange={(val) => setDbConfig({ ...dbConfig, db_type: val })}
+                                            options={DB_ENGINE_OPTIONS}
+                                        />
                                     </div>
                                     <div className="space-y-3">
                                         <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Server Host</label>

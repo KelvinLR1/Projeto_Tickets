@@ -42,7 +42,7 @@ const TimerWidget: React.FC = () => {
             <div className="flex items-center justify-between mb-6 border-b border-border-theme pb-4">
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-accent-theme animate-pulse" />
-                    <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme">Atendimentos em Fila</h2>
+                    <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme">Atendimentos Ativos</h2>
                 </div>
                 <Clock className="w-4 h-4 opacity-20" />
             </div>

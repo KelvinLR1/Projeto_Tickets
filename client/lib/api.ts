@@ -204,9 +204,21 @@ export const deleteSector = async (id: number) => {
 export interface Client {
   id: number;
   name: string;
+  nickname?: string;
   email: string;
   cpf_cnpj?: string;
   phone?: string;
+  cep?: string;
+  city?: string;
+  uf?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  state_registration?: string;
+  tax_regime?: string;
+  extra_contacts?: { type: 'phone' | 'email', value: string }[];
+  contracted_items?: { name: string, description: string }[];
   created_at?: string;
 }
 
@@ -278,6 +290,11 @@ export const getClients = async (skip: number = 0, limit: number = 100, q?: stri
   const response = await api.get<Client[]>('/clients/', {
     params: { skip, limit, q, doc_type: docType, has_phone: hasPhone, start_date: startDate, end_date: endDate }
   });
+  return response.data;
+};
+
+export const getClient = async (id: number) => {
+  const response = await api.get<Client>(`/clients/${id}`);
   return response.data;
 };
 

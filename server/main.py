@@ -26,10 +26,26 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 models.Base.metadata.create_all(bind=engine)
 
+from sqlalchemy import func
+
 def seed_db():
     db = database.SessionLocal()
     try:
-        # 1. Garantir Perfis de Acesso Padrão
+        # 1. Garantir Setor Padrão (case-insensitive)
+        support_sector = db.query(models.Sector).filter(
+            func.lower(models.Sector.name) == "suporte"
+        ).first()
+        if not support_sector:
+            support_sector = models.Sector(
+                name="Suporte",
+                description="Setor padrão de atendimento"
+            )
+            db.add(support_sector)
+            db.commit()
+            db.refresh(support_sector)
+            print("Setor 'Suporte' criado!")
+
+        # 2. Garantir Perfis de Acesso Padrão
         master_profile = db.query(models.Profile).filter(models.Profile.name == "Master").first()
         if not master_profile:
             master_profile = models.Profile(
@@ -68,7 +84,7 @@ def seed_db():
             db.commit()
             print("Perfil 'Leitor' criado!")
 
-        # 2. Garantir usuário ROOT (admin) vinculado ao Master
+        # 3. Garantir usuário ROOT (admin) vinculado ao Master e ao Setor Suporte
         admin_user = db.query(models.User).filter(
             (models.User.username == "admin") | (models.User.email == "admin@sistema.com")
         ).first()
@@ -85,8 +101,11 @@ def seed_db():
             hashed_password = auth.get_password_hash("admin")
             admin_user = crud.create_user(db, admin_schema, hashed_password)
             admin_user.profile_id = master_profile.id
+            # Vincular ao setor
+            if support_sector not in admin_user.sectors:
+                admin_user.sectors.append(support_sector)
             db.commit()
-            print(f"Usuário 'admin' vinculado ao perfil '{master_profile.name}'!")
+            print(f"Usuário 'admin' vinculado ao perfil '{master_profile.name}' e setor '{support_sector.name}'!")
         else:
             updated = False
             if admin_user.role != "ROOT":
@@ -95,14 +114,17 @@ def seed_db():
             if not admin_user.profile_id:
                 admin_user.profile_id = master_profile.id
                 updated = True
+            if support_sector not in admin_user.sectors:
+                admin_user.sectors.append(support_sector)
+                updated = True
             
             if updated:
                 db.commit()
-                print("Usuário admin atualizado (Role ROOT + Perfil Master).")
+                print("Usuário admin atualizado (Role ROOT + Perfil Master + Setor Suporte).")
 
-        # 2. Garantir categorias e status padrão
-        crud.get_or_create_default_category(db)
-        crud.get_or_create_default_status(db)
+        # 4. Garantir categorias e status padrão vinculados ao setor
+        crud.get_or_create_default_category(db, sector_id=support_sector.id)
+        crud.get_or_create_default_status(db, sector_id=support_sector.id)
         
     except Exception as e:
         print(f"Erro ao popular banco de dados: {e}")
@@ -288,6 +310,13 @@ def read_clients_count(q: Optional[str] = None, doc_type: Optional[str] = None, 
                        start_date: Optional[str] = None, end_date: Optional[str] = None,
                        db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return {"count": crud.get_clients_count(db, q=q, doc_type=doc_type, has_phone=has_phone, start_date=start_date, end_date=end_date)}
+
+@app.get("/clients/{client_id}", response_model=schemas.Client)
+def read_client(client_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    db_client = crud.get_client(db, client_id=client_id)
+    if db_client is None:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return db_client
 
 @app.put("/clients/{client_id}", response_model=schemas.Client)
 def update_client(client_id: int, client: schemas.ClientCreate, db: Session = Depends(get_db)):

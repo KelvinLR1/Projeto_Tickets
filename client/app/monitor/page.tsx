@@ -15,7 +15,7 @@ export default function MonitorPage() {
 
     const fetchTickets = async () => {
         try {
-            const data = await getTickets(undefined, true, true); // unassignedOnly: true, excludeFinalized: true
+            const data = await getTickets({ unassignedOnly: true, excludeFinalized: true });
 
             // Define weights for each priority level
             const priorityWeights: Record<string, number> = {

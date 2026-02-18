@@ -254,6 +254,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             pip.document.body.className = document.body.className;
             pip.document.documentElement.style.cssText = document.documentElement.style.cssText;
 
+            // Sincronizar cores de fundo explicitamente para evitar o branco antes/depois do load
+            const bodyStyle = window.getComputedStyle(document.body);
+            pip.document.body.style.backgroundColor = bodyStyle.backgroundColor;
+            pip.document.documentElement.style.backgroundColor = bodyStyle.backgroundColor;
+
             setPipWindow(pip);
             setIsPiPOpen(true);
 
@@ -264,7 +269,21 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             const container = pip.document.createElement('div');
             container.id = 'pip-root';
+            container.style.height = '100vh';
+            container.style.width = '100vw';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
             pip.document.body.appendChild(container);
+
+            // Garantir que o body e html ocupem 100% e não tenham scroll/margens extras
+            pip.document.body.style.margin = '0';
+            pip.document.body.style.padding = '0';
+            pip.document.body.style.height = '100vh';
+            pip.document.body.style.overflow = 'hidden';
+            pip.document.documentElement.style.height = '100vh';
+            pip.document.documentElement.style.margin = '0';
+            pip.document.documentElement.style.padding = '0';
+            pip.document.documentElement.style.overflow = 'hidden';
 
         } catch (error) {
             console.error('Erro ao abrir PiP:', error);

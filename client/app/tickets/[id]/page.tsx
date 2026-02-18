@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getTicket, Ticket, getCategories, Category, getClients, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector, followTicket, unfollowTicket, getTicketTimerStats, StatusTimeGroup } from '@/lib/api';
+import { getTicket, Ticket, getCategories, Category, getClients, getClient, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector, followTicket, unfollowTicket, getTicketTimerStats, StatusTimeGroup } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users } from 'lucide-react';
+import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users, MapPin, Phone, Mail, Package, CreditCard, Building2, Globe } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -1392,75 +1392,161 @@ export default function TicketDetailsPage() {
                                 </div>
 
                                 <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                                    {/* Informações Cadastrais */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
-                                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">E-mail</p>
-                                            <p className="text-sm font-medium">{client?.email || 'N/A'}</p>
+                                    {/* Blocos Superiores: Identificação e Localização */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Bloco 1: Identificação Fiscal */}
+                                        <div className="glass-card p-6 rounded-3xl border border-border-theme/50 space-y-4">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className="p-2 rounded-xl bg-accent-theme/10 text-accent-theme">
+                                                    <ShieldCheck className="w-4 h-4" />
+                                                </div>
+                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Dados Fiscais</h3>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">CPF / CNPJ</p>
+                                                    <p className="text-sm font-bold font-mono text-accent-theme">{client?.cpf_cnpj || 'Não informado'}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Inscrição Estadual</p>
+                                                    <p className="text-sm font-bold text-foreground">{client?.state_registration || 'Isento/Não informado'}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Regime Tributário</p>
+                                                    <p className="text-xs font-bold text-foreground/80">{client?.tax_regime || 'Não definido'}</p>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
-                                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">CPF / CNPJ</p>
-                                            <p className="text-sm font-medium">{client?.cpf_cnpj || 'N/A'}</p>
-                                        </div>
-                                        <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
-                                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Telefone</p>
-                                            <p className="text-sm font-medium">{client?.phone || 'N/A'}</p>
-                                        </div>
-                                        <div className="p-4 rounded-2xl bg-white/5 border border-border-theme">
-                                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Desde</p>
-                                            <p className="text-sm font-medium">{client?.created_at ? new Date(client.created_at).toLocaleDateString() : 'N/A'}</p>
+
+                                        {/* Bloco 2: Contatos e Social */}
+                                        <div className="glass-card p-6 rounded-3xl border border-border-theme/50 space-y-4">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500">
+                                                    <Phone className="w-4 h-4" />
+                                                </div>
+                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Contatos</h3>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
+                                                        <Mail className="w-3.5 h-3.5 text-gray-500" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">E-mail Principal</p>
+                                                        <p className="text-xs font-bold">{client?.email || 'N/A'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center">
+                                                        <Phone className="w-3.5 h-3.5 text-gray-500" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Telefone</p>
+                                                        <p className="text-xs font-bold">{client?.phone || 'N/A'}</p>
+                                                    </div>
+                                                </div>
+                                                {client?.extra_contacts && client.extra_contacts.length > 0 && (
+                                                    <div className="pt-2 border-t border-border-theme/30 space-y-2">
+                                                        {client.extra_contacts.map((contact, idx) => (
+                                                            <div key={idx} className="flex items-center gap-2 text-[10px] text-gray-400">
+                                                                <span className="font-black uppercase">{contact.type}:</span>
+                                                                <span className="font-bold text-foreground/70">{contact.value}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Histórico de Chamados */}
-                                    <div className="space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme flex items-center gap-2">
-                                                <Clock className="w-3 h-3" />
-                                                Últimos Chamados
-                                            </h3>
-                                            {loadingClientTickets && <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />}
+                                    {/* Bloco 3: Endereço Completo */}
+                                    <div className="glass-card p-6 rounded-3xl border border-border-theme/50">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="p-2 rounded-xl bg-orange-500/10 text-orange-500">
+                                                <MapPin className="w-4 h-4" />
+                                            </div>
+                                            <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Endereço e Localização</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div className="md:col-span-2">
+                                                <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Logradouro</p>
+                                                <p className="text-sm font-bold">
+                                                    {client?.street}{client?.number ? `, ${client.number}` : ''}
+                                                </p>
+                                                <p className="text-xs text-gray-500 italic mt-0.5">
+                                                    {client?.complement || 'Sem complemento'} - {client?.neighborhood || 'Bairro N/A'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Cidade / UF</p>
+                                                <p className="text-sm font-bold uppercase">{client?.city} - {client?.uf}</p>
+                                                <p className="text-xs font-mono text-gray-500">CEP: {client?.cep || '00000-000'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Bloco 4: Produtos/Serviços e Próximos Passos */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Produtos Contratados */}
+                                        <div className="glass-card p-6 rounded-3xl border border-border-theme/50">
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
+                                                    <Package className="w-4 h-4" />
+                                                </div>
+                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Produtos / Serviços</h3>
+                                            </div>
+                                            <div className="space-y-3">
+                                                {client?.contracted_items && client.contracted_items.length > 0 ? (
+                                                    client.contracted_items.map((item, idx) => (
+                                                        <div key={idx} className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                                            <p className="text-xs font-bold text-emerald-600 uppercase tracking-tight">{item.name}</p>
+                                                            {item.description && <p className="text-[10px] text-emerald-600/70">{item.description}</p>}
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-[10px] text-gray-500 italic py-2">Nenhum produto listado.</p>
+                                                )}
+                                            </div>
                                         </div>
 
-                                        <div className="space-y-3">
-                                            {clientTickets.length > 0 ? (
-                                                clientTickets.map(t => {
-                                                    const statusColor = t.status_obj?.color || '#9ca3af';
-                                                    return (
-                                                        <button
-                                                            key={t.id}
-                                                            onClick={() => {
-                                                                closeClientModal();
-                                                                setTimeout(() => {
-                                                                    router.push(`/tickets/${t.id}`);
-                                                                }, 400);
-                                                            }}
-                                                            className="w-full p-4 rounded-2xl bg-background border border-border-theme hover:bg-white/5 transition-all flex items-center justify-between text-left group"
-                                                        >
-                                                            <div className="space-y-1">
-                                                                <p className="text-xs font-bold group-hover:text-accent-theme transition-colors line-clamp-1">{t.title}</p>
-                                                                <div className="flex items-center gap-3 text-[10px] text-gray-500">
-                                                                    <span>#{t.id}</span>
-                                                                    <span className="w-1 h-1 rounded-full bg-border-theme" />
-                                                                    <span>{new Date(t.created_at).toLocaleDateString()}</span>
-                                                                </div>
-                                                            </div>
-                                                            <span
-                                                                className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shrink-0 ml-4"
-                                                                style={{
-                                                                    color: statusColor,
-                                                                    borderColor: `${statusColor}30`,
-                                                                    backgroundColor: `${statusColor}10`
+                                        {/* Chamados Recentes */}
+                                        <div className="glass-card p-6 rounded-3xl border border-border-theme/50">
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <div className="p-2 rounded-xl bg-purple-500/10 text-purple-500">
+                                                    <History className="w-4 h-4" />
+                                                </div>
+                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Últimos Chamados</h3>
+                                            </div>
+                                            <div className="space-y-3">
+                                                {clientTickets.length > 0 ? (
+                                                    clientTickets.map(t => {
+                                                        const statusColor = t.status_obj?.color || '#9ca3af';
+                                                        return (
+                                                            <button
+                                                                key={t.id}
+                                                                onClick={() => {
+                                                                    closeClientModal();
+                                                                    setTimeout(() => {
+                                                                        router.push(`/tickets/${t.id}`);
+                                                                    }, 400);
                                                                 }}
+                                                                className="w-full p-3 rounded-xl bg-background border border-border-theme/30 hover:bg-white/5 transition-all flex items-center justify-between text-left group"
                                                             >
-                                                                {t.status}
-                                                            </span>
-                                                        </button>
-                                                    );
-                                                })
-                                            ) : !loadingClientTickets && (
-                                                <p className="text-center py-8 text-gray-500 text-xs italic">Nenhum outro chamado encontrado.</p>
-                                            )}
+                                                                <div className="min-w-0 pr-2">
+                                                                    <p className="text-[11px] font-bold truncate group-hover:text-accent-theme transition-colors">{t.title}</p>
+                                                                    <span className="text-[9px] text-gray-500">#{t.id} - {new Date(t.created_at).toLocaleDateString()}</span>
+                                                                </div>
+                                                                <div
+                                                                    className="w-2 h-2 rounded-full shrink-0 shadow-sm"
+                                                                    style={{ backgroundColor: statusColor, boxShadow: `0 0 10px ${statusColor}40` }}
+                                                                />
+                                                            </button>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <p className="text-[10px] text-gray-500 italic py-2 text-center">Sem histórico adicional.</p>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
