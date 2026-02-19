@@ -18,6 +18,7 @@ export default function LoginPage() {
     // Estado para Configuração de Servidor
     const [showServerSettings, setShowServerSettings] = useState(false);
     const [apiUrl, setApiUrl] = useState('');
+    const [aiSource, setAiSource] = useState<'centralized' | 'local'>('centralized');
     const [isTesting, setIsTesting] = useState(false);
     const [testStatus, setTestStatus] = useState<'success' | 'error' | null>(null);
 
@@ -28,9 +29,12 @@ export default function LoginPage() {
 
         if (localConfig) {
             try {
-                const { apiUrl: storedUrl } = JSON.parse(localConfig);
+                const { apiUrl: storedUrl, aiSource: storedAiSource } = JSON.parse(localConfig);
                 if (storedUrl) {
                     currentUrl = storedUrl;
+                }
+                if (storedAiSource) {
+                    setAiSource(storedAiSource);
                 }
             } catch (e) { }
         }
@@ -54,7 +58,17 @@ export default function LoginPage() {
     }, []);
 
     const handleSaveSettings = () => {
-        const config = { apiUrl: apiUrl.replace(/\/$/, "") };
+        const localConfig = localStorage.getItem('system_config');
+        let currentConfig = {};
+        if (localConfig) {
+            try { currentConfig = JSON.parse(localConfig); } catch (e) { }
+        }
+
+        const config = {
+            ...currentConfig,
+            apiUrl: apiUrl.replace(/\/$/, ""),
+            aiSource: aiSource
+        };
         localStorage.setItem('system_config', JSON.stringify(config));
         setShowServerSettings(false);
         setError(''); // Limpa erro anterior se houver
@@ -218,17 +232,6 @@ export default function LoginPage() {
                         </button>
                     </form>
 
-                    {/* Footer com Dica */}
-                    <div className="text-center">
-                        <div className="inline-block p-4 bg-white/5 border border-white/5 rounded-2xl">
-                            <p className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-widest">
-                                Ambiente <span className="text-foreground">Homologação</span> Local
-                            </p>
-                            <div className="flex gap-4 mt-2 justify-center opacity-40 grayscale group-hover:grayscale-0 transition-all">
-                                <span className="text-[9px] font-mono">root / admin</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <p className="text-center mt-10 text-[9px] font-black uppercase tracking-[0.4em] text-[var(--color-text-muted)] opacity-30">
@@ -269,6 +272,37 @@ export default function LoginPage() {
                                     />
                                     <p className="text-[9px] text-[var(--color-text-muted)] italic px-1 pt-1">
                                         IP do servidor onde o backend está rodando.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                        Fonte do Processamento de IA
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setAiSource('centralized')}
+                                            className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${aiSource === 'centralized'
+                                                ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
+                                                : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                                }`}
+                                        >
+                                            IA do Servidor
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setAiSource('local')}
+                                            className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${aiSource === 'local'
+                                                ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
+                                                : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                                }`}
+                                        >
+                                            IA Local (PC)
+                                        </button>
+                                    </div>
+                                    <p className="text-[8px] text-[var(--color-text-muted)] italic px-1 leading-tight">
+                                        Escolha 'Servidor' para usar a placa de vídeo do servidor principal, economizando recursos desta máquina.
                                     </p>
                                 </div>
 

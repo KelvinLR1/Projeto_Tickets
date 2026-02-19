@@ -103,6 +103,13 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         refreshSettings();
     }, [refreshSettings]);
 
+    // Atualiza o título da aba do navegador dinamicamente
+    useEffect(() => {
+        if (typeof window !== 'undefined' && settings.system_name) {
+            document.title = settings.system_name;
+        }
+    }, [settings.system_name]);
+
     // Aplicar cores customizadas se o tema for 'custom'
     useEffect(() => {
         const root = document.documentElement;

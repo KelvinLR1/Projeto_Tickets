@@ -28,3 +28,8 @@ Desktop.ini
 # Environment Variables
 .env
 .env.local
+installer_output/
+*.exe
+
+installer_output/
+*.exe

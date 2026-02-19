@@ -103,6 +103,7 @@ export default function SettingsPage() {
     const [config, setConfig] = useState({
         apiUrl: 'http://127.0.0.1:8080',
         ollamaUrl: 'http://localhost:11434',
+        aiSource: 'centralized' as 'centralized' | 'local',
         textModel: 'phi3',
         visionModel: 'moondream',
         theme: 'dark' as any
@@ -926,6 +927,7 @@ export default function SettingsPage() {
             const defaults = {
                 apiUrl: getDefaultBaseURL(),
                 ollamaUrl: 'http://localhost:11434',
+                aiSource: 'centralized' as 'centralized' | 'local',
                 textModel: 'phi3',
                 visionModel: 'moondream',
                 theme: 'dark' as any
@@ -1068,7 +1070,44 @@ export default function SettingsPage() {
                                                 </button>
                                             </div>
                                         </div>
-                                        <div>
+                                        <div className="space-y-4">
+                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-2">
+                                                Processamento de IA (Ollama)
+                                            </label>
+                                            <div className="flex gap-4">
+                                                <button
+                                                    onClick={() => setConfig({ ...config, aiSource: 'centralized' })}
+                                                    className={clsx(
+                                                        "flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all",
+                                                        config.aiSource === 'centralized'
+                                                            ? "bg-accent-theme/10 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10"
+                                                            : "bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10"
+                                                    )}
+                                                >
+                                                    <Globe className="w-5 h-5" />
+                                                    <span className="text-[10px] font-black uppercase">IA do Servidor</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setConfig({ ...config, aiSource: 'local' })}
+                                                    className={clsx(
+                                                        "flex-1 flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all",
+                                                        config.aiSource === 'local'
+                                                            ? "bg-accent-theme/10 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10"
+                                                            : "bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10"
+                                                    )}
+                                                >
+                                                    <Cpu className="w-5 h-5" />
+                                                    <span className="text-[10px] font-black uppercase">IA Local (PC)</span>
+                                                </button>
+                                            </div>
+                                            <p className="text-[9px] text-[var(--color-text-muted)] italic px-1">
+                                                {config.aiSource === 'centralized'
+                                                    ? "A estação usará a IA instalada no servidor central (Recomendado)."
+                                                    : "A estação usará o Ollama instalado localmente neste computador."}
+                                            </p>
+                                        </div>
+
+                                        <div className={clsx("transition-all duration-300", config.aiSource === 'local' ? "opacity-100 scale-100" : "opacity-40 grayscale pointer-events-none scale-95 origin-top")}>
                                             <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Ollama Local (URL)</label>
                                             <input
                                                 className="w-full bg-[var(--color-input)] border border-border-theme rounded-2xl p-4 text-foreground focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all font-mono text-sm shadow-inner"

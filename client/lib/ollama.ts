@@ -12,6 +12,17 @@ const getSystemConfig = () => {
     return null;
 };
 
+const getOllamaUrl = () => {
+    if (typeof window === 'undefined') return '/api/ollama';
+
+    const config = getSystemConfig();
+    // aiSource can be 'local' or 'centralized' (default)
+    if (config?.aiSource === 'local') {
+        return config.ollamaUrl || 'http://localhost:11434';
+    }
+    return '/api/ollama';
+};
+
 // Configurar CORS no Ollama pode ser necessário.
 // No Windows: set OLLAMA_ORIGINS="*" e reiniciar ollama.
 
@@ -31,7 +42,7 @@ export const chatWithOllama = async (
                 : undefined,
         }));
 
-        const response = await fetch(OLLAMA_PROXY_URL, {
+        const response = await fetch(getOllamaUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -87,7 +98,7 @@ export const chatWithOllama = async (
 
 export const getOllamaModels = async () => {
     try {
-        const response = await fetch(OLLAMA_PROXY_URL);
+        const response = await fetch(getOllamaUrl());
         if (!response.ok) throw new Error('Failed to fetch models');
         const data = await response.json();
         return data.models || [];
