@@ -157,4 +157,33 @@ Na raiz do projeto, você encontrará diversos scripts Python criados para auxil
 - `check_tickets_debug.py`: Gera um relatório em TXT (`debug_formatted.txt`) sobre a consistência dos tickets no banco.
 
 ---
+
+## 📦 Gerando o Instalador (Windows)
+
+Para criar um pacote de instalação portável que executa como Serviço do Windows:
+
+### 1. Preparação do Ambiente
+Abra o PowerShell como **Administrador** na raiz do projeto e garanta que os scripts possam ser executados:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+```
+
+> [!TIP]
+> **Sobre o Banco de Dados:** O sistema suporta **SQLite** out-of-the-box (não requer instalação). Se optar por **PostgreSQL**, você deve instalá-lo manualmente antes de rodar o configurador. [Baixe o PostgreSQL aqui](https://www.postgresql.org/download/windows/).
+
+### 2. Build dos Binários
+Execute o script de automação para preparar os arquivos, baixar o Python portável e compilar os executáveis:
+```powershell
+.\build_installer.ps1
+```
+*Isso gerará a pasta `dist` com tudo que é necessário para o instalador.*
+
+### 3. Compilação do Instalador
+1. Abra o **Inno Setup Compiler**.
+2. Carregue o arquivo `installer.iss`.
+3. Clique em **Build > Compile**.
+4. O instalador final estará em `installer_output\TicketFlow_Setup.exe`.
+
+---
+
 *Desenvolvido com foco em privacidade, velocidade e experiência estética premium.*

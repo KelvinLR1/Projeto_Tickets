@@ -15,7 +15,7 @@ class Client(Base):
     nickname = Column(String, index=True, nullable=True)
     email = Column(String, index=True, nullable=True)
     cpf_cnpj = Column(String, unique=True, index=True, nullable=True)
-    phone = Column(String, index=True)
+    phone = Column(String, index=True, nullable=True)
     
     # Endereço
     cep = Column(String, nullable=True)
@@ -243,3 +243,17 @@ class SystemSettings(Base):
 
 # Update User relationship
 User.notifications = relationship("Notification", foreign_keys="Notification.user_id", back_populates="user", order_by="desc(Notification.created_at)")
+
+class CustomReport(Base):
+    __tablename__ = "custom_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(String, nullable=True)
+    query = Column(Text)
+    variables = Column(JSON, default=[]) # List of {name: '', label: '', type: 'string'|'number'|'date'}
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    created_by = relationship("User")

@@ -28,14 +28,27 @@ Source: "dist\client\*"; DestDir: "{app}\client"; Flags: recursesubdirs createal
 Source: "dist\server\*"; DestDir: "{app}\server"; Flags: recursesubdirs createallsubdirs; Components: server
 Source: "dist\config_db.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: server
 
-; Scripts de Inicialização
-Source: "dist\Iniciar_TicketFlow.bat"; DestDir: "{app}"; Flags: ignoreversion
+; Scripts de Inicialização e Controle
+Source: "dist\TicketFlow_Controller.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\TicketFlow_Backend_Service.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: server
+Source: "dist\TicketFlow_Frontend_Service.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: server
 
 [Icons]
-Name: "{group}\TicketFlow"; Filename: "{app}\Iniciar_TicketFlow.bat"
-Name: "{commondesktop}\TicketFlow"; Filename: "{app}\Iniciar_TicketFlow.bat"; Tasks: desktopicon
+Name: "{group}\TicketFlow"; Filename: "{app}\TicketFlow_Controller.exe"
+Name: "{commondesktop}\TicketFlow"; Filename: "{app}\TicketFlow_Controller.exe"; Tasks: desktopicon
 
 [Run]
 ; Só roda o configurador de banco se instalou o componente do servidor
 Filename: "{app}\config_db.exe"; Description: "Configurar Banco de Dados PostgreSQL"; Flags: postinstall shellexec; Components: server
-Filename: "{app}\Iniciar_TicketFlow.bat"; Description: "Iniciar TicketFlow Agora"; Flags: nowait postinstall shellexec skipifsilent
+
+; Instalar os serviços
+Filename: "{app}\TicketFlow_Backend_Service.exe"; Parameters: "install"; StatusMsg: "Registrando Serviço Backend..."; Flags: runhidden; Components: server
+Filename: "{app}\TicketFlow_Frontend_Service.exe"; Parameters: "install"; StatusMsg: "Registrando Serviço Frontend..."; Flags: runhidden; Components: server
+
+; Iniciar o controlador
+Filename: "{app}\TicketFlow_Controller.exe"; Description: "Abrir Painel de Controle TicketFlow"; Flags: nowait postinstall shellexec skipifsilent
+
+[UninstallRun]
+; Remover os serviços ao desinstalar
+Filename: "{app}\TicketFlow_Backend_Service.exe"; Parameters: "remove"; Flags: runhidden; Components: server
+Filename: "{app}\TicketFlow_Frontend_Service.exe"; Parameters: "remove"; Flags: runhidden; Components: server

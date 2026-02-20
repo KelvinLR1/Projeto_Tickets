@@ -203,13 +203,15 @@ class DBImportConfigs(BaseModel):
     user: str
     password: str
     database: str
-    table: str
+    table: Optional[str] = None
+    query: Optional[str] = None
     mapping: Optional[dict] = None # Mapping from DB columns to Client fields {"remote_col": "name"}
 
 class ImportResult(BaseModel):
     total: int
     imported: int
-    duplicates: int
+    updated: int = 0
+    duplicates: int = 0
     errors: List[str] = []
 
 # --- Profile Schemas ---
@@ -380,6 +382,53 @@ class SystemSettingsUpdate(BaseModel):
 class SystemSettings(SystemSettingsBase):
     id: int
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# --- New: DB Configuration Schemas ---
+class DBConfigSQLite(BaseModel):
+    dbname: str = "tickets.db"
+
+class DBConfigPostgres(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+    user: str = "postgres"
+    password: str
+    dbname: str = "ticketflow_db"
+
+class DBConfig(BaseModel):
+    engine: str # "sqlite" ou "postgres"
+    sqlite: Optional[DBConfigSQLite] = None
+    postgres: Optional[DBConfigPostgres] = None
+
+# --- Custom Report Schemas ---
+class CustomReportVariable(BaseModel):
+    name: str
+    label: str
+    type: str # string, number, date
+
+class CustomReportBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    query: str
+    variables: Optional[List[CustomReportVariable]] = []
+
+class CustomReportCreate(CustomReportBase):
+    pass
+
+class CustomReportUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    query: Optional[str] = None
+    variables: Optional[List[CustomReportVariable]] = None
+
+class CustomReport(CustomReportBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    created_by_id: Optional[int] = None
+    created_by: Optional[User] = None
 
     class Config:
         from_attributes = True
