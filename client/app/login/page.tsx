@@ -22,6 +22,17 @@ export default function LoginPage() {
     const [isTesting, setIsTesting] = useState(false);
     const [testStatus, setTestStatus] = useState<'success' | 'error' | null>(null);
 
+    // Estado para Configuração de Banco de Dados
+    const [configTab, setConfigTab] = useState<'network' | 'database'>('network');
+    const [dbEngine, setDbEngine] = useState<'sqlite' | 'postgres'>('sqlite');
+    const [dbSqliteName, setDbSqliteName] = useState('tickets.db');
+    const [dbPgHost, setDbPgHost] = useState('localhost');
+    const [dbPgPort, setDbPgPort] = useState('5432');
+    const [dbPgUser, setDbPgUser] = useState('postgres');
+    const [dbPgPass, setDbPgPass] = useState('');
+    const [dbPgName, setDbPgName] = useState('ticketflow_db');
+    const [isConfiguringDb, setIsConfiguringDb] = useState(false);
+
     // Carrega URL do Servidor e verifica conectividade
     React.useEffect(() => {
         const localConfig = localStorage.getItem('system_config');
@@ -92,6 +103,32 @@ export default function LoginPage() {
             }
         } finally {
             setIsTesting(false);
+        }
+    };
+
+    const handleSaveDatabase = async () => {
+        setIsConfiguringDb(true);
+        try {
+            const configData = {
+                engine: dbEngine,
+                sqlite: dbEngine === 'sqlite' ? { dbname: dbSqliteName } : null,
+                postgres: dbEngine === 'postgres' ? {
+                    host: dbPgHost,
+                    port: parseInt(dbPgPort),
+                    user: dbPgUser,
+                    password: dbPgPass,
+                    dbname: dbPgName
+                } : null
+            };
+
+            const response = await axios.post(`${apiUrl.replace(/\/$/, "")}/api/system/config-db`, configData);
+            alert(response.data.message);
+            setShowServerSettings(false);
+            window.location.reload();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Erro ao configurar banco de dados.');
+        } finally {
+            setIsConfiguringDb(false);
         }
     };
 
@@ -242,7 +279,7 @@ export default function LoginPage() {
             {/* Modal de Configuração de Servidor */}
             {showServerSettings && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="w-full max-w-sm glass-card rounded-[2.5rem] p-8 border-white/10 shadow-2xl relative">
+                    <div className="w-full max-w-md glass-card rounded-[2.5rem] p-8 border-white/10 shadow-2xl relative">
                         <button
                             onClick={() => setShowServerSettings(false)}
                             className="absolute top-6 right-6 p-2 text-[var(--color-text-muted)] hover:text-foreground transition-colors"
@@ -253,88 +290,198 @@ export default function LoginPage() {
                         <div className="space-y-6">
                             <div className="flex items-center gap-3 text-accent-theme">
                                 <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                    <Globe className="w-6 h-6" />
+                                    <Settings className="w-6 h-6" />
                                 </div>
-                                <h3 className="font-bold text-lg uppercase tracking-widest text-foreground">Servidor API</h3>
+                                <h3 className="font-bold text-lg uppercase tracking-widest text-foreground">Ajustes do Sistema</h3>
                             </div>
 
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                        Endereço do Backend (URL)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={apiUrl}
-                                        onChange={(e) => setApiUrl(e.target.value)}
-                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-5 py-4 text-sm font-mono focus:outline-none focus:ring-4 focus:ring-accent-theme/10 focus:border-accent-theme/30 transition-all"
-                                        placeholder="http://192.168.0.10:8080"
-                                    />
-                                    <p className="text-[9px] text-[var(--color-text-muted)] italic px-1 pt-1">
-                                        IP do servidor onde o backend está rodando.
-                                    </p>
-                                </div>
+                            {/* Tabs Internas */}
+                            <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
+                                <button
+                                    onClick={() => setConfigTab('network')}
+                                    className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${configTab === 'network' ? 'bg-accent-theme/20 text-accent-theme' : 'text-[var(--color-text-muted)] hover:bg-white/5'}`}
+                                >
+                                    Conexão
+                                </button>
+                                <button
+                                    onClick={() => setConfigTab('database')}
+                                    className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${configTab === 'database' ? 'bg-accent-theme/20 text-accent-theme' : 'text-[var(--color-text-muted)] hover:bg-white/5'}`}
+                                >
+                                    Banco de Dados
+                                </button>
+                            </div>
 
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
-                                        Fonte do Processamento de IA
-                                    </label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setAiSource('centralized')}
-                                            className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${aiSource === 'centralized'
-                                                ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
-                                                : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
-                                                }`}
-                                        >
-                                            IA do Servidor
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setAiSource('local')}
-                                            className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${aiSource === 'local'
-                                                ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
-                                                : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
-                                                }`}
-                                        >
-                                            IA Local (PC)
-                                        </button>
-                                    </div>
-                                    <p className="text-[8px] text-[var(--color-text-muted)] italic px-1 leading-tight">
-                                        Escolha 'Servidor' para usar a placa de vídeo do servidor principal, economizando recursos desta máquina.
-                                    </p>
-                                </div>
+                            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                                {configTab === 'network' ? (
+                                    <>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                Endereço do Backend (URL)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={apiUrl}
+                                                onChange={(e) => setApiUrl(e.target.value)}
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-accent-theme/10 focus:border-accent-theme/30 transition-all"
+                                                placeholder="http://192.168.0.10:8080"
+                                            />
+                                            <p className="text-[9px] text-[var(--color-text-muted)] italic px-1 pt-1">
+                                                IP do servidor onde o backend está rodando.
+                                            </p>
+                                        </div>
 
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={handleTestConnection}
-                                        disabled={isTesting}
-                                        className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${testStatus === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-500' :
-                                            testStatus === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-500' :
-                                                'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
-                                            }`}
-                                    >
-                                        {isTesting ? (
-                                            <RefreshCw className="w-4 h-4 animate-spin" />
-                                        ) : testStatus === 'success' ? (
-                                            <ShieldCheck className="w-4 h-4" />
-                                        ) : testStatus === 'error' ? (
-                                            <AlertCircle className="w-4 h-4" />
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                Fonte do Processamento de IA
+                                            </label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAiSource('centralized')}
+                                                    className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${aiSource === 'centralized'
+                                                        ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
+                                                        : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                                        }`}
+                                                >
+                                                    IA do Servidor
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAiSource('local')}
+                                                    className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${aiSource === 'local'
+                                                        ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
+                                                        : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                                        }`}
+                                                >
+                                                    IA Local (PC)
+                                                </button>
+                                            </div>
+                                            <p className="text-[8px] text-[var(--color-text-muted)] italic px-1 leading-tight">
+                                                Escolha 'Servidor' para usar a placa de vídeo do servidor principal, economizando recursos desta máquina.
+                                            </p>
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={handleTestConnection}
+                                                disabled={isTesting}
+                                                className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${testStatus === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-500' :
+                                                    testStatus === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-500' :
+                                                        'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                                    }`}
+                                            >
+                                                {isTesting ? (
+                                                    <RefreshCw className="w-4 h-4 animate-spin" />
+                                                ) : testStatus === 'success' ? (
+                                                    <ShieldCheck className="w-4 h-4" />
+                                                ) : testStatus === 'error' ? (
+                                                    <AlertCircle className="w-4 h-4" />
+                                                ) : (
+                                                    <RefreshCw className="w-4 h-4" />
+                                                )}
+                                                {isTesting ? 'Testando...' : testStatus === 'success' ? 'Conectado' : testStatus === 'error' ? 'Falhou' : 'Testar'}
+                                            </button>
+
+                                            <button
+                                                onClick={handleSaveSettings}
+                                                className="flex-[1.5] flex items-center justify-center gap-2 py-4 premium-gradient rounded-xl text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-accent-theme/20 hover:brightness-110 active:scale-95 transition-all"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                                Salvar Rede
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                Motor de Banco de Dados
+                                            </label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDbEngine('sqlite')}
+                                                    className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${dbEngine === 'sqlite'
+                                                        ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
+                                                        : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                                        }`}
+                                                >
+                                                    SQLite (Local)
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDbEngine('postgres')}
+                                                    className={`p-3 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${dbEngine === 'postgres'
+                                                        ? 'bg-accent-theme/20 border-accent-theme text-accent-theme shadow-lg shadow-accent-theme/10'
+                                                        : 'bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10'
+                                                        }`}
+                                                >
+                                                    PostgreSQL
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {dbEngine === 'sqlite' ? (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
+                                                    Nome do Arquivo (.db)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={dbSqliteName}
+                                                    onChange={(e) => setDbSqliteName(e.target.value)}
+                                                    className="w-full bg-background/50 border border-border-theme rounded-2xl px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-mono"
+                                                    placeholder="tickets.db"
+                                                />
+                                            </div>
                                         ) : (
-                                            <RefreshCw className="w-4 h-4" />
+                                            <div className="space-y-3">
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <div className="col-span-2 space-y-2">
+                                                        <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Host/IP</label>
+                                                        <input value={dbPgHost} onChange={e => setDbPgHost(e.target.value)} className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-[12px] font-bold" />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Porta</label>
+                                                        <input value={dbPgPort} onChange={e => setDbPgPort(e.target.value)} className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-[12px] font-bold" />
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Usuário</label>
+                                                        <input value={dbPgUser} onChange={e => setDbPgUser(e.target.value)} className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-[12px] font-bold" />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Senha</label>
+                                                        <input type="password" value={dbPgPass} onChange={e => setDbPgPass(e.target.value)} className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-[12px] font-bold" />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">Nome do Banco</label>
+                                                    <input value={dbPgName} onChange={e => setDbPgName(e.target.value)} className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-[12px] font-bold" />
+                                                </div>
+                                            </div>
                                         )}
-                                        {isTesting ? 'Testando...' : testStatus === 'success' ? 'Conectado' : testStatus === 'error' ? 'Falhou' : 'Testar'}
-                                    </button>
 
-                                    <button
-                                        onClick={handleSaveSettings}
-                                        className="flex-[1.5] flex items-center justify-center gap-2 py-4 premium-gradient rounded-xl text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-accent-theme/20 hover:brightness-110 active:scale-95 transition-all"
-                                    >
-                                        <Save className="w-4 h-4" />
-                                        Salvar & Recarregar
-                                    </button>
-                                </div>
+                                        <button
+                                            onClick={handleSaveDatabase}
+                                            disabled={isConfiguringDb}
+                                            className="w-full group relative flex items-center justify-center gap-3 py-5 premium-gradient rounded-2xl text-white font-black text-[11px] uppercase tracking-[0.25em] shadow-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
+                                        >
+                                            {isConfiguringDb ? (
+                                                <Loader2 className="w-5 h-5 animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <Save className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                                                    Gravar Configuração
+                                                </>
+                                            )}
+                                        </button>
+                                        <p className="text-[7px] text-[var(--color-text-muted)] uppercase tracking-widest text-center leading-relaxed opacity-60">
+                                            ⚠️ A troca do banco não migra dados automaticamente entre motores.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

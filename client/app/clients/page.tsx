@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getClients, createClient, updateClient, deleteClient, importClientsExcel, importClientsDB, Client } from '@/lib/api';
+import { getClients, createClient, updateClient, deleteClient, importClientsExcel, importClientsDB, previewClientsDB, downloadClientTemplate, Client } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
 import { useAuth } from '@/components/AuthProvider';
-import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, Server, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser, MapPin, Hash, Plus, Package, Briefcase } from 'lucide-react';
+import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, Server, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser, MapPin, Hash, Plus, Package, Briefcase, FileText, Code, Table } from 'lucide-react';
 import CustomSelect from '@/components/CustomSelect';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ClientRowSkeleton } from '@/components/Skeleton';
@@ -120,8 +120,42 @@ export default function ClientsPage() {
         password: '',
         database: '',
         table: '',
-        mapping: { name: 'name', email: 'email', cpf_cnpj: 'cpf_cnpj', phone: 'phone' }
+        query: '',
+        mapping: {
+            name: 'name', email: 'email', cpf_cnpj: 'cpf_cnpj', phone: 'phone',
+            nickname: 'nickname', cep: 'cep', city: 'city', uf: 'uf',
+            street: 'street', number: 'number', complement: 'complement',
+            neighborhood: 'neighborhood', state_registration: 'state_registration',
+            tax_regime: 'tax_regime'
+        }
     });
+
+    const [previewData, setPreviewData] = useState<any[]>([]);
+    const [previewing, setPreviewing] = useState(false);
+
+    const handleDownloadTemplate = async () => {
+        try {
+            await downloadClientTemplate();
+            showNotification('Download da planilha modelo iniciado!', 'success');
+        } catch (error) {
+            console.error("Erro no download:", error);
+            showNotification('Não foi possível baixar a planilha modelo. Verifique sua conexão.', 'error');
+        }
+    };
+
+    const handlePreviewDB = async () => {
+        setPreviewing(true);
+        try {
+            const data = await previewClientsDB(dbConfig);
+            setPreviewData(data);
+            showNotification('Pré-visualização gerada com sucesso!', 'success');
+        } catch (error: any) {
+            console.error("Erro no preview:", error);
+            showNotification(`Falha ao conectar ou executar query: ${error.response?.data?.detail || error.message}`, 'error');
+        } finally {
+            setPreviewing(false);
+        }
+    };
 
     // Reset page on filter change
     useEffect(() => {
@@ -1066,7 +1100,7 @@ export default function ClientsPage() {
                                             type="file"
                                             accept=".xlsx,.xls,.csv"
                                             onChange={handleExcelImport}
-                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            className="absolute inset-0 opacity-0 cursor-pointer z-10"
                                             disabled={importing}
                                         />
                                         <div className="w-20 h-20 bg-accent-theme/10 rounded-full flex items-center justify-center text-accent-theme group-hover:scale-110 transition-transform">
@@ -1078,51 +1112,59 @@ export default function ClientsPage() {
                                         </div>
                                     </div>
 
-                                    {/* Guia de Colunas */}
-                                    <div className="space-y-4">
-                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Estrutura de Colunas Obrigatória</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            {[
-                                                { label: 'name', desc: 'Nome Completo', req: true },
-                                                { label: 'email', desc: 'E-mail Corporativo', req: true },
-                                                { label: 'cpf_cnpj', desc: 'CPF ou CNPJ (X.XXX...)', req: true },
-                                                { label: 'phone', desc: 'Telefone de Contato', req: false },
-                                            ].map((col, idx) => (
-                                                <div key={idx} className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl hover:bg-white/[0.05] transition-all">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[11px] font-mono font-black text-accent-theme forced-colors:text-accent-theme">{col.label}</span>
-                                                        <span className="text-[9px] text-[var(--color-text-muted)] font-bold uppercase tracking-wider">{col.desc}</span>
-                                                    </div>
-                                                    {col.req ? (
-                                                        <span className="px-2 py-0.5 bg-accent-theme/10 text-accent-theme text-[8px] font-black rounded-lg uppercase border border-accent-theme/20">REQUERIDO</span>
-                                                    ) : (
-                                                        <span className="px-2 py-0.5 bg-white/5 text-[var(--color-text-muted)] text-[8px] font-black rounded-lg uppercase border border-white/5">OPCIONAL</span>
-                                                    )}
+                                    {/* Guia de Colunas Simplificado */}
+                                    <div className="space-y-6">
+                                        <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-8 bg-accent-theme/5 border border-accent-theme/10 rounded-[2rem]">
+                                            <div className="flex items-center gap-5">
+                                                <div className="w-16 h-16 bg-accent-theme/10 rounded-2xl flex items-center justify-center text-accent-theme">
+                                                    <FileText className="w-8 h-8" />
                                                 </div>
-                                            ))}
+                                                <div>
+                                                    <h4 className="text-sm font-black uppercase tracking-widest text-foreground italic">Planilha Padrão</h4>
+                                                    <p className="text-[10px] text-[var(--color-text-muted)] font-bold mt-1 uppercase tracking-wider">Use nosso modelo para evitar erros de formatação</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleDownloadTemplate}
+                                                className="flex items-center gap-3 px-8 py-4 bg-accent-theme text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:brightness-110 transition-all shadow-lg shadow-accent-theme/20"
+                                            >
+                                                <Upload className="w-4 h-4 rotate-180" />
+                                                BAIXAR MODELO .XLSX
+                                            </button>
                                         </div>
-                                        <div className="p-4 bg-accent-theme/5 border border-accent-theme/10 rounded-2xl flex items-start gap-3">
+
+                                        <div className="p-4 bg-background/30 border border-border-theme/30 rounded-2xl flex items-start gap-3">
                                             <AlertCircle className="w-4 h-4 text-accent-theme shrink-0 mt-0.5" />
-                                            <p className="text-[9px] text-accent-theme/80 font-bold uppercase tracking-wide leading-relaxed">
-                                                Certifique-se de que a primeira linha contém exatamente os nomes acima. O CPF/CNPJ é usado para evitar duplicatas.
-                                            </p>
+                                            <div className="space-y-1">
+                                                <p className="text-[9px] text-foreground font-black uppercase tracking-wide">Lembretes Importantes:</p>
+                                                <p className="text-[9px] text-[var(--color-text-muted)] font-bold uppercase tracking-wide leading-relaxed">
+                                                    • Colunas obrigatórias: <span className="text-accent-theme">name</span> e <span className="text-accent-theme">cpf_cnpj</span>.<br />
+                                                    • O sistema atualizará os dados se o CPF/CNPJ já existir.<br />
+                                                    • Formatos suportados: Excel (.xlsx, .xls) e CSV.
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="grid grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-4 gap-4">
                                         <div className="bg-background/40 p-5 rounded-2xl border border-border-theme text-center">
                                             <div className="text-2xl font-black font-display italic">{importResult.total}</div>
                                             <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Total</div>
                                         </div>
                                         <div className="bg-green-500/10 p-5 rounded-2xl border border-green-500/20 text-center">
                                             <div className="text-2xl font-black font-display italic text-green-500">{importResult.imported}</div>
-                                            <div className="text-[9px] font-black uppercase tracking-widest text-green-500">Importados</div>
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-green-500">Novos</div>
+                                        </div>
+                                        <div className="bg-blue-500/10 p-5 rounded-2xl border border-blue-500/20 text-center">
+                                            <div className="text-2xl font-black font-display italic text-blue-500">{importResult.updated || 0}</div>
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-blue-500">Atualizados</div>
                                         </div>
                                         <div className="bg-orange-500/10 p-5 rounded-2xl border border-orange-500/20 text-center">
-                                            <div className="text-2xl font-black font-display italic text-orange-500">{importResult.duplicates}</div>
-                                            <div className="text-[9px] font-black uppercase tracking-widest text-orange-500">Duplicados</div>
+                                            <div className="text-2xl font-black font-display italic text-orange-500">{importResult.duplicates || 0}</div>
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-orange-500">Ignorados</div>
                                         </div>
                                     </div>
 
@@ -1153,7 +1195,7 @@ export default function ClientsPage() {
             {/* Modal DB */}
             {isDBModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-                    <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 text-foreground relative">
+                    <div className="glass-card w-full max-w-4xl max-h-[100vh] md:max-h-[90vh] flex flex-col rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 text-foreground relative">
                         <div className="p-10 border-b border-white/5 flex justify-between items-center bg-background/30">
                             <div>
                                 <h3 className="text-2xl font-black uppercase tracking-tighter italic font-display">
@@ -1166,116 +1208,219 @@ export default function ClientsPage() {
                             </button>
                         </div>
 
-                        {!importResult ? (
-                            <form onSubmit={handleDBImport} className="p-10 space-y-8">
-                                <div className="grid grid-cols-2 gap-8">
-                                    <div className="space-y-0">
-                                        <CustomSelect
-                                            label="Motor do Banco"
-                                            value={dbConfig.db_type}
-                                            onChange={(val) => setDbConfig({ ...dbConfig, db_type: val })}
-                                            options={DB_ENGINE_OPTIONS}
-                                        />
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-10 space-y-8">
+                            {!importResult ? (
+                                <form onSubmit={handleDBImport} className="space-y-8">
+                                    <div className="grid grid-cols-2 gap-8">
+                                        <div className="space-y-0">
+                                            <CustomSelect
+                                                label="Motor do Banco"
+                                                value={dbConfig.db_type}
+                                                onChange={(val) => {
+                                                    const ports: Record<string, number> = { mysql: 3306, postgresql: 5432, sqlserver: 1433 };
+                                                    setDbConfig({ ...dbConfig, db_type: val, port: ports[val] || 3306 });
+                                                }}
+                                                options={DB_ENGINE_OPTIONS}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Server Host</label>
+                                            <div className="flex gap-4">
+                                                <input
+                                                    type="text"
+                                                    placeholder="ex: localhost"
+                                                    className="flex-1 bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
+                                                    value={dbConfig.host}
+                                                    onChange={(e) => setDbConfig({ ...dbConfig, host: e.target.value })}
+                                                />
+                                                <input
+                                                    type="number"
+                                                    placeholder="3306"
+                                                    className="w-24 bg-background/50 border border-border-theme rounded-2xl px-4 py-5 text-sm font-bold focus:outline-none"
+                                                    value={dbConfig.port}
+                                                    onChange={(e) => setDbConfig({ ...dbConfig, port: parseInt(e.target.value) })}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Usuário</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
+                                                value={dbConfig.user}
+                                                onChange={(e) => setDbConfig({ ...dbConfig, user: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Senha</label>
+                                            <input
+                                                type="password"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
+                                                value={dbConfig.password}
+                                                onChange={(e) => setDbConfig({ ...dbConfig, password: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Database</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
+                                                value={dbConfig.database}
+                                                onChange={(e) => setDbConfig({ ...dbConfig, database: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Nome da Tabela (Opcional)</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
+                                                placeholder="ex: tb_clientes"
+                                                value={dbConfig.table}
+                                                onChange={(e) => setDbConfig({ ...dbConfig, table: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Server Host</label>
-                                        <input
-                                            type="text"
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
-                                            value={dbConfig.host}
-                                            onChange={(e) => setDbConfig({ ...dbConfig, host: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Usuário</label>
-                                        <input
-                                            type="text"
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
-                                            value={dbConfig.user}
-                                            onChange={(e) => setDbConfig({ ...dbConfig, user: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Senha</label>
-                                        <input
-                                            type="password"
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
-                                            value={dbConfig.password}
-                                            onChange={(e) => setDbConfig({ ...dbConfig, password: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Database</label>
-                                        <input
-                                            type="text"
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
-                                            value={dbConfig.database}
-                                            onChange={(e) => setDbConfig({ ...dbConfig, database: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Nome da Tabela</label>
-                                        <input
-                                            type="text"
-                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-bold focus:outline-none"
-                                            placeholder="ex: tb_clientes"
-                                            value={dbConfig.table}
-                                            onChange={(e) => setDbConfig({ ...dbConfig, table: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
 
-                                <div className="p-10 bg-background/30 border-t border-white/5 flex gap-6 mt-10 -mx-10 -mb-10">
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1 flex items-center gap-2">
+                                                <Code className="w-4 h-4 text-accent-theme" /> Consulta SQL Customizada
+                                            </label>
+                                            <span className="text-[9px] text-accent-theme font-black uppercase tracking-widest bg-accent-theme/10 px-3 py-1 rounded-full border border-accent-theme/20">Recomendado</span>
+                                        </div>
+                                        <textarea
+                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-5 text-sm font-mono font-medium focus:outline-none min-h-[120px] resize-none"
+                                            placeholder="SELECT remote_name AS name, remote_cpf AS cpf_cnpj ... FROM minhatabela"
+                                            value={dbConfig.query}
+                                            onChange={(e) => setDbConfig({ ...dbConfig, query: e.target.value })}
+                                        />
+                                        <div className="p-5 bg-white/[0.03] border border-white/5 rounded-2xl space-y-3">
+                                            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                <Table className="w-4 h-4" /> Dicionário de Colunas Esperadas
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                                {Object.entries({
+                                                    name: 'Nome Completo',
+                                                    nickname: 'Nome Fantasia',
+                                                    email: 'E-mail',
+                                                    cpf_cnpj: 'CPF ou CNPJ',
+                                                    phone: 'Telefone com DDD',
+                                                    cep: 'CEP',
+                                                    city: 'Cidade',
+                                                    uf: 'UF (Estado)',
+                                                    street: 'Logradouro',
+                                                    number: 'Número',
+                                                    complement: 'Complemento',
+                                                    neighborhood: 'Bairro',
+                                                    state_registration: 'Inscrição Estadual',
+                                                    tax_regime: 'Regime Tributário'
+                                                }).map(([key, label]) => (
+                                                    <div key={key} className="flex items-center justify-between text-[9px] border-b border-white/5 pb-1 last:border-0">
+                                                        <span className="font-mono text-accent-theme font-bold">{key}</span>
+                                                        <span className="text-foreground/60 font-medium italic">{label}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <p className="text-[8px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest leading-relaxed">
+                                                Dica: Use `AS` no SQL para renomear suas colunas originais para os nomes acima e evitar mapeamento manual.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {previewData.length > 0 && (
+                                        <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Pré-visualização (Primeiros {previewData.length} registros)</h4>
+                                                <button onClick={() => setPreviewData([])} className="text-[9px] text-red-500 font-black uppercase tracking-widest hover:underline">Limpar</button>
+                                            </div>
+                                            <div className="bg-background/50 border border-border-theme rounded-2xl overflow-hidden overflow-x-auto custom-scrollbar">
+                                                <table className="w-full text-left text-[10px] border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-white/5 border-b border-white/5">
+                                                            {Object.keys(previewData[0]).slice(0, 5).map(key => (
+                                                                <th key={key} className="px-5 py-3 font-black uppercase tracking-widest text-[var(--color-text-muted)]">{key}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {previewData.map((row, i) => (
+                                                            <tr key={i} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                                                                {Object.values(row).slice(0, 5).map((val: any, j) => (
+                                                                    <td key={j} className="px-5 py-3 font-medium text-foreground/80 truncate max-w-[120px]">{String(val)}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="p-10 bg-background/30 border-t border-white/5 flex flex-wrap md:flex-nowrap gap-6 mt-10 -mx-10 -mb-10">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsDBModalOpen(false)}
+                                            className="flex-1 px-8 py-5 rounded-2xl border border-border-theme text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all text-[var(--color-text-muted)]"
+                                        >
+                                            CANCELAR
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={previewing || importing}
+                                            onClick={handlePreviewDB}
+                                            className="flex-1 flex items-center justify-center gap-3 px-8 py-5 rounded-2xl border-2 border-accent-theme/20 text-accent-theme font-black text-[10px] uppercase tracking-widest hover:bg-accent-theme/10 transition-all disabled:opacity-50"
+                                        >
+                                            {previewing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Table className="w-5 h-5" />}
+                                            PRÉ-VISUALIZAR
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={importing || previewing}
+                                            className="flex-[2] flex items-center justify-center gap-3 px-8 py-5 rounded-2xl bg-accent-theme text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 disabled:opacity-50 transition-all active:scale-95"
+                                        >
+                                            {importing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
+                                            EFETIVAR EXTRAÇÃO
+                                        </button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <div className="p-10 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="flex items-center gap-4 p-8 bg-green-500/10 border border-green-500/20 rounded-3xl">
+                                        <CheckCircle2 className="w-12 h-12 text-green-500" />
+                                        <div>
+                                            <h4 className="text-xl font-black uppercase tracking-tight italic">Extração Concluída</h4>
+                                            <p className="text-[10px] text-green-500/70 font-bold uppercase tracking-widest">A sincronização com o banco externo foi finalizada.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-4 gap-6">
+                                        <div className="bg-background/40 p-6 rounded-2xl border border-border-theme text-center">
+                                            <div className="text-3xl font-black font-display italic">{importResult.total}</div>
+                                            <div className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Extraídos</div>
+                                        </div>
+                                        <div className="bg-green-500/10 p-6 rounded-2xl border border-green-500/20 text-center">
+                                            <div className="text-3xl font-black font-display italic text-green-500">{importResult.imported}</div>
+                                            <div className="text-[10px] font-black uppercase tracking-widest text-green-500">Novos</div>
+                                        </div>
+                                        <div className="bg-blue-500/10 p-6 rounded-2xl border border-blue-500/20 text-center">
+                                            <div className="text-3xl font-black font-display italic text-blue-500">{importResult.updated || 0}</div>
+                                            <div className="text-[10px] font-black uppercase tracking-widest text-blue-500">Mesclados</div>
+                                        </div>
+                                        <div className="bg-orange-500/10 p-6 rounded-2xl border border-orange-500/20 text-center">
+                                            <div className="text-3xl font-black font-display italic text-orange-500">{importResult.duplicates || 0}</div>
+                                            <div className="text-[10px] font-black uppercase tracking-widest text-orange-500">Existentes</div>
+                                        </div>
+                                    </div>
+
                                     <button
-                                        type="button"
-                                        onClick={() => setIsDBModalOpen(false)}
-                                        className="flex-1 px-8 py-5 rounded-2xl border border-border-theme text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all text-[var(--color-text-muted)] hover:text-foreground"
+                                        onClick={() => { setIsDBModalOpen(false); setImportResult(null); }}
+                                        className="w-full py-6 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95"
                                     >
-                                        CANCELAR
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={importing}
-                                        className="flex-1 flex items-center justify-center gap-3 px-8 py-5 rounded-2xl bg-accent-theme text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl shadow-accent-theme/20 hover:brightness-110 disabled:opacity-50 transition-all active:scale-95"
-                                    >
-                                        {importing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
-                                        INICIAR EXTRAÇÃO
+                                        VOLTAR PARA GESTÃO
                                     </button>
                                 </div>
-                            </form>
-                        ) : (
-                            <div className="p-10 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <div className="flex items-center gap-4 p-8 bg-green-500/10 border border-green-500/20 rounded-3xl">
-                                    <CheckCircle2 className="w-12 h-12 text-green-500" />
-                                    <div>
-                                        <h4 className="text-xl font-black uppercase tracking-tight italic">Extração Concluída</h4>
-                                        <p className="text-[10px] text-green-500/70 font-bold uppercase tracking-widest">A sincronização com o banco externo foi finalizada.</p>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-6">
-                                    <div className="bg-background/40 p-6 rounded-2xl border border-border-theme text-center">
-                                        <div className="text-3xl font-black font-display italic">{importResult.total}</div>
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Extraídos</div>
-                                    </div>
-                                    <div className="bg-green-500/10 p-6 rounded-2xl border border-green-500/20 text-center">
-                                        <div className="text-3xl font-black font-display italic text-green-500">{importResult.imported}</div>
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-green-500">Novos</div>
-                                    </div>
-                                    <div className="bg-orange-500/10 p-6 rounded-2xl border border-orange-500/20 text-center">
-                                        <div className="text-3xl font-black font-display italic text-orange-500">{importResult.duplicates}</div>
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-orange-500">Já Existiam</div>
-                                    </div>
-                                </div>
-
-                                <button
-                                    onClick={() => { setIsDBModalOpen(false); setImportResult(null); }}
-                                    className="w-full py-6 rounded-2xl premium-gradient text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95"
-                                >
-                                    VOLTAR PARA GESTÃO
-                                </button>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

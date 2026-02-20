@@ -54,6 +54,7 @@ api.interceptors.request.use((config) => {
           }
 
           config.baseURL = apiUrl.replace(/\/$/, "");
+          console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url} | BaseURL: ${config.baseURL}`);
         }
       } catch (e) {
         console.error("[API] Erro ao ler configurações locais:", e);
@@ -100,6 +101,11 @@ api.interceptors.response.use(
 
       if (isNetworkError && isLoginPath) {
         // Silêncio na tela de login para erros de rede, pois a própria tela já avisa
+        console.error('[Network Error on Login]', {
+          baseURL: error.config?.baseURL,
+          url: error.config?.url,
+          message: error.message
+        });
       } else {
         console.error('[API Error]', {
           url: error.config?.url,
@@ -231,6 +237,13 @@ export interface Status {
   is_active: boolean;
 }
 
+export interface ReportFilters {
+  startDate?: string;
+  endDate?: string;
+  sectorId?: number;
+  userId?: number;
+}
+
 export interface DashboardStats {
   summary: ReportSummary;
   trends: any[];
@@ -254,8 +267,62 @@ export interface ReportSummary {
   }[];
 }
 
-export const getReportSummary = async () => {
-  const response = await api.get<ReportSummary>('/reports/summary');
+export const getReportSummary = async (filters: ReportFilters = {}) => {
+  const response = await api.get<ReportSummary>('/reports/summary', {
+    params: {
+      start_date: filters.startDate,
+      end_date: filters.endDate,
+      sector_id: filters.sectorId,
+      user_id: filters.userId,
+    }
+  });
+  return response.data;
+};
+
+export interface CustomReportVariable {
+  name: string;
+  label: string;
+  type: 'string' | 'number' | 'date';
+}
+
+export interface CustomReport {
+  id: number;
+  title: string;
+  description?: string;
+  query: string;
+  variables: CustomReportVariable[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomReportCreate {
+  title: string;
+  description?: string;
+  query: string;
+  variables: CustomReportVariable[];
+}
+
+export const getCustomReports = async () => {
+  const response = await api.get<CustomReport[]>('/reports/custom');
+  return response.data;
+};
+
+export const createCustomReport = async (report: CustomReportCreate) => {
+  const response = await api.post<CustomReport>('/reports/custom', report);
+  return response.data;
+};
+
+export const updateCustomReport = async (id: number, report: Partial<CustomReportCreate>) => {
+  const response = await api.put<CustomReport>(`/reports/custom/${id}`, report);
+  return response.data;
+};
+
+export const deleteCustomReport = async (id: number) => {
+  await api.delete(`/reports/custom/${id}`);
+};
+
+export const executeCustomReport = async (query: string, variables: Record<string, any>) => {
+  const response = await api.post<any[]>('/reports/custom/execute', { query, variables });
   return response.data;
 };
 
@@ -416,8 +483,15 @@ export const deleteTicket = async (id: number) => {
 
 
 
-export const getDashboardStats = async () => {
-  const response = await api.get<DashboardStats>('/dashboard/stats');
+export const getDashboardStats = async (filters: ReportFilters = {}) => {
+  const response = await api.get<DashboardStats>('/dashboard/stats', {
+    params: {
+      start_date: filters.startDate,
+      end_date: filters.endDate,
+      sector_id: filters.sectorId,
+      user_id: filters.userId,
+    }
+  });
   return response.data;
 };
 
@@ -470,6 +544,35 @@ export const importClientsExcel = async (file: File) => {
 export const importClientsDB = async (config: any) => {
   const response = await api.post('/clients/import/db', config);
   return response.data;
+};
+
+export const previewClientsDB = async (config: any) => {
+  const response = await api.post<any[]>('/clients/import/db/preview', config);
+  return response.data;
+};
+
+export const downloadClientTemplate = async () => {
+  try {
+    const response = await api.get('/clients/import/template', {
+      responseType: 'blob'
+    });
+
+    if (!response.data) {
+      throw new Error("Resposta da API vazia");
+    }
+
+    const url = window.URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'modelo_importacao_clientes.xlsx');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("[API] Erro ao baixar modelo de planilha:", error);
+    throw error;
+  }
 };
 
 export const searchKnowledge = async (query: string) => {
