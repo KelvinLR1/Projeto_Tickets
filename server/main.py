@@ -17,19 +17,21 @@ import pandas as pd
 # Importando módulos locais
 try:
     from . import models, database, schemas, crud, rag, auth
-    from .database import engine, get_db
 except ImportError:
     import models, database, schemas, crud, rag, auth
-    from database import engine, get_db
 
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import func
+from sqlalchemy import func, text
 
-try:
-    models.Base.metadata.create_all(bind=engine)
-except Exception as e:
-    print(f"⚠️ Alerta: Não foi possível inicializar as tabelas do banco de dados: {e}")
-    print("⚠️ Acesse as configurações no frontend para corrigir os dados de conexão.")
+def init_db_schema():
+    try:
+        models.Base.metadata.create_all(bind=database.engine)
+    except Exception as e:
+        print(f"⚠️ Alerta: Não foi possível inicializar as tabelas do banco de dados: {e}")
+        print("⚠️ Acesse as configurações no frontend para corrigir os dados de conexão.")
+
+# Inicialização inicial das tabelas
+init_db_schema()
 
 def seed_db():
     db = database.SessionLocal()
@@ -141,11 +143,16 @@ def read_root():
     return {"status": "ok", "message": "Sistema de Tickets Offline Rodando"}
 
 @app.get("/health")
-def health_check():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+def health_check(db: Session = Depends(database.get_db)):
+    try:
+        # Tenta uma consulta simples para validar o banco
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "db": "connected", "timestamp": datetime.now().isoformat()}
+    except Exception as e:
+        return {"status": "degraded", "db": "error", "detail": str(e), "timestamp": datetime.now().isoformat()}
 
 @app.post("/token", response_model=schemas.Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
     db_user = crud.get_user_by_username(db, username=form_data.username)
     if not db_user or not auth.verify_password(form_data.password, db_user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário ou senha incorretos", headers={"WWW-Authenticate": "Bearer"})
@@ -157,31 +164,31 @@ def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
 
 @app.get("/users/", response_model=List[schemas.User])
-def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.get_users(db, skip=skip, limit=limit)
 
 @app.get("/users/attendants")
-def read_attendants(sector_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_attendants(sector_id: Optional[int] = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     users = crud.get_users_short(db, sector_id=sector_id)
     return [{"id": u[0], "name": u[1] or u[2]} for u in users]
 
 @app.get("/sectors/", response_model=List[schemas.Sector])
-def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_sectors(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_sectors(db, skip=skip, limit=limit)
 
 @app.post("/sectors/", response_model=schemas.Sector)
-def create_sector(sector: schemas.SectorCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def create_sector(sector: schemas.SectorCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_sector(db=db, sector=sector)
 
 @app.put("/sectors/{sector_id}", response_model=schemas.Sector)
-def update_sector(sector_id: int, sector: schemas.SectorUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def update_sector(sector_id: int, sector: schemas.SectorUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_sector = crud.update_sector(db=db, sector_id=sector_id, sector_update=sector)
     if not db_sector:
         raise HTTPException(status_code=404, detail="Setor não encontrado")
     return db_sector
 
 @app.delete("/sectors/{sector_id}")
-def delete_sector(sector_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def delete_sector(sector_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success, message = crud.delete_sector(db, sector_id)
     if not success:
         if "não encontrado" in message:
@@ -190,7 +197,7 @@ def delete_sector(sector_id: int, db: Session = Depends(get_db), current_user: m
     return {"message": message}
 
 @app.post("/users/", response_model=schemas.User)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_user = crud.get_user_by_username(db, username=user.username)
     if db_user: raise HTTPException(status_code=400, detail="Nome de usuário já registrado")
     db_email = crud.get_user_by_email(db, email=user.email)
@@ -199,7 +206,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current
     return crud.create_user(db=db, user=user, hashed_password=hashed_password)
 
 @app.put("/users/{user_id}", response_model=schemas.User)
-def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     if user.role == "ROOT" and current_user.role != "ROOT":
          raise HTTPException(status_code=403, detail="Apenas usuários ROOT podem criar outros ROOT")
     hashed_password = auth.get_password_hash(user.password) if user.password else None
@@ -208,59 +215,59 @@ def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = D
     return db_user
 
 @app.delete("/users/{user_id}")
-def delete_user_endpoint(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+def delete_user_endpoint(user_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     success = crud.delete_user(db=db, user_id=user_id)
     if not success: raise HTTPException(status_code=404, detail="Usuário não encontrado")
     return {"message": "Usuário excluído com sucesso"}
 
 @app.get("/profiles/", response_model=List[schemas.Profile])
-def read_profiles(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def read_profiles(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.get_profiles(db, skip=skip, limit=limit)
 
 @app.post("/profiles/", response_model=schemas.Profile)
-def create_profile(profile: schemas.ProfileCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+def create_profile(profile: schemas.ProfileCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     return crud.create_profile(db=db, profile=profile)
 
 @app.put("/profiles/{profile_id}", response_model=schemas.Profile)
-def update_profile(profile_id: int, profile: schemas.ProfileCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+def update_profile(profile_id: int, profile: schemas.ProfileCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     db_profile = crud.update_profile(db=db, profile_id=profile_id, profile_update=profile)
     if not db_profile: raise HTTPException(status_code=404, detail="Perfil não encontrado")
     return db_profile
 
 @app.delete("/profiles/{profile_id}")
-def delete_profile(profile_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_root)):
+def delete_profile(profile_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_root)):
     success = crud.delete_profile(db=db, profile_id=profile_id)
     if not success: raise HTTPException(status_code=400, detail="Perfil não encontrado ou em uso")
     return {"message": "Perfil excluído com sucesso"}
 
 @app.post("/clients/", response_model=schemas.Client)
-def create_client(client: schemas.ClientCreate, db: Session = Depends(get_db)):
+def create_client(client: schemas.ClientCreate, db: Session = Depends(database.get_db)):
     db_client = crud.get_client_by_email(db, email=client.email)
     if db_client: raise HTTPException(status_code=400, detail="E-mail já registrado")
     return crud.create_client(db=db, client=client)
 
 @app.get("/clients/", response_model=List[schemas.Client])
-def read_clients(skip: int = 0, limit: int = 100, q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_clients(skip: int = 0, limit: int = 100, q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_clients(db, skip=skip, limit=limit, q=q, doc_type=doc_type, has_phone=has_phone, start_date=start_date, end_date=end_date)
 
 @app.get("/clients/count")
-def read_clients_count(q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_clients_count(q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return {"count": crud.get_clients_count(db, q=q, doc_type=doc_type, has_phone=has_phone, start_date=start_date, end_date=end_date)}
 
 @app.get("/clients/{client_id}", response_model=schemas.Client)
-def read_client(client_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_client(client_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     db_client = crud.get_client(db, client_id=client_id)
     if db_client is None: raise HTTPException(status_code=404, detail="Cliente não encontrado")
     return db_client
 
 @app.put("/clients/{client_id}", response_model=schemas.Client)
-def update_client(client_id: int, client: schemas.ClientCreate, db: Session = Depends(get_db)):
+def update_client(client_id: int, client: schemas.ClientCreate, db: Session = Depends(database.get_db)):
     db_client = crud.update_client(db=db, client_id=client_id, client_update=client)
     if db_client is None: raise HTTPException(status_code=404, detail="Cliente não encontrado")
     return db_client
 
 @app.delete("/clients/{client_id}")
-def delete_client(client_id: int, db: Session = Depends(get_db)):
+def delete_client(client_id: int, db: Session = Depends(database.get_db)):
     success = crud.delete_client(db=db, client_id=client_id)
     if not success: raise HTTPException(status_code=404, detail="Cliente não encontrado")
     return {"message": "Cliente excluído com sucesso"}
@@ -277,7 +284,7 @@ def download_client_template():
     return Response(content=output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=modelo_importacao_clientes.xlsx"})
 
 @app.post("/clients/import/excel", response_model=schemas.ImportResult)
-async def import_clients_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_clients_excel(file: UploadFile = File(...), db: Session = Depends(database.get_db)):
     try:
         contents = await file.read()
         df = pd.read_excel(io.BytesIO(contents)) if file.filename.endswith(('.xlsx', '.xls')) else pd.read_csv(io.BytesIO(contents))
@@ -291,7 +298,7 @@ async def import_clients_excel(file: UploadFile = File(...), db: Session = Depen
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/clients/import/db/preview")
-def preview_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(get_db)):
+def preview_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(database.get_db)):
     from sqlalchemy import create_engine, text
     from sqlalchemy.engine import URL
     
@@ -341,7 +348,7 @@ def preview_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(ge
         raise HTTPException(status_code=500, detail=f"Erro ao conectar ou consultar: {str(e)}")
 
 @app.post("/clients/import/db", response_model=schemas.ImportResult)
-def import_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(get_db)):
+def import_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(database.get_db)):
     from sqlalchemy import create_engine, text
     from sqlalchemy.engine import URL
     
@@ -397,59 +404,59 @@ def import_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(get
         raise HTTPException(status_code=500, detail=f"Erro na importação: {str(e)}")
 
 @app.get("/categories/", response_model=List[schemas.CategoryWithSub])
-def read_categories(sector_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_categories(sector_id: Optional[int] = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_categories(db, sector_id=sector_id)
 
 @app.post("/categories/", response_model=schemas.Category)
-def create_category(cat: schemas.CategoryCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def create_category(cat: schemas.CategoryCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_category(db=db, cat=cat)
 
 @app.put("/categories/{cat_id}", response_model=schemas.Category)
-def update_category(cat_id: int, cat: schemas.CategoryCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def update_category(cat_id: int, cat: schemas.CategoryCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_cat = crud.update_category(db=db, cat_id=cat_id, cat_update=cat)
     if not db_cat: raise HTTPException(status_code=404, detail="Categoria não encontrada")
     return db_cat
 
 @app.delete("/categories/{cat_id}")
-def delete_category(cat_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def delete_category(cat_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success, message = crud.delete_category(db=db, cat_id=cat_id)
     if not success: raise HTTPException(status_code=400 if "não" not in message else 404, detail=message)
     return {"message": message}
 
 @app.get("/statuses/", response_model=List[schemas.Status])
-def read_statuses(sector_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_statuses(sector_id: Optional[int] = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_statuses(db, sector_id=sector_id)
 
 @app.post("/statuses/", response_model=schemas.Status)
-def create_status(status: schemas.StatusCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def create_status(status: schemas.StatusCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     return crud.create_status(db=db, status=status)
 
 @app.delete("/statuses/{status_id}")
-def delete_status(status_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def delete_status(status_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     success, message = crud.delete_status(db=db, status_id=status_id)
     if not success: raise HTTPException(status_code=400 if "não" not in message else 404, detail=message)
     return {"message": message}
 
 @app.put("/statuses/{status_id}", response_model=schemas.Status)
-def update_status(status_id: int, status: schemas.StatusBase, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+def update_status(status_id: int, status: schemas.StatusBase, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_status = crud.update_status(db=db, status_id=status_id, status_update=status)
     if not db_status: raise HTTPException(status_code=404, detail="Status não encontrado")
     return db_status
 
 @app.post("/tickets/", response_model=schemas.Ticket)
-def create_ticket(ticket: schemas.TicketCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def create_ticket(ticket: schemas.TicketCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.create_ticket(db=db, ticket=ticket, created_by_id=current_user.id)
 
 @app.post("/tickets/simple", response_model=schemas.Ticket)
-def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depends(get_db)):
+def create_ticket_simple(ticket: schemas.TicketCreateSimple, db: Session = Depends(database.get_db)):
     return crud.create_ticket_simple(db=db, ticket=ticket)
 
 @app.get("/tickets/", response_model=List[schemas.Ticket])
-def read_tickets(skip: int = 0, limit: int = 100, q: Optional[str] = None, status: Optional[str] = None, client_id: Optional[int] = None, sector_id: Optional[int] = None, priority: Optional[str] = None, category_id: Optional[int] = None, assigned_user_id: Optional[int] = None, created_by_id: Optional[int] = None, follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_tickets(skip: int = 0, limit: int = 100, q: Optional[str] = None, status: Optional[str] = None, client_id: Optional[int] = None, sector_id: Optional[int] = None, priority: Optional[str] = None, category_id: Optional[int] = None, assigned_user_id: Optional[int] = None, created_by_id: Optional[int] = None, follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_tickets(db, skip=skip, limit=limit, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, assigned_user_id=assigned_user_id, created_by_id=created_by_id, follower_id=follower_id, my_plus_unassigned_id=my_plus_unassigned_id, start_date=start_date, end_date=end_date, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
 
 @app.get("/tickets/count")
-def read_tickets_count(q: Optional[str] = None, status: Optional[str] = None, client_id: Optional[int] = None, sector_id: Optional[int] = None, priority: Optional[str] = None, category_id: Optional[int] = None, assigned_user_id: Optional[int] = None, created_by_id: Optional[int] = None, follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_tickets_count(q: Optional[str] = None, status: Optional[str] = None, client_id: Optional[int] = None, sector_id: Optional[int] = None, priority: Optional[str] = None, category_id: Optional[int] = None, assigned_user_id: Optional[int] = None, created_by_id: Optional[int] = None, follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, unassigned_only: bool = False, exclude_finalized: bool = False, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     count = crud.get_tickets_count(db, q=q, status=status, client_id=client_id, sector_id=sector_id, priority=priority, category_id=category_id, assigned_user_id=assigned_user_id, created_by_id=created_by_id, follower_id=follower_id, my_plus_unassigned_id=my_plus_unassigned_id, start_date=start_date, end_date=end_date, unassigned_only=unassigned_only, exclude_finalized=exclude_finalized)
     return {"count": count}
 
@@ -459,7 +466,7 @@ def read_stats(
     end_date: Optional[str] = None,
     sector_id: Optional[int] = None,
     user_id: Optional[int] = None,
-    db: Session = Depends(get_db)):
+    db: Session = Depends(database.get_db)):
     return {
         "summary": crud.get_detailed_report_stats(db, start_date, end_date, sector_id, user_id),
         "trends": []
@@ -471,21 +478,21 @@ def get_report_summary(
     end_date: Optional[str] = None,
     sector_id: Optional[int] = None,
     user_id: Optional[int] = None,
-    db: Session = Depends(get_db)):
+    db: Session = Depends(database.get_db)):
     return crud.get_detailed_report_stats(db, start_date, end_date, sector_id, user_id)
 
 @app.get("/tickets/{ticket_id}", response_model=schemas.Ticket)
-def read_ticket(ticket_id: int, db: Session = Depends(get_db)):
+def read_ticket(ticket_id: int, db: Session = Depends(database.get_db)):
     db_ticket = crud.get_ticket(db, ticket_id=ticket_id)
     if db_ticket is None: raise HTTPException(status_code=404, detail="Chamado não encontrado")
     return db_ticket
 
 @app.post("/tickets/{ticket_id}/messages/", response_model=schemas.TicketMessage)
-def create_message(ticket_id: int, message: schemas.TicketMessageCreate, db: Session = Depends(get_db)):
+def create_message(ticket_id: int, message: schemas.TicketMessageCreate, db: Session = Depends(database.get_db)):
     return crud.create_ticket_message(db=db, message=message, ticket_id=ticket_id)
 
 @app.put("/tickets/{ticket_id}", response_model=schemas.Ticket)
-def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     db_ticket = crud.get_ticket(db, ticket_id=ticket_id)
     if db_ticket is None: raise HTTPException(status_code=404, detail="Chamado não encontrado")
     if (ticket.sector_id or ticket.assigned_user_id) and not (db_ticket.assigned_user_id == current_user.id or current_user.role in ["ADMIN", "ROOT"]):
@@ -493,11 +500,11 @@ def update_ticket(ticket_id: int, ticket: schemas.TicketUpdate, db: Session = De
     return crud.update_ticket(db=db, ticket_id=ticket_id, ticket_update=ticket, user_id=current_user.id)
 
 @app.get("/tickets/{ticket_id}/history", response_model=List[schemas.TicketHistory])
-def read_ticket_history(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_ticket_history(ticket_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_ticket_history_list(db, ticket_id=ticket_id)
 
 @app.get("/tickets/export")
-def export_tickets(format: str = "csv", db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def export_tickets(format: str = "csv", db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     tickets = crud.get_tickets(db, limit=5000)
     data = [{"ID": t.id, "Título": t.title, "Status": t.status, "Prioridade": t.priority, "Cliente": t.client.name if t.client else "N/A", "Categoria": t.category.name if t.category else "N/A", "Data Criação": t.created_at.strftime("%Y-%m-%d %H:%M:%S"), "Responsável": t.assigned_user.full_name or t.assigned_user.username if t.assigned_user else "N/A"} for t in tickets]
     df = pd.DataFrame(data)
@@ -513,7 +520,7 @@ def export_tickets(format: str = "csv", db: Session = Depends(get_db), current_u
         return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}.csv"})
 
 @app.get("/reports/idle-clients")
-def export_idle_clients(start_date: str, end_date: str, format: str = "excel", db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def export_idle_clients(start_date: str, end_date: str, format: str = "excel", db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     try:
         dt_start = datetime.strptime(start_date, "%Y-%m-%d")
         dt_end = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
@@ -533,33 +540,33 @@ def export_idle_clients(start_date: str, end_date: str, format: str = "excel", d
         output = io.BytesIO(); df.to_excel(pd.ExcelWriter(output, engine='openpyxl'), index=False); return Response(content=output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=inativos.xlsx"})
 
 @app.delete("/tickets/{ticket_id}")
-def delete_ticket_rest(ticket_id: int, db: Session = Depends(get_db)):
+def delete_ticket_rest(ticket_id: int, db: Session = Depends(database.get_db)):
     if not crud.delete_ticket(db=db, ticket_id=ticket_id): raise HTTPException(status_code=404, detail="Não encontrado")
     return {"message": "Excluído"}
 
 @app.post("/tickets/{ticket_id}/timer/start", response_model=schemas.TimeLog)
-def start_timer(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def start_timer(ticket_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     t = crud.get_ticket(db, ticket_id); 
     if not t: raise HTTPException(status_code=404); 
     if t.assigned_user_id != current_user.id: raise HTTPException(status_code=403)
     return crud.start_ticket_timer(db, ticket_id, current_user.id)
 
 @app.post("/tickets/{ticket_id}/timer/stop", response_model=schemas.TimeLog)
-def stop_timer(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def stop_timer(ticket_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     res = crud.stop_ticket_timer(db, ticket_id, current_user.id)
     if not res: raise HTTPException(status_code=400)
     return res
 
 @app.get("/tickets/timers/active", response_model=List[schemas.TimeLog])
-def get_active_timers(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def get_active_timers(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_active_timers(db, current_user.id)
 
 @app.get("/tickets/{ticket_id}/timer/stats", response_model=List[schemas.StatusTimeGroup])
-def get_timer_stats(ticket_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def get_timer_stats(ticket_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_ticket_timer_stats(db, ticket_id)
 
 @app.post("/tickets/{ticket_id}/follow", response_model=schemas.Ticket)
-def follow_ticket(ticket_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def follow_ticket(ticket_id: int, user_id: Optional[int] = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     target = user_id if user_id else current_user.id
     if target != current_user.id:
         t = crud.get_ticket(db, ticket_id)
@@ -569,7 +576,7 @@ def follow_ticket(ticket_id: int, user_id: Optional[int] = None, db: Session = D
     return ticket
 
 @app.post("/tickets/{ticket_id}/unfollow", response_model=schemas.Ticket)
-def unfollow_ticket(ticket_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def unfollow_ticket(ticket_id: int, user_id: Optional[int] = None, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     target = user_id if user_id else current_user.id
     if target != current_user.id:
         t = crud.get_ticket(db, ticket_id)
@@ -579,23 +586,23 @@ def unfollow_ticket(ticket_id: int, user_id: Optional[int] = None, db: Session =
     return ticket
 
 @app.get("/knowledge/", response_model=List[schemas.KnowledgeDocument])
-def read_knowledge(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_knowledge(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
     return crud.get_knowledge_documents(db, skip, limit)
 
 @app.post("/knowledge/", response_model=schemas.KnowledgeDocument)
-def create_knowledge(doc: schemas.KnowledgeDocumentCreate, db: Session = Depends(get_db)):
+def create_knowledge(doc: schemas.KnowledgeDocumentCreate, db: Session = Depends(database.get_db)):
     d = crud.create_knowledge_document(db, doc); rag.add_document(d.id, d.content, {"title": d.title, "category": d.category})
     return d
 
 @app.put("/knowledge/{doc_id}", response_model=schemas.KnowledgeDocument)
-def update_knowledge(doc_id: int, doc: schemas.KnowledgeDocumentCreate, db: Session = Depends(get_db)):
+def update_knowledge(doc_id: int, doc: schemas.KnowledgeDocumentCreate, db: Session = Depends(database.get_db)):
     d = crud.update_knowledge_document(db, doc_id, doc)
     if not d: raise HTTPException(status_code=404)
     rag.add_document(d.id, d.content, {"title": d.title, "category": d.category})
     return d
 
 @app.delete("/knowledge/{doc_id}")
-def delete_knowledge(doc_id: int, db: Session = Depends(get_db)):
+def delete_knowledge(doc_id: int, db: Session = Depends(database.get_db)):
     if not crud.delete_knowledge_document(db, doc_id): raise HTTPException(status_code=404)
     return {"message": "Excluído"}
 
@@ -617,14 +624,14 @@ async def upload_file(file: UploadFile = File(...)):
     return {"url": f"http://localhost:8080/uploads/{name}"}
 
 @app.post("/system/reset")
-async def reset_db(p: schemas.SystemReset, db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_active_root)):
+async def reset_db(p: schemas.SystemReset, db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_active_root)):
     if p.confirmation != "DELETAR": raise HTTPException(status_code=400)
     stats = crud.reset_entities(db, p.entities, u.id)
     if "knowledge" in p.entities: rag.clear_knowledge_base()
     return {"status": "ok", "details": stats}
 
 @app.get("/system/backup")
-def backup(db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_active_root)):
+def backup(db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_active_root)):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in [database.DB_PATH, database.DB_PATH+"-wal", database.DB_PATH+"-shm"]:
@@ -642,41 +649,44 @@ async def restore(request: Request, file: UploadFile = File(...)):
         # Simplificado para brevidade, lógica real de movimentação de arquivos deve ser mantida se crítica
         path = os.path.join(database.BASE_DIR, "restore.zip")
         with open(path, "wb") as f: shutil.copyfileobj(file.file, f)
-        engine.dispose(); await asyncio.sleep(1)
+        database.engine.dispose() if hasattr(database, 'engine') and database.engine else None
+        await asyncio.sleep(1)
         with zipfile.ZipFile(path, 'r') as z: z.extractall(database.BASE_DIR)
+        database.get_engine_and_session()
+        init_db_schema()
         seed_db(); return {"status": "ok"}
     finally: IS_RESTORING = False
 
 @app.get("/notifications", response_model=List[schemas.Notification])
-def read_notifications(skip: int = 0, limit: int = 50, db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_user)):
+def read_notifications(skip: int = 0, limit: int = 50, db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_user)):
     return crud.get_notifications(db, u.id, skip, limit)
 
 @app.get("/notifications/unread-count")
-def read_unread(db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_user)):
+def read_unread(db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_user)):
     return {"count": crud.get_unread_notification_count(db, u.id)}
 
 @app.post("/notifications/{id}/read", response_model=schemas.Notification)
-def mark_read(id: int, db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_user)):
+def mark_read(id: int, db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_user)):
     n = crud.mark_notification_as_read(db, id, u.id)
     if not n: raise HTTPException(status_code=404)
     return n
 
 @app.post("/notifications/read-all")
-def read_all(db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_user)):
+def read_all(db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_user)):
     crud.mark_all_notifications_as_read(db, u.id)
     return {"status": "ok"}
 
 @app.post("/notifications/send", response_model=schemas.Notification)
-def send_notif(data: schemas.NotificationSend, db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_user)):
+def send_notif(data: schemas.NotificationSend, db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_user)):
     n = crud.send_user_notification(db, u.id, data)
     if not n: raise HTTPException(status_code=404)
     return n
 
 @app.get("/system-settings", response_model=schemas.SystemSettings)
-def get_settings(db: Session = Depends(get_db)): return crud.get_system_settings(db)
+def get_settings(db: Session = Depends(database.get_db)): return crud.get_system_settings(db)
 
 @app.patch("/system-settings", response_model=schemas.SystemSettings)
-def patch_settings(update: schemas.SystemSettingsUpdate, db: Session = Depends(get_db), u: models.User = Depends(auth.get_current_active_admin)):
+def patch_settings(update: schemas.SystemSettingsUpdate, db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_active_admin)):
     return crud.update_system_settings(db, update)
 
 @app.post("/api/system/config-db")
@@ -707,7 +717,13 @@ async def config_db_api(config: schemas.DBConfig):
         url = f"postgresql+pg8000://{config.postgres.user}:{config.postgres.password}@{config.postgres.host}:{config.postgres.port}/{config.postgres.dbname}"
     
     config_db.update_env_file(url)
-    return {"status": "success", "message": "Configuração salva com sucesso! O sistema será reiniciado."}
+    
+    # Refresh Backend Database Connection (Hot-Reload)
+    database.get_engine_and_session()
+    init_db_schema()
+    seed_db()
+    
+    return {"status": "success", "message": "Configuração salva com sucesso! O sistema agora está conectado ao novo banco."}
 
 @app.get("/api/system/status")
 async def sys_status(): return {"is_configured": bool(os.getenv("DATABASE_URL"))}
@@ -739,14 +755,14 @@ async def db_info():
 @app.get("/reports/custom", response_model=List[schemas.CustomReport])
 def read_custom_reports(
     skip: int = 0, limit: int = 100, 
-    db: Session = Depends(get_db),
+    db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)):
     return crud.get_custom_reports(db, skip=skip, limit=limit)
 
 @app.get("/reports/custom/{report_id}", response_model=schemas.CustomReport)
 def read_custom_report(
     report_id: int, 
-    db: Session = Depends(get_db),
+    db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)):
     db_report = crud.get_custom_report(db, report_id=report_id)
     if not db_report:
@@ -756,7 +772,7 @@ def read_custom_report(
 @app.post("/reports/custom", response_model=schemas.CustomReport)
 def create_custom_report(
     report: schemas.CustomReportCreate,
-    db: Session = Depends(get_db),
+    db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)):
     return crud.create_custom_report(db=db, report=report, user_id=current_user.id)
 
@@ -764,7 +780,7 @@ def create_custom_report(
 def update_custom_report(
     report_id: int, 
     report: schemas.CustomReportUpdate,
-    db: Session = Depends(get_db),
+    db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)):
     db_report = crud.update_custom_report(db, report_id=report_id, report_update=report)
     if not db_report:
@@ -774,7 +790,7 @@ def update_custom_report(
 @app.delete("/reports/custom/{report_id}")
 def delete_custom_report(
     report_id: int, 
-    db: Session = Depends(get_db),
+    db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)):
     if not crud.delete_custom_report(db, report_id=report_id):
         raise HTTPException(status_code=404, detail="Relatório não encontrado")
@@ -783,7 +799,7 @@ def delete_custom_report(
 @app.post("/reports/custom/execute")
 def execute_report(
     execution_data: Dict[str, Any],
-    db: Session = Depends(get_db),
+    db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)):
     """Executa um SQL customizado com variáveis."""
     query = execution_data.get("query")

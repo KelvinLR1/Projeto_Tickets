@@ -198,6 +198,7 @@ def _apply_client_filters(query, q=None, doc_type=None, has_phone=None, start_da
         search = f"%{q}%"
         query = query.filter(or_(
             models.Client.name.ilike(search),
+            models.Client.nickname.ilike(search),
             models.Client.email.ilike(search),
             models.Client.cpf_cnpj.ilike(search)
         ))
@@ -411,6 +412,7 @@ def update_status(db: Session, status_id: int, status_update: schemas.StatusBase
     return db_status
 
 def get_or_create_default_status(db: Session, sector_id: Optional[int] = None):
+    # Status padrão inicial: Aberto
     default_name = "Aberto"
     db_status = db.query(models.Status).filter(models.Status.name == default_name).first()
     if not db_status:
@@ -421,6 +423,18 @@ def get_or_create_default_status(db: Session, sector_id: Optional[int] = None):
     elif sector_id and not db_status.sector_id:
         db_status.sector_id = sector_id
         db.commit()
+
+    # Status padrão finalizador: Finalizado
+    finalized_name = "Finalizado"
+    db_finalized = db.query(models.Status).filter(models.Status.name == finalized_name).first()
+    if not db_finalized:
+        db_finalized = models.Status(name=finalized_name, color="#10b981", is_final=True, sector_id=sector_id)
+        db.add(db_finalized)
+        db.commit()
+    elif sector_id and not db_finalized.sector_id:
+        db_finalized.sector_id = sector_id
+        db.commit()
+
     return db_status
 
 def _get_tickets_base_query(db: Session, 
@@ -569,8 +583,10 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
         ticket_data["category_id"] = default_cat.id
     
     default_status = get_or_create_default_status(db)
-    assigned_user = ticket_data.get("assigned_user_id")
-    created_by = ticket_data.get("created_by_id", 1) 
+    
+    # Ensure we don't duplicate keys between ticket_data and explicit args
+    assigned_user = ticket_data.pop("assigned_user_id", None)
+    created_by = ticket_data.pop("created_by_id", 1) 
 
     db_ticket = models.Ticket(
         **ticket_data, 

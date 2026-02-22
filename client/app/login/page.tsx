@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSystemSettings } from '@/components/SystemSettingsProvider';
-import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck, Settings, Globe, X, RefreshCw, AlertCircle, Save, Database } from 'lucide-react';
+import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck, Settings, Globe, X, RefreshCw, AlertCircle, Save, Database, CheckCircle2 } from 'lucide-react';
 import { getDefaultBaseURL } from '@/lib/api';
 import axios from 'axios';
 
@@ -32,6 +32,7 @@ export default function LoginPage() {
     const [dbPgPass, setDbPgPass] = useState('');
     const [dbPgName, setDbPgName] = useState('ticketflow_db');
     const [isConfiguringDb, setIsConfiguringDb] = useState(false);
+    const [successNotification, setSuccessNotification] = useState<{ message: string; submessage?: string } | null>(null);
 
     // Info do Banco Ativo
     interface DBInfo {
@@ -41,8 +42,58 @@ export default function LoginPage() {
     }
     const [dbInfo, setDbInfo] = useState<DBInfo | null>(null);
 
-    // Carrega URL do Servidor e verifica conectividade
-    React.useEffect(() => {
+    // Verifica conexão proativamente
+    const checkInitialConnection = useCallback(async (targetUrl?: string) => {
+        const urlToCheck = (targetUrl || apiUrl).replace(/\/$/, "");
+        try {
+            // Tenta um ping leve para validar frontend e banco
+            const healthRes = await axios.get<{ status: string, db: string, detail?: string }>(`${urlToCheck}/health`, { timeout: 5000 });
+
+            if (healthRes.data.db === 'error') {
+                const detail = healthRes.data.detail || '';
+                let friendlyMsg = `Há um erro no banco de dados: ${detail}`;
+
+                if (detail.includes('3D000') || detail.includes('does not exist')) {
+                    friendlyMsg = 'O banco de dados configurado não foi encontrado no servidor. Verifique o nome do banco nos Ajustes.';
+                } else if (detail.includes('28P01') || detail.includes('password authentication failed')) {
+                    friendlyMsg = 'Falha na autenticação do banco de dados. Verifique o usuário e senha nos Ajustes.';
+                } else if (detail.includes('is not a database file')) {
+                    friendlyMsg = 'O arquivo SQLite selecionado é inválido ou está corrompido.';
+                } else if (!detail) {
+                    friendlyMsg = 'Não foi possível conectar ao banco de dados. Verifique as configurações nos Ajustes.';
+                }
+
+                setError(friendlyMsg);
+            } else {
+                setError('');
+            }
+
+            // Busca Info do Banco se o health check passou ou se pelo menos o servidor respondeu
+            try {
+                const dbRes = await axios.get(`${urlToCheck}/api/system/db-info`, { timeout: 3000 });
+                setDbInfo(dbRes.data);
+
+                // Pre-seleciona o motor ativo
+                if (dbRes.data.type === 'postgresql') {
+                    setDbEngine('postgres');
+                } else {
+                    setDbEngine('sqlite');
+                }
+            } catch (e) {
+                console.error("Erro ao buscar db-info:", e);
+            }
+
+        } catch (err) {
+            // Se for Network Error (servidor offline), já avisa o usuário
+            const isNetworkError = !axios.isAxiosError(err) || (!err.response && (err.message === 'Network Error' || (err as any).code === 'ERR_NETWORK'));
+            if (isNetworkError) {
+                setError('O servidor não responde no endereço configurado. Verifique se o serviço está rodando.');
+            }
+        }
+    }, [apiUrl]);
+
+    // Carrega URL do Servidor inicialmente
+    useEffect(() => {
         const localConfig = localStorage.getItem('system_config');
         let currentUrl = getDefaultBaseURL();
 
@@ -58,29 +109,8 @@ export default function LoginPage() {
             } catch (e) { }
         }
         setApiUrl(currentUrl);
-
-        // Verifica conexão proativamente ao montar a tela
-        const checkInitialConnection = async () => {
-            try {
-                // Tenta um ping leve sem headers de auth para não poluir logs de 401
-                await axios.get(`${currentUrl.replace(/\/$/, "")}/health`, { timeout: 3000 });
-            } catch (err) {
-                // Se for Network Error (servidor offline), já avisa o usuário
-                const isNetworkError = !axios.isAxiosError(err) || (!err.response && (err.message === 'Network Error' || (err as any).code === 'ERR_NETWORK'));
-                if (isNetworkError) {
-                    setError('O servidor não responde no endereço configurado. Verifique os ajustes.');
-                }
-            }
-
-            // Busca Info do Banco
-            try {
-                const dbRes = await axios.get(`${currentUrl.replace(/\/$/, "")}/api/system/db-info`, { timeout: 3000 });
-                setDbInfo(dbRes.data);
-            } catch (e) { }
-        };
-
-        checkInitialConnection();
-    }, []);
+        checkInitialConnection(currentUrl);
+    }, [checkInitialConnection]);
 
     const handleSaveSettings = () => {
         const localConfig = localStorage.getItem('system_config');
@@ -105,11 +135,9 @@ export default function LoginPage() {
         setIsTesting(true);
         setTestStatus(null);
         try {
-            // Tenta um endpoint simples de health check ou similar
             await axios.get(`${apiUrl.replace(/\/$/, "")}/health`, { timeout: 5000 });
             setTestStatus('success');
         } catch (err) {
-            // Se o /health não existir mas o servidor responder (Ex: 404), consideramos sucesso de conexão
             if (axios.isAxiosError(err) && err.response) {
                 setTestStatus('success');
             } else {
@@ -136,11 +164,21 @@ export default function LoginPage() {
             };
 
             const response = await axios.post(`${apiUrl.replace(/\/$/, "")}/api/system/config-db`, configData);
-            alert(response.data.message);
-            setShowServerSettings(false);
-            window.location.reload();
+
+            setSuccessNotification({
+                message: response.data.message,
+                submessage: "O sistema agora está conectado ao seu novo banco de dados."
+            });
+
+            // Auto-hide e recarrega após 3 segundos
+            setTimeout(() => {
+                setSuccessNotification(null);
+                setShowServerSettings(false);
+                checkInitialConnection(); // Atualiza o status na tela
+            }, 3000);
+
         } catch (err: any) {
-            alert(err.response?.data?.detail || 'Erro ao configurar banco de dados.');
+            setError(err.response?.data?.detail || 'Erro ao configurar banco de dados.');
         } finally {
             setIsConfiguringDb(false);
         }
@@ -289,6 +327,24 @@ export default function LoginPage() {
                     © 2026 TicketFlow System | LAN Secured
                 </p>
             </div>
+
+            {/* Notificação de Sucesso Integrada */}
+            {successNotification && (
+                <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-full max-w-sm animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="glass-card !bg-green-500/10 border-green-500/20 p-6 rounded-[2rem] shadow-2xl flex items-center gap-4">
+                        <div className="p-3 bg-green-500/20 rounded-2xl text-green-500">
+                            <CheckCircle2 className="w-8 h-8" />
+                        </div>
+                        <div>
+                            <h4 className="text-[11px] font-black uppercase tracking-widest text-green-500">Sucesso</h4>
+                            <p className="text-xs font-bold text-foreground/90 leading-tight mt-1">{successNotification.message}</p>
+                            {successNotification.submessage && (
+                                <p className="text-[10px] text-green-500/60 mt-1 font-medium italic">{successNotification.submessage}</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal de Configuração de Servidor */}
             {showServerSettings && (

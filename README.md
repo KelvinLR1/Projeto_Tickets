@@ -186,7 +186,7 @@ Este script irá:
 1. Compilar o Frontend Next.js.
 2. Organizar as runtimes portáveis de Python e Node.
 3. Gerar os serviços `TicketFlow_Backend_Service.exe` e `TicketFlow_Frontend_Service.exe`.
-4. Criar o `TicketFlow.exe` (Launcher) e o novo `config_db.exe` (Configurador GUI).
+4. Gerar o Launcher (TicketFlow.exe).
 
 ### 3. Compilação Final (Inno Setup)
 1. Abra o arquivo `installer.iss` no Inno Setup Compiler.

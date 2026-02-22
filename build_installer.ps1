@@ -17,7 +17,7 @@ if (Test-Path "$serverFolder\.venv\Scripts\python.exe") {
 
 # 1. Limpar pastas e artefatos anteriores
 Write-Host "--- Limpando pastas e artefatos anteriores ---" -ForegroundColor Cyan
-$toCleanup = @($distFolder, "python_portable", "node_portable", "node_temp", "build")
+$toCleanup = @($distFolder, "node_temp", "build", "build_pyi_dist", "build_pyi_work")
 foreach ($folder in $toCleanup) {
     if (Test-Path $folder) { Remove-Item -Path $folder -Recurse -Force }
 }
@@ -25,8 +25,14 @@ New-Item -ItemType Directory -Path $distFolder
 New-Item -ItemType Directory -Path "$distFolder\client"
 New-Item -ItemType Directory -Path "$distFolder\server"
 
+# Função para cópia rápida (Robocopy)
+function Fast-Copy($Source, $Destination) {
+    if (!(Test-Path $Destination)) { New-Item -ItemType Directory -Path $Destination -Force }
+    robocopy $Source $Destination /E /MT:32 /R:3 /W:1 /NP /NFL /NDL /NJH /NJS
+}
+
 # 2. Build do Frontend
-Write-Host "--- Gerando Build do Frontend (Next.js) ---" -ForegroundColor Cyan
+Write-Host "--- Gerando Build do Frontend (Next.js Standalone) ---" -ForegroundColor Cyan
 Push-Location $clientFolder
 npm run build
 if ($LASTEXITCODE -ne 0) {
@@ -36,22 +42,26 @@ if ($LASTEXITCODE -ne 0) {
 }
 Pop-Location
 
-# 3. Copiar arquivos do Frontend
-Write-Host "--- Copiando arquivos do Frontend ---" -ForegroundColor Cyan
-Copy-Item -Path "$clientFolder\.next" -Destination "$distFolder\client\.next" -Recurse
-Copy-Item -Path "$clientFolder\public" -Destination "$distFolder\client\public" -Recurse
-Copy-Item -Path "$clientFolder\package.json" -Destination "$distFolder\client\package.json"
-Copy-Item -Path "$clientFolder\next.config.*" -Destination "$distFolder\client\" -ErrorAction SilentlyContinue
-# Copiar node_modules para que next.js possa ser iniciado sem npm install
-Write-Host "Copiando node_modules (pode demorar)..." -ForegroundColor Yellow
-Copy-Item -Path "$clientFolder\node_modules" -Destination "$distFolder\client\node_modules" -Recurse
+# 3. Copiar arquivos do Frontend (Modo Standalone)
+Write-Host "--- Organizando Frontend Standalone (Mais Rápido) ---" -ForegroundColor Cyan
+# O modo standalone coloca tudo em .next/standalone
+if (Test-Path "$clientFolder\.next\standalone") {
+    Fast-Copy "$clientFolder\.next\standalone" "$distFolder\client"
+    # Adicionar arquivos estáticos (obrigatórios no modo standalone)
+    Fast-Copy "$clientFolder\.next\static" "$distFolder\client\.next\static"
+    Fast-Copy "$clientFolder\public" "$distFolder\client\public"
+} else {
+    Write-Host "AVISO: Modo Standalone não detectado. Copiando modo tradicional (lento)..." -ForegroundColor Yellow
+    Fast-Copy "$clientFolder\.next" "$distFolder\client\.next"
+    Fast-Copy "$clientFolder\public" "$distFolder\client\public"
+    Fast-Copy "$clientFolder\node_modules" "$distFolder\client\node_modules"
+}
 
-# 4. Configurar Node.js Portável (Necessário para rodar o Next.js)
+# 4. Configurar Node.js Portável
 Write-Host "--- Configurando Node.js Portável ---" -ForegroundColor Cyan
 $nodeVersion = "22.20.0"
 $nodeZip = "node-v$nodeVersion-win-x64.zip"
 $nodeUrl = "https://nodejs.org/dist/v$nodeVersion/$nodeZip"
-$nodeTempDir = "node_portable"
 
 if (!(Test-Path $nodeZip)) {
     Write-Host "Baixando Node.js $nodeVersion..."
@@ -59,35 +69,33 @@ if (!(Test-Path $nodeZip)) {
 }
 
 if (!(Test-Path "node_portable")) {
-    Write-Host "Extraindo Node.js..."
+    Write-Host "Extraindo Node.js pela primeira vez..."
     Expand-Archive -Path $nodeZip -DestinationPath "node_temp"
     Move-Item -Path "node_temp\node-v$nodeVersion-win-x64" -Destination "node_portable"
     Remove-Item -Path "node_temp" -Recurse
+} else {
+    Write-Host "Usando Node.js já extraído." -ForegroundColor Gray
 }
 
 # 5. Organizar DIST
 Write-Host "--- Organizando pasta DIST ---" -ForegroundColor Cyan
-# Copiar arquivos do Backend (apenas código, as dependências estarão no EXE)
+# Copiar arquivos do Backend
 $serverFiles = Get-ChildItem -Path $serverFolder -Exclude ".venv", "__pycache__", "tickets.db", "tickets.db-wal", "tickets.db-shm", "server.log", "config_db.py", "dist", "build"
 foreach ($file in $serverFiles) {
-    Copy-Item -Path $file.FullName -Destination "$distFolder\server\" -Recurse
+    if ($file.PSIsContainer) {
+        Fast-Copy $file.FullName "$distFolder\server\$($file.Name)"
+    } else {
+        Copy-Item -Path $file.FullName -Destination "$distFolder\server\" -Force
+    }
 }
-# Copiar Node.js para o client
-New-Item -ItemType Directory -Path "$distFolder\client\node"
-Copy-Item -Path "node_portable\*" -Destination "$distFolder\client\node" -Recurse
+# Copiar Node.js para o client (Cópia rápida)
+Fast-Copy "node_portable" "$distFolder\client\node"
+# Gerar executáveis
+Write-Host "--- Gerando Executáveis (PyInstaller) ---" -ForegroundColor Cyan
 
-# 6. Gerar executÃ¡veis
-Write-Host "--- Gerando ExecutÃ¡veis (PyInstaller) ---" -ForegroundColor Cyan
-
-# Definir pastas temporÃ¡rias para evitar conflitos de cÃ³pia
+# Definir pastas temporárias para evitar conflitos de cópia
 $pyiDist = "build_pyi_dist"
 $pyiWork = "build_pyi_work"
-
-# Configurador de Banco
-Push-Location $serverFolder
-& $venvPython -m PyInstaller --onefile --console --name config_db --uac-admin --icon="$iconPath" --exclude-module libcrypto --exclude-module libssl --distpath "..\\$pyiDist" --workpath "..\\$pyiWork" config_db.py
-Pop-Location
-Copy-Item -Path "$pyiDist\config_db.exe" -Destination "$distFolder\" -Force
 
 # Controlador
 & $venvPython -m PyInstaller --onefile --noconsole --name TicketFlow_Controller --uac-admin --icon="$iconPath" --collect-all pywin32 --hidden-import pywintypes --exclude-module libcrypto --exclude-module libssl --distpath "$pyiDist" --workpath "$pyiWork" controller.py

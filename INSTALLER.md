@@ -30,7 +30,7 @@ Toda a complexidade de compilação e organização é tratada pelo script `buil
     - Executa `npm run build` no frontend.
     - Organiza o Node.js portátil e `node_modules` na pasta `dist`.
     - Compila os serviços de sistema (`Backend` e `Frontend`) usando PyInstaller.
-    - Gera o Launcher (`TicketFlow.exe`) e o Configurador GUI (`config_db.exe`).
+    - Gerar o Launcher (`TicketFlow.exe`).
 
 ### 1.3 Geração do Instalador Final
 1.  Abra o Inno Setup Compiler.
@@ -48,7 +48,7 @@ O instalador `TicketFlow_Setup.exe` oferece dois tipos de instalação:
 **Público-alvo:** O computador principal da rede que hospedará os dados.
 - **O que é instalado:** Todos os binários, serviços de sistema e o configurador de banco.
 - **Serviços:** São criados os serviços `TicketFlowBackend` e `TicketFlowFrontend` que iniciam automaticamente com o Windows.
-- **Configuração:** Ao final, o **Configurador de Banco de Dados** abrirá. Escolha entre SQLite (simples) ou PostgreSQL (recomendado para muitos usuários).
+- **Configuração:** Ao final, abra o sistema pelo navegador. A configuração inicial de banco pode ser feita diretamente na tela de login clicando no ícone de engrenagem ⚙️ (Ajustes).
 
 ### B. Instalação Terminal (Estação de Trabalho)
 **Público-alvo:** Computadores de funcionários que apenas acessam o sistema.
@@ -71,9 +71,10 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 
 ### Alterar Banco de Dados após a instalação
 Caso precise mudar de SQLite para PostgreSQL mais tarde:
-1. Vá até a pasta `C:\TicketFlow`.
-2. Execute o `config_db.exe`.
-3. Reinicie o computador ou os serviços via Gerenciador de Tarefas > Serviços.
+1. Abra o sistema no navegador.
+2. Na tela de login, clique no ícone de engrenagem ⚙️ (Ajustes).
+3. Vá na aba "Banco de Dados" e insira as novas credenciais.
+4. O sistema se conectará automaticamente e validará os dados.
 
 ---
 

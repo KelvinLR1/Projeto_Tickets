@@ -127,6 +127,11 @@ export default function NewTicket() {
             return;
         }
 
+        if (!formData.category_id) {
+            showNotification('Por favor, selecione uma categoria para o chamado.', 'warning');
+            return;
+        }
+
         setLoading(true);
         try {
             await createTicket(formData);
@@ -248,6 +253,7 @@ Note: Be concise in the title and detailed in the description.`;
         const docClean = c.cpf_cnpj?.replace(/\D/g, '') || '';
 
         return c.name.toLowerCase().includes(searchLower) ||
+            (c.nickname && c.nickname.toLowerCase().includes(searchLower)) ||
             c.email.toLowerCase().includes(searchLower) ||
             (searchClean !== '' && docClean.includes(searchClean)) ||
             (c.cpf_cnpj && c.cpf_cnpj.toLowerCase().includes(searchLower));
@@ -431,7 +437,10 @@ Note: Be concise in the title and detailed in the description.`;
                                                                     {c.name.charAt(0).toUpperCase()}
                                                                 </div>
                                                                 <div>
-                                                                    <div className="text-xs font-bold text-foreground group-hover/item:text-accent-theme transition-colors italic">{c.name}</div>
+                                                                    <div className="text-xs font-bold text-foreground group-hover/item:text-accent-theme transition-colors italic">
+                                                                        {c.name}
+                                                                        {c.nickname && <span className="ml-2 text-[10px] text-accent-theme/60 not-italic font-black uppercase">({c.nickname})</span>}
+                                                                    </div>
                                                                     <div className="text-[9px] text-[var(--color-text-muted)] font-mono">{c.email}</div>
                                                                 </div>
                                                             </div>
@@ -513,7 +522,7 @@ Note: Be concise in the title and detailed in the description.`;
 
                             <div className="space-y-3">
                                 <CustomSelect
-                                    label="Categoria Técnica"
+                                    label="Categoria Técnica (Obrigatório)*"
                                     value={formData.category_id || ''}
                                     onChange={val => setFormData({ ...formData, category_id: val ? parseInt(val) : undefined })}
                                     placeholder="Selecione categoria..."

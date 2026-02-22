@@ -14,6 +14,9 @@ WizardStyle=modern
 DisableWelcomePage=no
 PrivilegesRequired=admin
 
+[Languages]
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+
 [Types]
 Name: "full"; Description: "Instalação Completa (Servidor e Banco)"
 Name: "station"; Description: "Instalação Terminal (Apenas Estação de Trabalho)"
@@ -31,7 +34,6 @@ Source: "dist\client\*"; DestDir: "{app}\client"; Flags: recursesubdirs createal
 
 ; Arquivos do Servidor (Apenas se for Servidor)
 Source: "dist\server\*"; DestDir: "{app}\server"; Flags: recursesubdirs createallsubdirs; Components: server
-Source: "dist\config_db.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: server
 
 ; Scripts de Inicialização e Controle
 Source: "dist\TicketFlow.exe"; DestDir: "{app}"; Flags: ignoreversion

@@ -121,7 +121,7 @@ class TicketBase(BaseModel):
 
 class TicketCreate(TicketBase):
     client_id: int
-    category_id: Optional[int] = None
+    category_id: int
     status_id: Optional[int] = None
     assigned_user_id: Optional[int] = None
     sector_id: Optional[int] = None
@@ -129,7 +129,7 @@ class TicketCreate(TicketBase):
 class TicketCreateSimple(TicketBase):
     client_name: str
     category: Optional[str] = "Suporte"
-    category_id: Optional[int] = None
+    category_id: int
     sector_id: Optional[int] = None
     assigned_user_id: Optional[int] = None
 

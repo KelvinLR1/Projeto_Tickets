@@ -5,6 +5,7 @@ import { getTickets, Ticket, updateTicket, getCurrentUser, User } from '@/lib/ap
 import { Monitor, Clock, User as UserIcon, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
+import { useNotification } from '@/components/NotificationProvider';
 import Link from 'next/link';
 
 export default function MonitorPage() {
@@ -12,6 +13,7 @@ export default function MonitorPage() {
     const [loading, setLoading] = useState(true);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
+    const { showNotification, confirm } = useNotification();
 
     const fetchTickets = async () => {
         try {
@@ -76,16 +78,23 @@ export default function MonitorPage() {
 
     const handleClaim = async (ticketId: number) => {
         if (!currentUser) {
-            alert('Você precisa estar logado para assumir um ticket.');
+            showNotification('Você precisa estar logado para assumir um ticket.', 'error');
             return;
         }
 
+        const confirmed = await confirm({
+            title: 'Assumir Ticket?',
+            message: 'Deseja realmente assumir a responsabilidade por este chamado?'
+        });
+
+        if (!confirmed) return;
+
         try {
             await updateTicket(ticketId, { assigned_user_id: currentUser.id });
-            alert('Ticket assumido com sucesso!');
+            showNotification('Ticket assumido com sucesso!', 'success');
             fetchTickets(); // Atualiza a lista
         } catch (error) {
-            alert('Erro ao assumir ticket.');
+            showNotification('Erro ao assumir ticket.', 'error');
             console.error(error);
         }
     };
@@ -178,8 +187,9 @@ export default function MonitorPage() {
                                         )}>
                                             {ticket.priority}
                                         </div>
-                                        <div className="text-[var(--color-text-muted)] font-mono text-sm opacity-50">
-                                            {ticket.id}
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-accent-theme/50">ID</span>
+                                            <span className="text-xl font-black font-mono leading-none">{ticket.id}</span>
                                         </div>
                                     </div>
 
@@ -208,10 +218,10 @@ export default function MonitorPage() {
                                     </div>
 
                                     {/* Timer/Waiting Info */}
-                                    <div className="absolute -top-3 -right-3 p-3 bg-red-500 rounded-2xl text-white shadow-xl flex items-center gap-2 border-4 border-background">
+                                    <div className="absolute -top-4 -right-4 p-3 bg-red-500 rounded-2xl text-white shadow-xl flex items-center gap-2 border-4 border-background z-10 scale-110">
                                         <Clock className="w-4 h-4" />
                                         <span className="font-black text-[10px] tracking-tighter">
-                                            {Math.floor((currentTime.getTime() - new Date(ticket.created_at).getTime()) / (1000 * 60))} MIN
+                                            {Math.max(0, Math.floor((currentTime.getTime() - new Date(ticket.created_at + (ticket.created_at.endsWith('Z') ? '' : 'Z')).getTime()) / (1000 * 60)))} MIN
                                         </span>
                                     </div>
                                 </motion.div>

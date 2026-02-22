@@ -1097,9 +1097,19 @@ export default function TicketDetailsPage() {
                                         transition={{ duration: 0.3 }}
                                         className="flex-1 flex flex-col min-h-0"
                                     >
-                                        <div className="flex items-center gap-3 pb-6 mb-4 text-[10px] font-black uppercase tracking-widest text-gray-400 sticky top-0 bg-transparent z-20 -mt-6 pt-6">
-                                            <Clock className="w-4 h-4 text-accent-theme" />
-                                            Análise de Tempo por Etapa
+                                        <div className="flex items-center justify-between pb-6 mb-4 sticky top-0 bg-transparent z-20 -mt-6 pt-6">
+                                            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                <Clock className="w-4 h-4 text-accent-theme" />
+                                                Análise de Tempo por Etapa
+                                            </div>
+                                            {!loadingTimerStats && timerStats.length > 0 && (
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Tempo Total Investido</span>
+                                                    <span className="text-sm font-black text-accent-theme tabular-nums">
+                                                        {formatDuration(timerStats.reduce((acc, curr) => acc + curr.total_duration, 0))}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {loadingTimerStats ? (
@@ -1115,7 +1125,10 @@ export default function TicketDetailsPage() {
                                         ) : (
                                             <div className="space-y-6 pr-4 flex-1 overflow-y-auto custom-scrollbar min-h-0">
                                                 {timerStats.map((group) => (
-                                                    <div key={group.status_id} className="glass-card p-6 rounded-[2rem] border border-white/5 bg-white/[0.01]">
+                                                    <div key={group.status_id} className="glass-card p-10 rounded-[2.5rem] border border-white/5 bg-white/[0.01] shadow-2xl relative overflow-hidden group/timer-card">
+                                                        <div className="absolute top-0 right-0 p-8 opacity-[0.02] pointer-events-none group-hover/timer-card:scale-110 transition-transform duration-1000">
+                                                            <Clock className="w-24 h-24 rotate-12" />
+                                                        </div>
                                                         <div className="flex items-center justify-between mb-6">
                                                             <div className="flex items-center gap-3">
                                                                 <div

@@ -120,7 +120,8 @@ class TicketFlowController:
                     errors.append(f"{svc_id}: {str(e)}")
             
             if not errors:
-                self.lbl_info.config(text=f"Sucesso: Serviços {action} realizados.", foreground="green")
+                action_pt = "iniciados" if action == "start" else "parados"
+                self.lbl_info.config(text=f"Sucesso: Serviços {action_pt} realizados.", foreground="green")
             else:
                 self.lbl_info.config(text="Erro ao gerenciar alguns serviços.", foreground="red")
                 

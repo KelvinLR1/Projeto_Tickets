@@ -95,6 +95,7 @@ export default function ClientsPage() {
         contracted_items: []
     });
     const [isSearchingCNPJ, setIsSearchingCNPJ] = useState(false);
+    const [isSearchingCEP, setIsSearchingCEP] = useState(false);
 
     // Advanced Filter states
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -307,6 +308,46 @@ export default function ClientsPage() {
             showNotification(error.message || 'Erro ao buscar dados do CNPJ', 'error');
         } finally {
             setIsSearchingCNPJ(false);
+        }
+    };
+
+    const handleCEPLookup = async () => {
+        const cep = formData.cep.replace(/\D/g, '');
+        if (cep.length !== 8) {
+            showNotification('O CEP deve ter 8 dígitos para a busca', 'warning');
+            return;
+        }
+
+        if (typeof window !== 'undefined' && !window.navigator.onLine) {
+            showNotification('Falha de conexão: Verifique sua internet', 'error');
+            return;
+        }
+
+        setIsSearchingCEP(true);
+        try {
+            const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cep}`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    throw new Error('CEP não encontrado');
+                }
+                throw new Error('Erro ao consultar API de CEP');
+            }
+
+            const data = await response.json();
+
+            setFormData(prev => ({
+                ...prev,
+                street: data.street || prev.street,
+                neighborhood: data.neighborhood || prev.neighborhood,
+                city: data.city || prev.city,
+                uf: data.state || prev.uf,
+            }));
+
+            showNotification('Endereço preenchido com sucesso!', 'success');
+        } catch (error: any) {
+            showNotification(error.message || 'Erro ao buscar dados do CEP', 'error');
+        } finally {
+            setIsSearchingCEP(false);
         }
     };
 
@@ -523,7 +564,7 @@ export default function ClientsPage() {
                             <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-accent-theme" />
                             <input
                                 type="text"
-                                placeholder="Buscar por nome, email ou documento..."
+                                placeholder="Buscar por nome, apelido, e-mail ou documento..."
                                 className="w-full bg-background/50 border border-border-theme rounded-2xl pl-14 pr-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold placeholder:text-[var(--color-text-muted)] placeholder:font-normal"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -680,7 +721,10 @@ export default function ClientsPage() {
                                                                     <User className="w-6 h-6" />
                                                                 </div>
                                                                 <div>
-                                                                    <div className="font-black text-foreground group-hover/name:text-accent-theme transition-colors font-display uppercase tracking-tight italic">{client.name}</div>
+                                                                    <div className="font-black text-foreground group-hover/name:text-accent-theme transition-colors font-display uppercase tracking-tight italic">
+                                                                        {client.name}
+                                                                        {client.nickname && <span className="ml-2 text-[10px] text-accent-theme/60 not-italic font-black uppercase">({client.nickname})</span>}
+                                                                    </div>
                                                                     <div className="text-[10px] text-[var(--color-text-muted)] md:hidden font-mono">#{client.id} | {client.cpf_cnpj}</div>
                                                                 </div>
                                                             </div>
@@ -867,13 +911,23 @@ export default function ClientsPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                         <div className="space-y-3">
                                             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">CEP</label>
-                                            <input
-                                                type="text"
-                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
-                                                placeholder="00000-000"
-                                                value={formData.cep}
-                                                onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
-                                            />
+                                            <div className="relative group/input">
+                                                <input
+                                                    type="text"
+                                                    className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold pr-14"
+                                                    placeholder="00000-000"
+                                                    value={formData.cep}
+                                                    onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCEPLookup}
+                                                    disabled={isSearchingCEP || formData.cep.replace(/\D/g, '').length !== 8}
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-accent-theme/10 text-accent-theme hover:bg-accent-theme hover:text-white transition-all disabled:opacity-30"
+                                                >
+                                                    {isSearchingCEP ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                                                </button>
+                                            </div>
                                         </div>
                                         <div className="space-y-3 md:col-span-2">
                                             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Logradouro (Rua/Av)</label>
@@ -950,10 +1004,9 @@ export default function ClientsPage() {
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-3">
-                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">E-mail Principal</label>
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">E-mail Principal (Opcional)</label>
                                             <input
                                                 type="email"
-                                                required
                                                 className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
                                                 placeholder="contato@empresa.com"
                                                 value={formData.email}

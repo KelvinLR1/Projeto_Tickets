@@ -98,21 +98,27 @@ class TicketFlowService(win32serviceutil.ServiceFramework):
                 return
 
         else:
-            # Frontend: roda Next.js via Node.js portátil
+            # Frontend: roda Next.js via Node.js portátil (Modo Standalone)
             client_dir = os.path.join(base_dir, "client")
             node_exe = os.path.join(client_dir, "node", "node.exe")
+            server_js = os.path.join(client_dir, "server.js")
             next_bin = os.path.join(client_dir, "node_modules", "next", "dist", "bin", "next")
 
             if not os.path.exists(node_exe):
                 log_debug(f"ERRO: node.exe não encontrado em {node_exe}")
                 return
 
-            log_debug(f"Node.js exe: {node_exe}, next_bin existe: {os.path.exists(next_bin)}")
+            log_debug(f"Node.js exe: {node_exe}, server_js existe: {os.path.exists(server_js)}")
 
             cmd: List[str]
-            if os.path.exists(next_bin):
+            if os.path.exists(server_js):
+                # Recomendado: Modo Standalone (Leve/Rápido)
+                cmd = [node_exe, server_js]
+            elif os.path.exists(next_bin):
+                # Fallback: Modo Tradicional (Legado)
                 cmd = [node_exe, next_bin, "start"]
             else:
+                # Último recurso
                 npm_cmd = os.path.join(client_dir, "node", "npm.cmd")
                 cmd = [npm_cmd, "start"]
 
