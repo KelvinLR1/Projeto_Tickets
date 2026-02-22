@@ -11,7 +11,8 @@ def get_detailed_report_stats(db: Session,
                               start_date: Optional[str] = None, 
                               end_date: Optional[str] = None, 
                               sector_id: Optional[int] = None, 
-                              user_id: Optional[int] = None):
+                              user_id: Optional[int] = None,
+                              current_user: Optional[models.User] = None):
     """Retorna estatísticas detalhadas do sistema com suporte a filtros opcionais."""
     
     # Base query filter for Ticket-related stats
@@ -29,6 +30,25 @@ def get_detailed_report_stats(db: Session,
                 q = q.filter(models.Ticket.created_at <= ed)
             except:
                 q = q.filter(models.Ticket.created_at <= end_date)
+                
+        if current_user and current_user.role not in ["ADMIN", "ROOT"]:
+            perms = current_user.permissions.get("actions", []) if current_user.permissions else []
+            if "*" not in perms:
+                if "view_all_sectors_reports" not in perms:
+                    my_sectors = [s.id for s in current_user.sectors] if current_user.sectors else []
+                    from sqlalchemy import or_
+                    if my_sectors:
+                        q = q.filter(or_(models.Ticket.sector_id.in_(my_sectors), models.Ticket.sector_id == None))
+                    else:
+                        q = q.filter(models.Ticket.sector_id == None)
+                
+                if "view_all_users_reports" not in perms:
+                    from sqlalchemy import or_
+                    q = q.filter(or_(
+                        models.Ticket.assigned_user_id == current_user.id,
+                        models.Ticket.created_by_id == current_user.id
+                    ))
+
         if sector_id:
             q = q.filter(models.Ticket.sector_id == sector_id)
         if user_id:
@@ -93,10 +113,7 @@ def get_detailed_report_stats(db: Session,
     ).outerjoin(models.Ticket, models.Ticket.assigned_user_id == models.User.id)
     
     # Aplicar filtros ao join para estatísticas de usuário
-    if start_date: assigned_q = assigned_q.filter(models.Ticket.created_at >= start_date)
-    if end_date: assigned_q = assigned_q.filter(models.Ticket.created_at <= end_date)
-    if sector_id: assigned_q = assigned_q.filter(models.Ticket.sector_id == sector_id)
-    if user_id: assigned_q = assigned_q.filter(models.User.id == user_id)
+    assigned_q = apply_filters(assigned_q)
 
     assigned_stats = assigned_q.group_by(models.User.id).all()
     assigned_map = {row.id: {"username": row.username, "count": row[2]} for row in assigned_stats}
@@ -107,11 +124,7 @@ def get_detailed_report_stats(db: Session,
         func.sum(models.TicketTimeLog.duration).label("total_duration")
     ).join(models.Ticket, models.Ticket.id == models.TicketTimeLog.ticket_id)
     
-    if start_date: time_q = time_q.filter(models.TicketTimeLog.start_time >= start_date)
-    if end_date: time_q = time_q.filter(models.TicketTimeLog.start_time <= end_date)
-    if sector_id: time_q = time_q.filter(models.Ticket.sector_id == sector_id)
-    if user_id: time_q = time_q.filter(models.TicketTimeLog.user_id == user_id)
-    
+    time_q = apply_filters(time_q)
     time_stats = time_q.group_by(models.TicketTimeLog.user_id).all()
     time_map = {row.user_id: row.total_duration for row in time_stats}
 
@@ -121,11 +134,7 @@ def get_detailed_report_stats(db: Session,
         func.count(models.Ticket.id).label("tickets_created")
     ).outerjoin(models.Ticket, models.Ticket.created_by_id == models.User.id)
     
-    if start_date: creation_q = creation_q.filter(models.Ticket.created_at >= start_date)
-    if end_date: creation_q = creation_q.filter(models.Ticket.created_at <= end_date)
-    if sector_id: creation_q = creation_q.filter(models.Ticket.sector_id == sector_id)
-    if user_id: creation_q = creation_q.filter(models.User.id == user_id)
-    
+    creation_q = apply_filters(creation_q)
     creation_stats = creation_q.group_by(models.User.id).all()
     creation_map = {row.id: row.tickets_created for row in creation_stats}
 
@@ -151,18 +160,12 @@ def get_detailed_report_stats(db: Session,
 
     # Média Geral do Sistema
     total_duration_q = db.query(func.sum(models.TicketTimeLog.duration)).join(models.Ticket)
-    if start_date: total_duration_q = total_duration_q.filter(models.TicketTimeLog.start_time >= start_date)
-    if end_date: total_duration_q = total_duration_q.filter(models.TicketTimeLog.start_time <= end_date)
-    if sector_id: total_duration_q = total_duration_q.filter(models.Ticket.sector_id == sector_id)
-    if user_id: total_duration_q = total_duration_q.filter(models.TicketTimeLog.user_id == user_id)
+    total_duration_q = apply_filters(total_duration_q)
     
     total_duration_val = total_duration_q.scalar() or 0
     
     tickets_with_log_q = db.query(func.count(func.distinct(models.TicketTimeLog.ticket_id))).join(models.Ticket)
-    if start_date: tickets_with_log_q = tickets_with_log_q.filter(models.TicketTimeLog.start_time >= start_date)
-    if end_date: tickets_with_log_q = tickets_with_log_q.filter(models.TicketTimeLog.start_time <= end_date)
-    if sector_id: tickets_with_log_q = tickets_with_log_q.filter(models.Ticket.sector_id == sector_id)
-    if user_id: tickets_with_log_q = tickets_with_log_q.filter(models.TicketTimeLog.user_id == user_id)
+    tickets_with_log_q = apply_filters(tickets_with_log_q)
     
     total_tickets_with_log = tickets_with_log_q.scalar() or 0
     avg_system_time = total_duration_val / total_tickets_with_log if total_tickets_with_log > 0 else 0
@@ -1151,6 +1154,7 @@ def get_system_settings(db: Session):
             "logo_url_light": None,
             "logo_url_dark": None,
             "custom_colors": None,
+            "favicon_url": None,
             "updated_at": datetime.utcnow()
         }
 
@@ -1160,6 +1164,7 @@ def update_system_settings(db: Session, update: schemas.SystemSettingsUpdate):
     if update.logo_url_light is not None: settings.logo_url_light = update.logo_url_light
     if update.logo_url_dark is not None: settings.logo_url_dark = update.logo_url_dark
     if update.custom_colors is not None: settings.custom_colors = update.custom_colors
+    if update.favicon_url is not None: settings.favicon_url = update.favicon_url
     db.commit()
     db.refresh(settings)
     return settings
@@ -1230,9 +1235,24 @@ def delete_custom_report(db: Session, report_id: int):
         return True
     return False
 
+def validate_sql_query(query: str):
+    """Valida se a query contém comandos destrutivos ou não-autorizados."""
+    forbidden = ["DROP", "DELETE", "TRUNCATE", "UPDATE", "INSERT", "ALTER", "CREATE", "GRANT", "REVOKE"]
+    query_upper = query.upper()
+    for cmd in forbidden:
+        if cmd in query_upper:
+            # Verifica se é uma palavra solta para evitar falso-positivo em nomes de colunas
+            import re
+            if re.search(rf"\b{cmd}\b", query_upper):
+                raise Exception(f"Comando SQL não permitido para relatórios: {cmd}")
+    return True
+
 def execute_custom_report(db: Session, query: str, variables: Dict[str, Any]):
     """Executa uma query SQL customizada de forma segura usando parâmetros nomeados."""
     try:
+        # Validação de segurança básica
+        validate_sql_query(query)
+        
         # Prepara a query SQL usando a sintaxe de bind parameters (:var_name)
         sql = text(query)
         

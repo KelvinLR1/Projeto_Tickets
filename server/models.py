@@ -179,6 +179,8 @@ class User(Base):
     role = Column(String, default="AGENT") # Depreciado: Usar profile_id
     profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=True)
     is_active = Column(Boolean, default=True)
+    avatar_url = Column(String, nullable=True)
+    last_seen = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     profile = relationship("Profile", back_populates="users")
@@ -239,6 +241,7 @@ class SystemSettings(Base):
     logo_url_light = Column(String, nullable=True) # Logo para tema claro
     logo_url_dark = Column(String, nullable=True)  # Logo para tema escuro
     custom_colors = Column(JSON, nullable=True)    # Cores personalizadas para o tema "custom"
+    favicon_url = Column(String, nullable=True)    # URL do favicon personalizado
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Update User relationship

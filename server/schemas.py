@@ -237,6 +237,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
     role: str = "AGENT"
     profile_id: Optional[int] = None
+    avatar_url: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
@@ -250,11 +251,13 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     profile_id: Optional[int] = None
     sector_ids: Optional[List[int]] = None
+    avatar_url: Optional[str] = None
 
 class User(UserBase):
     id: int
     is_active: bool
     created_at: datetime
+    last_seen: Optional[datetime] = None
     profile: Optional[Profile] = None
     sectors: List[Sector] = []
 
@@ -372,12 +375,14 @@ class SystemSettingsBase(BaseModel):
     logo_url_light: Optional[str] = None
     logo_url_dark: Optional[str] = None
     custom_colors: Optional[dict] = None
+    favicon_url: Optional[str] = None
 
 class SystemSettingsUpdate(BaseModel):
     system_name: Optional[str] = None
     logo_url_light: Optional[str] = None
     logo_url_dark: Optional[str] = None
     custom_colors: Optional[dict] = None
+    favicon_url: Optional[str] = None
 
 class SystemSettings(SystemSettingsBase):
     id: int

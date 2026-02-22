@@ -30,6 +30,31 @@ def init_db_schema():
         print(f"⚠️ Alerta: Não foi possível inicializar as tabelas do banco de dados: {e}")
         print("⚠️ Acesse as configurações no frontend para corrigir os dados de conexão.")
 
+    # Migração automática: adicionar colunas novas em bancos existentes
+    _run_migrations()
+
+def _run_migrations():
+    """Executa migrações automáticas via Alembic para garantir que o esquema do banco está na última versão."""
+    try:
+        from alembic.config import Config
+        from alembic import command
+        
+        # O caminho do alembic.ini relativo a este arquivo
+        alembic_ini_path = os.path.join(os.path.dirname(__file__), "alembic.ini")
+        alembic_cfg = Config(alembic_ini_path)
+        
+        # Definir explicitamente o diretório de arquivos de migração
+        alembic_dir_path = os.path.join(os.path.dirname(__file__), "alembic")
+        alembic_cfg.set_main_option("script_location", alembic_dir_path)
+
+        print("🔄 Executando migrações automáticas do banco de dados via Alembic...")
+        command.upgrade(alembic_cfg, "head")
+        print("✅ Migrações concluídas com sucesso. Banco de dados atualizado.")
+    except Exception as e:
+        import traceback
+        print(f"⚠️ Erro ao executar migrações do Alembic: {e}")
+        traceback.print_exc()
+
 # Inicialização inicial das tabelas
 init_db_schema()
 
@@ -160,7 +185,11 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/users/me", response_model=schemas.User)
-def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
+def read_users_me(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    # Atualiza o last_seen do usuário logado
+    current_user.last_seen = datetime.utcnow()
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 @app.get("/users/", response_model=List[schemas.User])
@@ -196,6 +225,18 @@ def delete_sector(sector_id: int, db: Session = Depends(database.get_db), curren
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
 
+
+@app.get("/users/online", response_model=List[schemas.User])
+def get_online_users(db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Retorna usuários que fizeram algum request nos últimos 5 minutos."""
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(minutes=5)
+    users = db.query(models.User).filter(
+        models.User.last_seen >= cutoff,
+        models.User.is_active == True
+    ).all()
+    return users
+
 @app.post("/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
     db_user = crud.get_user_by_username(db, username=user.username)
@@ -219,6 +260,55 @@ def delete_user_endpoint(user_id: int, db: Session = Depends(database.get_db), c
     success = crud.delete_user(db=db, user_id=user_id)
     if not success: raise HTTPException(status_code=404, detail="Usuário não encontrado")
     return {"message": "Usuário excluído com sucesso"}
+
+@app.post("/users/{user_id}/avatar", response_model=schemas.User)
+async def upload_user_avatar(user_id: int, file: UploadFile = File(...), db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    """Upload de foto de perfil do usuário. Aceita PNG, JPG, WEBP."""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    allowed_types = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Tipo de arquivo inválido. Use PNG, JPG ou WEBP.")
+
+    uploads_dir = os.path.join(os.path.dirname(__file__), "uploads", "avatars")
+    os.makedirs(uploads_dir, exist_ok=True)
+
+    # Remove avatar antigo se existir
+    if db_user.avatar_url:
+        old_path = os.path.join(os.path.dirname(__file__), db_user.avatar_url.lstrip("/"))
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "jpg"
+    filename = f"avatar_{user_id}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = os.path.join(uploads_dir, filename)
+
+    with open(filepath, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    avatar_url = f"/uploads/avatars/{filename}"
+    db_user.avatar_url = avatar_url
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.delete("/users/{user_id}/avatar", response_model=schemas.User)
+def remove_user_avatar(user_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+    """Remove a foto de perfil do usuário."""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if db_user.avatar_url:
+        old_path = os.path.join(os.path.dirname(__file__), db_user.avatar_url.lstrip("/"))
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    db_user.avatar_url = None
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
 
 @app.get("/profiles/", response_model=List[schemas.Profile])
 def read_profiles(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
@@ -331,9 +421,12 @@ def preview_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(da
 
     url = URL.create(**url_args)
     try:
+        # Validação de segurança básica na query
+        query_str = config.query if config.query else f"SELECT * FROM {config.table}"
+        crud.validate_sql_query(query_str)
+        
         ext_engine = create_engine(url)
         with ext_engine.connect() as conn:
-            query_str = config.query if config.query else f"SELECT * FROM {config.table}"
             df = pd.read_sql(text(query_str), conn).head(10)
         if config.mapping: df = df.rename(columns=config.mapping)
         df.columns = [c.lower().strip() for c in df.columns]
@@ -381,9 +474,12 @@ def import_clients_db(config: schemas.DBImportConfigs, db: Session = Depends(dat
 
     url = URL.create(**url_args)
     try:
+        # Validação de segurança básica na query
+        query_str = config.query if config.query else f"SELECT * FROM {config.table}"
+        crud.validate_sql_query(query_str)
+        
         ext_engine = create_engine(url)
         with ext_engine.connect() as conn:
-            query_str = config.query if config.query else f"SELECT * FROM {config.table}"
             df = pd.read_sql(text(query_str), conn)
         if config.mapping: df = df.rename(columns=config.mapping)
         df.columns = [c.lower().strip() for c in df.columns]
@@ -478,8 +574,9 @@ def get_report_summary(
     end_date: Optional[str] = None,
     sector_id: Optional[int] = None,
     user_id: Optional[int] = None,
-    db: Session = Depends(database.get_db)):
-    return crud.get_detailed_report_stats(db, start_date, end_date, sector_id, user_id)
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)):
+    return crud.get_detailed_report_stats(db, start_date, end_date, sector_id, user_id, current_user)
 
 @app.get("/tickets/{ticket_id}", response_model=schemas.Ticket)
 def read_ticket(ticket_id: int, db: Session = Depends(database.get_db)):
@@ -689,6 +786,35 @@ def get_settings(db: Session = Depends(database.get_db)): return crud.get_system
 def patch_settings(update: schemas.SystemSettingsUpdate, db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_active_admin)):
     return crud.update_system_settings(db, update)
 
+@app.post("/system-settings/logo", response_model=schemas.SystemSettings)
+async def upload_logo(theme: str, file: UploadFile = File(...), db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_active_admin)):
+    ext = os.path.splitext(file.filename)[1]
+    name = f"logo_{theme}_{uuid.uuid4()}{ext}"
+    path = os.path.join(UPLOAD_DIR, name)
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    url = f"/uploads/{name}"
+    update = schemas.SystemSettingsUpdate()
+    if theme == "light":
+        update.logo_url_light = url
+    else:
+        update.logo_url_dark = url
+    
+    return crud.update_system_settings(db, update)
+
+@app.post("/system-settings/favicon", response_model=schemas.SystemSettings)
+async def upload_favicon(file: UploadFile = File(...), db: Session = Depends(database.get_db), u: models.User = Depends(auth.get_current_active_admin)):
+    ext = os.path.splitext(file.filename)[1]
+    name = f"favicon_{uuid.uuid4()}{ext}"
+    path = os.path.join(UPLOAD_DIR, name)
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    url = f"/uploads/{name}"
+    update = schemas.SystemSettingsUpdate(favicon_url=url)
+    return crud.update_system_settings(db, update)
+
 @app.post("/api/system/config-db")
 async def config_db_api(config: schemas.DBConfig):
     import sys
@@ -800,7 +926,7 @@ def delete_custom_report(
 def execute_report(
     execution_data: Dict[str, Any],
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(auth.get_current_user)):
+    current_user: models.User = Depends(auth.get_current_active_admin)):
     """Executa um SQL customizado com variáveis."""
     query = execution_data.get("query")
     variables = execution_data.get("variables", {})
