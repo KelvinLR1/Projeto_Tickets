@@ -3,10 +3,33 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 import os
+import sys
 from dotenv import load_dotenv
 
-# Carregar variáveis de ambiente
-load_dotenv()
+# Determinar o diretório base de forma robusta para ambientes de serviço
+# Quando rodando como EXE do PyInstaller: sys.executable = C:\TicketFlow\TicketFlow_Backend_Service.exe
+# Quando rodando como script normal: __file__ = .../server/database.py
+if getattr(sys, 'frozen', False):
+    # Executando como EXE PyInstaller - base é a pasta do EXE
+    _base_dir = os.path.dirname(sys.executable)
+else:
+    # Executando como script Python - base é a pasta server
+    _base_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Tentar carregar .env de várias localizações possíveis
+_env_locations = [
+    os.path.join(_base_dir, ".env"),           # C:\TicketFlow\.env (EXE)
+    os.path.join(_base_dir, "server", ".env"), # C:\TicketFlow\server\.env (EXE)
+    os.path.join(_base_dir, ".env"),           # .../server/.env (script)
+    os.path.join(os.path.dirname(_base_dir), ".env"),  # pasta pai
+]
+
+for _env_path in _env_locations:
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path)
+        break
+else:
+    load_dotenv()  # fallback padrão
 
 # Usar PostgreSQL se DATABASE_URL estiver definida, senão SQLite local
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")

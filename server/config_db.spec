@@ -10,7 +10,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['libcrypto', 'libssl'],
     noarchive=False,
     optimize=0,
 )
@@ -35,4 +35,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    uac_admin=True,
+    icon=['C:\\Code\\Projeto_Tickets\\client\\app\\favicon.ico'],
 )

@@ -175,6 +175,9 @@ export default function SettingsPage() {
     const [selectedSectorIdCategory, setSelectedSectorIdCategory] = useState<number | undefined>(undefined);
     const [newCategorySectorId, setNewCategorySectorId] = useState<number | undefined>(undefined);
 
+    // Estado de informações do banco de dados
+    const [dbInfo, setDbInfo] = useState<{ type: string; label: string; details: string } | null>(null);
+
     // Estado da Limpeza de Dados (Danger Zone)
     const [resetEntities, setResetEntities] = useState<string[]>([]);
     const [isResetModalOpen, setIsResetModalOpen] = useState(false);
@@ -284,6 +287,19 @@ export default function SettingsPage() {
     useEffect(() => {
         fetchCategories(true, selectedSectorIdCategory);
     }, [selectedSectorIdCategory]);
+
+    // Carrega informações do banco de dados uma vez ao montar
+    useEffect(() => {
+        const fetchDbInfo = async () => {
+            try {
+                const response = await api.get('/api/system/db-info');
+                setDbInfo(response.data);
+            } catch (error) {
+                console.error('Failed to fetch db info:', error);
+            }
+        };
+        fetchDbInfo();
+    }, []);
 
     const fetchSystemSettings = async () => {
         try {
@@ -1115,6 +1131,51 @@ export default function SettingsPage() {
                                                 value={config.ollamaUrl}
                                                 onChange={(e) => setConfig({ ...config, ollamaUrl: e.target.value })}
                                             />
+                                        </div>
+
+                                        {/* Banco de Dados Ativo */}
+                                        <div className="border-t border-border-theme pt-6 space-y-3">
+                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-2">
+                                                Banco de Dados Ativo
+                                            </label>
+                                            <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-border-theme">
+                                                {dbInfo ? (
+                                                    <>
+                                                        <div className={clsx(
+                                                            "flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 border",
+                                                            dbInfo.type === 'sqlite'
+                                                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                                                : dbInfo.type === 'postgresql'
+                                                                    ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                                                                    : "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                                                        )}>
+                                                            <HardDrive className="w-3 h-3" />
+                                                            {dbInfo.label}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-xs font-mono text-foreground truncate">{dbInfo.details || '\u2014'}</p>
+                                                            <p className="text-[9px] text-[var(--color-text-muted)] italic mt-0.5">
+                                                                {dbInfo.type === 'sqlite'
+                                                                    ? 'Arquivo local. Ideal para instala\u00e7\u00f5es simples.'
+                                                                    : dbInfo.type === 'postgresql'
+                                                                        ? 'Banco de dados remoto (PostgreSQL).'
+                                                                        : 'Conex\u00e3o personalizada.'}
+                                                            </p>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <div className="flex items-center gap-2 text-[var(--color-text-muted)]">
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                        <span className="text-xs">Carregando...</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p className="text-[9px] text-[var(--color-text-muted)] italic px-1 flex items-center gap-1">
+                                                <AlertTriangle className="w-3 h-3 text-yellow-500 shrink-0" />
+                                                Para alterar o banco de dados, execute o{' '}
+                                                <code className="font-mono bg-white/5 px-1 rounded">config_db.exe</code>
+                                                {' '}na pasta de instala\u00e7\u00e3o.
+                                            </p>
                                         </div>
                                     </div>
                                 </motion.div>

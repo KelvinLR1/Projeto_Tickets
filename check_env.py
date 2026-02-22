@@ -72,7 +72,7 @@ def main():
         essential_ok = False
 
     # 3. Bibliotecas Python Críticas (ESSENCIAL)
-    critical_libs = ["fastapi", "uvicorn", "sqlalchemy", "pg8000", "pywin32"]
+    critical_libs = ["fastapi", "uvicorn", "sqlalchemy", "pg8000", "win32api"]
     for lib in critical_libs:
         if check_library(lib):
             print_status(f"Biblioteca '{lib}': Instalada", "OK", "DEP")

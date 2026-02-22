@@ -1,49 +1,80 @@
-## 1. Ferramentas de Automação
+# 📦 Guia Completo do Instalador (Windows)
 
-Criamos ferramentas para facilitar a geração do instalador:
-- **`config_db.py`**: Utilitário para configurar o PostgreSQL.
-- **`build_installer.ps1`**: Script que automatiza o build, gera o executável do configurador e organiza os arquivos.
-- **`installer.iss`**: Script para o Inno Setup gerar o `.exe` de instalação final.
-
-### Pré-requisito para o Desenvolvedor
-Para gerar o executável do configurador, instale o PyInstaller no seu ambiente:
-```powershell
-pip install pyinstaller
-```
-
-## 2. Como Gerar o Instalador (.exe)
-
-### Passo 1: Preparar os arquivos
-No terminal (PowerShell), execute o script de build na raiz do projeto:
-```powershell
-.\build_installer.ps1
-```
-Este comando irá:
-1. Compilar o Frontend (`npm run build`).
-2. Gerar o executável do configurador de banco.
-3. Criar a pasta `dist` organizada para o instalador.
-
-### Passo 2: Gerar o Executável
-1. Instale o [Inno Setup](https://jrsoftware.org/isdl.php).
-2. Abra o arquivo `installer.iss`.
-3. Clique em **Compile** (F9).
-4. O instalador final estará em `installer_output/`.
-
-## 3. Tipos de Instalação
-
-O novo instalador oferece dois modos:
-
-### A. Instalação Completa (Servidor)
-*   **O que instala:** Backend (Python/FastAPI), Frontend e o Configurador de Banco.
-*   **Quando usar:** No computador principal da empresa onde o banco de dados ficará.
-*   **Pós-instalação:** O configurador de banco abrirá automaticamente para salvar a conexão com o PostgreSQL.
-
-### B. Instalação Terminal (Estação)
-*   **O que instala:** Apenas o Frontend.
-*   **Quando usar:** Nos computadores dos outros funcionários que acessarão o servidor central.
-*   **Configuração:** Ao abrir pela primeira vez, clique na engrenagem na tela de login e:
-    1.  Informe o **IP do Servidor**.
-    2.  Selecione **IA do Servidor** para economizar recursos da estação.
+Este documento detalha o processo de geração do instalador para desenvolvedores e explica as opções de instalação para os usuários finais.
 
 ---
-*Nota: Certifique-ce que o computador tem Python e Node.js no PATH do sistema para o inicializador funcionar.*
+
+## 🏗️ Parte 1: Para o Desenvolvedor (Geração do .exe)
+
+O TicketFlow utiliza uma arquitetura portável. O instalador final agrupa o Backend (Python), Frontend (Next.js) e as runtimes necessárias sem exigir que o cliente instale nada previamente.
+
+### 1.1 Pré-requisitos
+Antes de gerar o instalador, garanta que você tem:
+- **Python 3.10+**.
+- **Ambiente Virtual (.venv):** O script de build espera encontrar um ambiente virtual na pasta `server/` com as dependências do `requirements.txt` instaladas.
+- **Node.js 20+**.
+- **Inno Setup 6+** instalado no Windows.
+
+### 1.2 Automação do Build
+Toda a complexidade de compilação e organização é tratada pelo script `build_installer.ps1`.
+
+1.  Abra o PowerShell como **Administrador**.
+2.  Execute:
+    ```powershell
+    .\build_installer.ps1
+    ```
+    > [!TIP]
+    > **Não é necessário ativar o `.venv` no seu terminal.** O script detecta automaticamente a pasta em `server/.venv` e usa o Python correto internamente.
+3.  **O que este script faz:**
+    - Limpa builds antigos.
+    - Executa `npm run build` no frontend.
+    - Organiza o Node.js portátil e `node_modules` na pasta `dist`.
+    - Compila os serviços de sistema (`Backend` e `Frontend`) usando PyInstaller.
+    - Gera o Launcher (`TicketFlow.exe`) e o Configurador GUI (`config_db.exe`).
+
+### 1.3 Geração do Instalador Final
+1.  Abra o Inno Setup Compiler.
+2.  Carregue o arquivo `installer.iss`.
+3.  Pressione **Build > Compile** (ou F9).
+4.  O arquivo final será gerado em: `installer_output\TicketFlow_Setup.exe`.
+
+---
+
+## 🚀 Parte 2: Para o Usuário (Instalação e Modos)
+
+O instalador `TicketFlow_Setup.exe` oferece dois tipos de instalação:
+
+### A. Instalação Completa (Servidor)
+**Público-alvo:** O computador principal da rede que hospedará os dados.
+- **O que é instalado:** Todos os binários, serviços de sistema e o configurador de banco.
+- **Serviços:** São criados os serviços `TicketFlowBackend` e `TicketFlowFrontend` que iniciam automaticamente com o Windows.
+- **Configuração:** Ao final, o **Configurador de Banco de Dados** abrirá. Escolha entre SQLite (simples) ou PostgreSQL (recomendado para muitos usuários).
+
+### B. Instalação Terminal (Estação de Trabalho)
+**Público-alvo:** Computadores de funcionários que apenas acessam o sistema.
+- **O que é instalado:** Apenas a interface e o Launcher.
+- **Configuração:** Ao abrir o sistema pela primeira vez, clique no ícone de engrenagem ⚙️ na tela de login e aponte para o **IP do Servidor**.
+
+---
+
+## 🔍 Parte 3: Solução de Problemas (Troubleshooting)
+
+### Os serviços não iniciam
+- Verifique se a porta `8080` (Backend) e `3000` (Frontend) estão liberadas no Firewall do Windows.
+- Visualize os logs em `C:\TicketFlow\service_debug.log`.
+
+### Erro de permissão no PowerShell (Build)
+Se o script `build_installer.ps1` for bloqueado, execute:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+```
+
+### Alterar Banco de Dados após a instalação
+Caso precise mudar de SQLite para PostgreSQL mais tarde:
+1. Vá até a pasta `C:\TicketFlow`.
+2. Execute o `config_db.exe`.
+3. Reinicie o computador ou os serviços via Gerenciador de Tarefas > Serviços.
+
+---
+
+*TicketFlow — Tecnologia local, performance premium.*

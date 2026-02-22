@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSystemSettings } from '@/components/SystemSettingsProvider';
-import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck, Settings, Globe, X, RefreshCw, AlertCircle, Save } from 'lucide-react';
+import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck, Settings, Globe, X, RefreshCw, AlertCircle, Save, Database } from 'lucide-react';
 import { getDefaultBaseURL } from '@/lib/api';
 import axios from 'axios';
 
@@ -32,6 +32,14 @@ export default function LoginPage() {
     const [dbPgPass, setDbPgPass] = useState('');
     const [dbPgName, setDbPgName] = useState('ticketflow_db');
     const [isConfiguringDb, setIsConfiguringDb] = useState(false);
+
+    // Info do Banco Ativo
+    interface DBInfo {
+        type: 'sqlite' | 'postgresql';
+        details: string;
+        label: string;
+    }
+    const [dbInfo, setDbInfo] = useState<DBInfo | null>(null);
 
     // Carrega URL do Servidor e verifica conectividade
     React.useEffect(() => {
@@ -63,6 +71,12 @@ export default function LoginPage() {
                     setError('O servidor não responde no endereço configurado. Verifique os ajustes.');
                 }
             }
+
+            // Busca Info do Banco
+            try {
+                const dbRes = await axios.get(`${currentUrl.replace(/\/$/, "")}/api/system/db-info`, { timeout: 3000 });
+                setDbInfo(dbRes.data);
+            } catch (e) { }
         };
 
         checkInitialConnection();
@@ -393,6 +407,25 @@ export default function LoginPage() {
                                     </>
                                 ) : (
                                     <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+                                        {/* Informativo de Banco Ativo */}
+                                        {dbInfo && (
+                                            <div className="p-4 bg-white/5 border border-white/10 rounded-2xl animate-in fade-in zoom-in-95 duration-500">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Database className="w-3.5 h-3.5 text-accent-theme" />
+                                                        <span className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Banco em Uso</span>
+                                                    </div>
+                                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${dbInfo.type === 'postgresql' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/10 text-green-400'
+                                                        }`}>
+                                                        {dbInfo.type === 'postgresql' ? 'PostgreSQL' : 'SQLite'}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10px] font-bold text-foreground/70 break-all leading-tight font-mono">
+                                                    {dbInfo.details}
+                                                </p>
+                                            </div>
+                                        )}
+
                                         <div className="space-y-3">
                                             <label className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] ml-1">
                                                 Motor de Banco de Dados

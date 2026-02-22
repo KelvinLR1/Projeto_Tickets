@@ -8,40 +8,44 @@ O **Antigravity Ticket System** é uma plataforma state-of-the-art para gestão 
 ## ✨ Principais Funcionalidades
 
 ### 📋 Gestão de Tickets de Alta Performance
-- **Ciclo de Vida Completo:** Criação, atribuição, transferência de setor e encerramento de chamados.
-- **Conteúdo Rico Inline:** Suporte direto no texto para imagens, vídeos e anexos de qualquer tipo (Excel, PDF, Executáveis).
-- **Ações Rápidas:** Interface otimizada para adicionar informações, transferir técnicos ou copiar links instantaneamente.
+- **Ciclo de Vida Dinâmico:** Novo sistema de **Status Customizáveis** com cores e comportamentos configuráveis.
+- **Conteúdo Rico Inline:** Suporte direto para imagens, vídeos e anexos de qualquer tipo (Excel, PDF, Executáveis).
+- **Controle de Tempo:** Log de atividades com cronômetro integrado por técnico e por chamado.
 
-### 🧠 Base de Conhecimento com RAG
-- **Busca Vetorial Inteligente:** Utilize o poder da IA (Chromadb) para buscar soluções em chamados passados e manuais técnicos.
-- **Treinamento em Tempo Real:** Cada novo ticket resolvido alimenta automaticamente a inteligência do sistema.
+### 🧠 Inteligência Artificial (RAG)
+- **Busca Vetorial Nativa:** Integração com **ChromaDB** para encontrar soluções em segundos.
+- **Treinamento Contínuo:** O sistema aprende com cada ticket resolvido, alimentando a base de conhecimento local.
+- **Privacidade Total:** Processamento via **Ollama** executando modelos como Llama3 e Llava 100% offline.
 
 ### 🎨 Experiência de Usuário Premium
-- **Design Glassmorphism:** Interface moderna com efeitos de vidro, desfoques e animações suaves.
-- **Multitemas:** Suporte a diversos temas (Cyberpunk, Matrix, Nordic, Gold, entre outros).
-- **Timeline de Alterações:** Rastreabilidade completa e localizada (PT-BR) de cada ação tomada no chamado.
-
-### 📊 Relatórios e Dashboard
-- **Insights em Tempo Real:** Estatísticas detalhadas sobre volume de tickets, categorias e desempenho da equipe.
-- **Monitoramento de SLA:** Acompanhamento visual de prioridades e estados críticos.
+- **Aura Design:** Interface baseada em Glassmorphism, com desfoques realistas e micro-animações.
+- **Dashboard Operacional:** Matriz de situação e métricas de desempenho (SLA, Taxa de Resolução) em tempo real.
+- **Multitemas:** Temas exclusivos como *Cyberpunk, Matrix, Nordic, Gold* e o novo modo *OLED*.
 
 ---
 
 ## 🛠️ Estrutura Técnica
 
-- **Frontend:** [Next.js 14+](https://nextjs.org/) (React, Tailwind CSS v4, Lucide Icons).
-- **Backend:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.10+).
-- **Banco de Dados:** SQLite (Relacional) + SQLAlchemy ORM.
-- **IA/Vetorial:** ChromaDB + [Ollama](https://ollama.com/) (Llama3/Llava).
+- **Frontend:** [Next.js 14+](https://nextjs.org/) (React, Tailwind CSS v4, Framer Motion).
+- **Backend:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.10+) com suporte a **Windows Services**.
+- **Banco de Dados:** SQLite (Portabilidade) ou PostgreSQL (Escalabilidade) via SQLAlchemy.
+- **IA:** ChromaDB + [Ollama](https://ollama.com/) (Llama3/Llava).
 
 ---
 
 ## 🚀 Como Executar
 
 ### 0. Verificar Ambiente (Recomendado)
-Antes de iniciar o projeto em uma nova máquina, verifique se todas as dependências estão presentes:
+Antes de iniciar o projeto em uma nova máquina, verifique se todas as dependências estão presentes.
 
-```bash
+> [!IMPORTANT]
+> **Ative o ambiente virtual (.venv)** antes de rodar a verificação para que o script detecte corretamente as bibliotecas instaladas:
+
+```powershell
+# Exemplo Windows
+cd server
+.venv\Scripts\activate
+cd ..
 python check_env.py
 ```
 
@@ -135,7 +139,7 @@ O backend (FastAPI) gera automaticamente documentações interativas que permite
 Na raiz do projeto, você encontrará diversos scripts Python criados para auxiliar no desenvolvimento, manutenção e diagnóstico do sistema:
 
 ### 🔍 Diagnóstico e Ambiente
-- `check_env.py`: **O mais importante.** Verifica o ambiente (Python, Node, Ollama), venv e integridade do banco de dados com auto-correção de esquema.
+- `check_env.py`: **O mais importante.** Verifica o ambiente (Python, Node, Ollama), venv e integridade do banco de dados. *Lembre-se de rodar com o .venv ativo para verificar as bibliotecas.*
 - `check_imports.py` & `diagnose.py`: Utilitários para validar se o sistema de módulos e imports está funcionando corretamente.
 - `debug_server.py`: Ferramenta para testar a inicialização do backend isoladamente.
 
@@ -158,31 +162,39 @@ Na raiz do projeto, você encontrará diversos scripts Python criados para auxil
 
 ---
 
-## 📦 Gerando o Instalador (Windows)
+## 📦 Guia do Desenvolvedor: Gerando o Instalador
 
-Para criar um pacote de instalação portável que executa como Serviço do Windows:
+Para criar o pacote de instalação `.exe` com serviços automatizados:
 
-### 1. Preparação do Ambiente
-Abra o PowerShell como **Administrador** na raiz do projeto e garanta que os scripts possam ser executados:
+### 1. Pré-requisitos
+- **Python 3.10+** (com PyInstaller instalado).
+- **Node.js 20+**.
+- **Inno Setup 6+** (para a geração final do .exe).
+
+### 2. Preparação dos Binários
+Abra o PowerShell como **Administrador** e execute o script de automação:
+
 ```powershell
+# 1. Ajuste a permissão se necessário
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-```
 
-> [!TIP]
-> **Sobre o Banco de Dados:** O sistema suporta **SQLite** out-of-the-box (não requer instalação). Se optar por **PostgreSQL**, você deve instalá-lo manualmente antes de rodar o configurador. [Baixe o PostgreSQL aqui](https://www.postgresql.org/download/windows/).
-
-### 2. Build dos Binários
-Execute o script de automação para preparar os arquivos, baixar o Python portável e compilar os executáveis:
-```powershell
+# 2. Gere os binários e a estrutura portável
 .\build_installer.ps1
 ```
-*Isso gerará a pasta `dist` com tudo que é necessário para o instalador.*
 
-### 3. Compilação do Instalador
-1. Abra o **Inno Setup Compiler**.
-2. Carregue o arquivo `installer.iss`.
-3. Clique em **Build > Compile**.
-4. O instalador final estará em `installer_output\TicketFlow_Setup.exe`.
+Este script irá:
+1. Compilar o Frontend Next.js.
+2. Organizar as runtimes portáveis de Python e Node.
+3. Gerar os serviços `TicketFlow_Backend_Service.exe` e `TicketFlow_Frontend_Service.exe`.
+4. Criar o `TicketFlow.exe` (Launcher) e o novo `config_db.exe` (Configurador GUI).
+
+### 3. Compilação Final (Inno Setup)
+1. Abra o arquivo `installer.iss` no Inno Setup Compiler.
+2. Pressione **F9** para compilar.
+3. O instalador estará disponível em `installer_output/TicketFlow_Setup.exe`.
+
+> [!IMPORTANT]
+> Para mais detalhes sobre as opções de instalação (Servidor vs Estação), consulte o [**Guia de Instalação (INSTALLER.md)**](file:///c:/Code/Projeto_Tickets/INSTALLER.md).
 
 ---
 

@@ -28,8 +28,16 @@ Desktop.ini
 # Environment Variables
 .env
 .env.local
-installer_output/
-*.exe
 
+# Build Artifacts and Runtimes
+dist/
+build/
+build_pyi_dist/
+build_pyi_work/
+node_portable/
+python_portable/
+*.zip
+*.spec
 installer_output/
 *.exe
+database_notice.txt

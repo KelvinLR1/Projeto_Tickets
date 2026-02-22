@@ -681,9 +681,16 @@ def patch_settings(update: schemas.SystemSettingsUpdate, db: Session = Depends(g
 
 @app.post("/api/system/config-db")
 async def config_db_api(config: schemas.DBConfig):
+    import sys
     import config_db
     if config.engine == "sqlite":
-        url = f"sqlite:///{os.path.join(os.getcwd(), config.sqlite.dbname).replace(os.sep, '/')}"
+        # Usa a pasta do servidor como base para o banco SQLite
+        if getattr(sys, 'frozen', False):
+            install_dir = os.path.dirname(sys.executable)
+        else:
+            install_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(install_dir, config.sqlite.dbname).replace(os.sep, '/')
+        url = f"sqlite:///{db_path}"
     else:
         # Tenta criar o banco se não existir
         try:
@@ -704,6 +711,29 @@ async def config_db_api(config: schemas.DBConfig):
 
 @app.get("/api/system/status")
 async def sys_status(): return {"is_configured": bool(os.getenv("DATABASE_URL"))}
+
+@app.get("/api/system/db-info")
+async def db_info():
+    url = os.getenv("DATABASE_URL", "")
+    if not url:
+        return {"type": "none", "label": "Não configurado", "details": ""}
+    
+    if url.startswith("sqlite"):
+        # Extrai o caminho do arquivo SQLite
+        path = url.replace("sqlite:///", "").replace("sqlite://", "")
+        filename = os.path.basename(path) if path else "memory"
+        return {"type": "sqlite", "label": "SQLite", "details": filename, "path": path}
+    elif "postgresql" in url or "postgres" in url:
+        # Extrai host e banco (sem senha)
+        import re
+        match = re.search(r'@([^/]+)/(.+)$', url)
+        if match:
+            host = match.group(1)
+            dbname = match.group(2).split('?')[0]
+            return {"type": "postgresql", "label": "PostgreSQL", "details": f"{host}/{dbname}"}
+        return {"type": "postgresql", "label": "PostgreSQL", "details": "configurado"}
+    else:
+        return {"type": "other", "label": "Outro", "details": url[:50]}
 
 # --- Custom Reports Endpoints ---
 @app.get("/reports/custom", response_model=List[schemas.CustomReport])
