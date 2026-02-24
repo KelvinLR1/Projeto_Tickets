@@ -139,8 +139,14 @@ export default function Sidebar() {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 p-2 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group flex-1 mr-2 overflow-hidden">
                         <div className="w-9 h-9 shrink-0 rounded-full bg-accent-theme/20 border border-accent-theme/30 flex items-center justify-center text-accent-theme group-hover:scale-105 transition-transform overflow-hidden">
-                            {user?.username ? (
-                                <span className="font-bold">{user.username[0].toUpperCase()}</span>
+                            {user?.avatar_url ? (
+                                <img
+                                    src={`${typeof window !== 'undefined' ? `http://${window.location.hostname}:8080` : 'http://localhost:8080'}${user.avatar_url}`}
+                                    alt={user.full_name || user.username}
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : user?.username ? (
+                                <span className="font-bold">{(user.full_name || user.username)[0].toUpperCase()}</span>
                             ) : (
                                 <User className="w-5 h-5" />
                             )}

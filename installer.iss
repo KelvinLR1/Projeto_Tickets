@@ -39,7 +39,7 @@ Source: "dist\server\*"; DestDir: "{app}\server"; Flags: recursesubdirs createal
 Source: "dist\TicketFlow.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\TicketFlow_Controller.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\TicketFlow_Backend_Service.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: server
-Source: "dist\TicketFlow_Frontend_Service.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: server
+Source: "dist\TicketFlow_Frontend_Service.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: client
 
 [Icons]
 Name: "{group}\TicketFlow (Painel)"; Filename: "{app}\TicketFlow_Controller.exe"

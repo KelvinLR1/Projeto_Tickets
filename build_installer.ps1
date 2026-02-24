@@ -122,6 +122,9 @@ Write-Host "--- Gerando ServiÃ§o Backend (Bundled) ---" -ForegroundColor Cyan
     --hidden-import passlib.handlers `
     --hidden-import bcrypt `
     --hidden-import jose `
+    --hidden-import pyodbc `
+    --hidden-import pymysql `
+    --hidden-import pymssql `
     --exclude-module libcrypto `
     --exclude-module libssl `
     service_wrapper.py

@@ -73,12 +73,24 @@ class TicketFlowService(win32serviceutil.ServiceFramework):
             try:
                 import uvicorn  # type: ignore[import]
                 from main import app  # type: ignore[import]  # server_dir já no path
-                log_debug("uvicorn e main importados com sucesso.")
+                
+                import json
+                json_path = os.path.join(base_dir, "system_ports.json")
+                back_port = 8080
+                try:
+                    if os.path.exists(json_path):
+                        with open(json_path, 'r') as f:
+                            data = json.load(f)
+                            back_port = data.get('backend_port', 8080)
+                except Exception as e:
+                    log_debug(f"Erro ao ler system_ports.json: {str(e)}")
+
+                log_debug(f"uvicorn e main importados. Porta do backend: {back_port}")
 
                 def run_server() -> None:
                     try:
-                        log_debug("Chamando uvicorn.run...")
-                        uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
+                        log_debug(f"Chamando uvicorn.run na porta {back_port}...")
+                        uvicorn.run(app, host="0.0.0.0", port=back_port, log_level="info")
                         log_debug("uvicorn.run encerrado.")
                     except Exception as e:
                         log_debug(f"Erro dentro do uvicorn.run: {str(e)}")
@@ -132,6 +144,22 @@ class TicketFlowService(win32serviceutil.ServiceFramework):
             log_debug(f"Executando subprocesso. Cmd: {cmd}, Cwd: {cwd}")
             env = os.environ.copy()
             env["PATH"] = os.path.join(base_dir, "client", "node") + ";" + env.get("PATH", "")
+            
+            if not is_backend:
+                import json
+                json_path = os.path.join(base_dir, "system_ports.json")
+                front_port = 3000
+                try:
+                    if os.path.exists(json_path):
+                        with open(json_path, 'r') as f:
+                            data = json.load(f)
+                            front_port = data.get('frontend_port', 3000)
+                except Exception as e:
+                    log_debug(f"Erro ao ler system_ports.json no frontend: {str(e)}")
+                
+                env["PORT"] = str(front_port)
+                log_debug(f"Injetando PORT={front_port} no ambiente do Frontend.")
+
             self.process = subprocess.Popen(
                 cmd, cwd=cwd, env=env,
                 creationflags=CREATE_NO_WINDOW,

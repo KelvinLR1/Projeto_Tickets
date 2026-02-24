@@ -85,6 +85,25 @@ npm run dev
 
 ---
 
+## ⚙️ Configuração de Portas
+
+Caso precise alterar as portas padrão devido a conflitos:
+
+### Alterar Porta do Backend (Servidor)
+No comando `uvicorn`, mude o parâmetro `--port`:
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8081 --reload
+```
+> **Nota:** Se você mudar a porta do servidor, acesse o sistema pelo navegador e vá em **Ajustes -> Conectividade** para atualizar a URL da API para que o frontend consiga se comunicar.
+
+### Alterar Porta do Frontend (Cliente)
+No Next.js, use o parâmetro `-p`:
+```bash
+npm run dev -- -p 3001
+```
+
+---
+
 ## 🔄 Manutenção e Atualização
 
 ### Atualizando o Banco de Dados

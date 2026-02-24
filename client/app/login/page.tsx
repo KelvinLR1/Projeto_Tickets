@@ -44,7 +44,10 @@ export default function LoginPage() {
 
     // Verifica conexão proativamente
     const checkInitialConnection = useCallback(async (targetUrl?: string) => {
-        const urlToCheck = (targetUrl || apiUrl).replace(/\/$/, "");
+        let urlToCheck = (targetUrl || apiUrl).trim().replace(/\/$/, "");
+        if (urlToCheck && !urlToCheck.startsWith('http')) {
+            urlToCheck = `http://${urlToCheck}`;
+        }
         try {
             // Tenta um ping leve para validar frontend e banco
             const healthRes = await axios.get<{ status: string, db: string, detail?: string }>(`${urlToCheck}/health`, { timeout: 5000 });
@@ -110,7 +113,8 @@ export default function LoginPage() {
         }
         setApiUrl(currentUrl);
         checkInitialConnection(currentUrl);
-    }, [checkInitialConnection]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Executa apenas na montagem do componente para evitar loop com apiUrl
 
     const handleSaveSettings = () => {
         const localConfig = localStorage.getItem('system_config');
@@ -119,9 +123,14 @@ export default function LoginPage() {
             try { currentConfig = JSON.parse(localConfig); } catch (e) { }
         }
 
+        let normalizedUrl = apiUrl.trim().replace(/\/$/, "");
+        if (normalizedUrl && !normalizedUrl.startsWith('http')) {
+            normalizedUrl = `http://${normalizedUrl}`;
+        }
+
         const config = {
             ...currentConfig,
-            apiUrl: apiUrl.replace(/\/$/, ""),
+            apiUrl: normalizedUrl,
             aiSource: aiSource
         };
         localStorage.setItem('system_config', JSON.stringify(config));
@@ -134,8 +143,14 @@ export default function LoginPage() {
     const handleTestConnection = async () => {
         setIsTesting(true);
         setTestStatus(null);
+
+        let urlToTest = apiUrl.trim().replace(/\/$/, "");
+        if (urlToTest && !urlToTest.startsWith('http')) {
+            urlToTest = `http://${urlToTest}`;
+        }
+
         try {
-            await axios.get(`${apiUrl.replace(/\/$/, "")}/health`, { timeout: 5000 });
+            await axios.get(`${urlToTest}/health`, { timeout: 5000 });
             setTestStatus('success');
         } catch (err) {
             if (axios.isAxiosError(err) && err.response) {

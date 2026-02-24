@@ -15,7 +15,7 @@ import { useAuth } from '@/components/AuthProvider';
 import api, {
     getCategories, createCategory, updateCategory, deleteCategory, Category,
     getStatuses, createStatus, updateStatus, deleteStatus, Status,
-    getUsers, createUser, updateUser, deleteUser, User,
+    getUsers, createUser, updateUser, deleteUser, uploadUserAvatar, removeUserAvatar, User,
     resetDatabase, downloadBackup, restoreSystem,
     getProfiles, createProfile, updateProfile, deleteProfile, Profile,
     getSectors, createSector, updateSector, deleteSector, Sector,
@@ -62,6 +62,8 @@ const AVAILABLE_ACTIONS = [
     { id: 'transfer_ticket', label: 'Transferir Chamados' },
     { id: 'delete_ticket', label: 'Excluir Chamados (Cuidado)' },
     { id: 'view_reports', label: 'Visualizar Relatórios' },
+    { id: 'view_all_users_reports', label: 'Ver Relatórios de Outros Usuários' },
+    { id: 'view_all_sectors_reports', label: 'Ver Relatórios de Outros Setores' },
     { id: 'manage_users', label: 'Gerenciar Usuários' },
     { id: 'manage_profiles', label: 'Gerenciar Perfis' },
     { id: 'manage_sectors', label: 'Gerenciar Setores' },
@@ -193,6 +195,8 @@ export default function SettingsPage() {
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [currentUser, setCurrentUser] = useState<Partial<User & { password?: string }>>({});
     const [isEditingUser, setIsEditingUser] = useState(false);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
     const [expandedCategories, setExpandedCategories] = useState<number[]>([]);
 
     // Estado Gestão de Perfis
@@ -205,12 +209,15 @@ export default function SettingsPage() {
         system_name: 'TicketFlow',
         logo_url_light: '',
         logo_url_dark: '',
-        custom_colors: {} as Record<string, string>
+        custom_colors: {} as Record<string, string>,
+        favicon_url: ''
     });
     const [logoFileLight, setLogoFileLight] = useState<File | null>(null);
     const [logoFileDark, setLogoFileDark] = useState<File | null>(null);
+    const [faviconFile, setFaviconFile] = useState<File | null>(null);
     const [logoPreviewLight, setLogoPreviewLight] = useState<string | null>(null);
     const [logoPreviewDark, setLogoPreviewDark] = useState<string | null>(null);
+    const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
     const [isSavingSystem, setIsSavingSystem] = useState(false);
     const [editingSector, setEditingSector] = useState<Sector | null>(null);
     const [showOnlyActiveSectors, setShowOnlyActiveSectors] = useState(false);
@@ -275,6 +282,7 @@ export default function SettingsPage() {
         fetchSectors();
         if (user && (user.role === 'ADMIN' || user.role === 'ROOT')) {
             fetchUsers();
+            fetchProfiles();
         }
         fetchSystemSettings();
     }, [user]);
@@ -344,6 +352,7 @@ export default function SettingsPage() {
                 ...data,
                 logo_url_light: resolveUrl(data.logo_url_light) || resolveUrl(data.logo_url) || null,
                 logo_url_dark: resolveUrl(data.logo_url_dark) || resolveUrl(data.logo_url) || null,
+                favicon_url: resolveUrl(data.favicon_url) || null,
                 custom_colors: data.custom_colors || {}
             });
         } catch (error) {
@@ -361,6 +370,19 @@ export default function SettingsPage() {
             reader.onloadend = () => {
                 if (theme === 'light') setLogoPreviewLight(reader.result as string);
                 else setLogoPreviewDark(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleFaviconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setFaviconFile(file);
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setFaviconPreview(reader.result as string);
             };
             reader.readAsDataURL(file);
         }
@@ -388,6 +410,14 @@ export default function SettingsPage() {
                 const formData = new FormData();
                 formData.append('file', logoFileDark);
                 await api.post('/system-settings/logo?theme=dark', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+            }
+
+            if (faviconFile) {
+                const formData = new FormData();
+                formData.append('file', faviconFile);
+                await api.post('/system-settings/favicon', formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
             }
@@ -433,6 +463,34 @@ export default function SettingsPage() {
         }
     };
 
+    const handleRemoveFavicon = async () => {
+        const confirmed = await askConfirm({
+            title: 'Remover Favicon',
+            message: 'Deseja remover o favicon personalizado e voltar ao padrão?',
+            confirmText: 'Sim, Remover',
+            cancelText: 'Cancelar',
+            type: 'danger'
+        });
+
+        if (!confirmed) return;
+        setIsSavingSystem(true);
+        try {
+            await api.patch('/system-settings', { favicon_url: '' });
+            showNotification('Favicon removido com sucesso!', 'success');
+
+            setSystemSettings({ ...systemSettings, favicon_url: '' });
+            setFaviconPreview(null);
+            setFaviconFile(null);
+
+            refreshSettings();
+        } catch (error) {
+            console.error("Error removing favicon:", error);
+            showNotification('Erro ao remover favicon', 'error');
+        } finally {
+            setIsSavingSystem(false);
+        }
+    };
+
     const fetchUsers = async () => {
         setLoadingUsers(true);
         try {
@@ -449,14 +507,26 @@ export default function SettingsPage() {
         e.preventDefault();
         setLoadingUsers(true);
         try {
+            let savedUser: User;
             if (isEditingUser && currentUser.id) {
-                await updateUser(currentUser.id, currentUser);
+                savedUser = await updateUser(currentUser.id, currentUser);
                 showNotification('Usuário atualizado!', 'success');
             } else {
-                await createUser(currentUser as User);
+                savedUser = await createUser(currentUser as User);
                 showNotification('Usuário criado!', 'success');
             }
+            // Upload do avatar se houver arquivo selecionado
+            if (avatarFile && savedUser.id) {
+                try {
+                    await uploadUserAvatar(savedUser.id, avatarFile);
+                } catch (avatarError) {
+                    console.error('Erro ao fazer upload do avatar:', avatarError);
+                    showNotification('Usuário salvo, mas houve um erro ao enviar a foto.', 'warning');
+                }
+            }
             setIsUserModalOpen(false);
+            setAvatarFile(null);
+            setAvatarPreview(null);
             fetchUsers();
         } catch (error) {
             showNotification('Erro ao salvar usuário', 'error');
@@ -638,7 +708,7 @@ export default function SettingsPage() {
     };
 
     useEffect(() => {
-        if (activeTab === 'profiles') {
+        if (activeTab === 'profiles' || activeTab === 'users') {
             fetchProfiles();
         }
     }, [activeTab]);
@@ -1859,8 +1929,8 @@ export default function SettingsPage() {
                                         </button>
                                     </div>
 
-                                    <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-visible relative group">
-                                        <div className="overflow-x-auto custom-scrollbar">
+                                    <div className="glass-card rounded-[2.5rem] border border-border-theme overflow-hidden relative group">
+                                        <div className="overflow-x-auto">
                                             <table className="w-full text-left border-collapse">
                                                 <thead>
                                                     <tr className="border-b border-border-theme/50">
@@ -1872,11 +1942,17 @@ export default function SettingsPage() {
                                                 </thead>
                                                 <tbody className="divide-y divide-border-theme/30">
                                                     {users.map((u) => (
-                                                        <tr key={u.id} className="group/row hover:bg-white/5 transition-all duration-300">
-                                                            <td className="px-8 py-6">
+                                                        <tr key={u.id} className="group/row hover:bg-accent-theme/5 transition-all duration-200 cursor-default">
+                                                            <td className="px-8 py-5 align-middle">
                                                                 <div className="flex items-center gap-4">
-                                                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-theme/20 to-primary-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme font-black shadow-inner group-hover/row:scale-105 transition-transform">
-                                                                        {u.username[0].toUpperCase()}
+                                                                    <div className="w-10 h-10 rounded-xl border border-accent-theme/20 flex items-center justify-center text-accent-theme font-black shadow-inner group-hover/row:scale-105 transition-transform overflow-hidden flex-shrink-0">
+                                                                        {u.avatar_url ? (
+                                                                            <img src={`${typeof window !== 'undefined' ? `http://${window.location.hostname}:8080` : 'http://localhost:8080'}${u.avatar_url}`} alt={u.username} className="w-full h-full object-cover" />
+                                                                        ) : (
+                                                                            <div className="w-full h-full bg-gradient-to-br from-accent-theme/20 to-primary-theme/10 flex items-center justify-center">
+                                                                                {u.username[0].toUpperCase()}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                     <div>
                                                                         <div className="font-bold text-sm text-foreground">{u.full_name || u.username}</div>
@@ -1884,7 +1960,7 @@ export default function SettingsPage() {
                                                                     </div>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-8 py-6">
+                                                            <td className="px-8 py-5 align-middle">
                                                                 <div className={clsx(
                                                                     "inline-flex items-center justify-center gap-2 w-[120px] py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border",
                                                                     u.profile_id ? "bg-orange-500/10 border-orange-500/20 text-orange-500" :
@@ -1898,7 +1974,7 @@ export default function SettingsPage() {
                                                                     </span>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-8 py-6">
+                                                            <td className="px-8 py-5 align-middle">
                                                                 <div className={clsx(
                                                                     "flex items-center gap-2 text-[9px] font-black uppercase tracking-widest",
                                                                     u.is_active ? "text-emerald-500" : "text-red-500"
@@ -1907,8 +1983,8 @@ export default function SettingsPage() {
                                                                     {u.is_active ? 'Ativo' : 'Bloqueado'}
                                                                 </div>
                                                             </td>
-                                                            <td className="px-8 py-6 text-right">
-                                                                <div className="flex justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                            <td className="px-8 py-5 align-middle text-right">
+                                                                <div className="flex justify-end gap-2 opacity-30 group-hover/row:opacity-100 transition-opacity duration-200">
                                                                     <button
                                                                         onClick={() => {
                                                                             setCurrentUser(u);
@@ -2072,10 +2148,57 @@ export default function SettingsPage() {
                                                         </div>
                                                     </div>
                                                 </div>
+                                            </div>
 
-                                                <p className="text-[9px] text-[var(--color-text-muted)] italic pt-2">
-                                                    Recomendado: PNG ou SVG transparente. O sistema alternará automaticamente entre os logos baseado no seu tema.
-                                                </p>
+                                            <div className="pt-10">
+                                                <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1 mb-4 flex items-center gap-2">
+                                                    <Globe className="w-3 h-3" /> Favicon do Sistema
+                                                </h2>
+
+                                                <div className="flex flex-col sm:flex-row items-center gap-8">
+                                                    <div className="w-24 h-24 rounded-3xl bg-slate-800 border-2 border-dashed border-slate-600 flex items-center justify-center overflow-hidden group relative flex-shrink-0">
+                                                        {faviconPreview || systemSettings.favicon_url ? (
+                                                            <img
+                                                                src={faviconPreview || systemSettings.favicon_url}
+                                                                alt="Favicon Preview"
+                                                                className="w-full h-full object-contain p-4"
+                                                            />
+                                                        ) : (
+                                                            <Ticket className="w-8 h-8 text-slate-600 opacity-50" />
+                                                        )}
+
+                                                        <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+                                                            <input
+                                                                type="file"
+                                                                className="hidden"
+                                                                accept="image/*"
+                                                                onChange={handleFaviconUpload}
+                                                            />
+                                                            <Edit2 className="w-5 h-5 text-white" />
+                                                        </label>
+                                                    </div>
+
+                                                    <div className="space-y-4 max-w-xs text-center sm:text-left">
+                                                        <div className="space-y-1">
+                                                            <p className="text-sm font-bold text-foreground">Ícone de Aba</p>
+                                                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                                Este ícone aparecerá na aba do seu navegador.
+                                                                Recomendado: <span className="text-accent-theme font-black">32x32</span> ou <span className="text-accent-theme font-black">64x64</span> pixels.
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="flex flex-wrap gap-3 justify-center sm:justify-start">
+                                                            {(faviconPreview || systemSettings.favicon_url) && (
+                                                                <button
+                                                                    onClick={handleRemoveFavicon}
+                                                                    className="px-4 py-2 rounded-xl bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center gap-2"
+                                                                >
+                                                                    <Trash2 className="w-3 h-3" /> Remover
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -2633,6 +2756,67 @@ export default function SettingsPage() {
                                 <div className="flex-grow overflow-y-auto custom-scrollbar p-10">
                                     <form id="user-form" onSubmit={handleSaveUser} className="space-y-6">
                                         <div className="space-y-6">
+                                            {/* Avatar Upload */}
+                                            <div className="flex flex-col items-center gap-4">
+                                                <div className="relative group/avatar">
+                                                    <div className="w-24 h-24 rounded-[2rem] border-2 border-dashed border-border-theme group-hover/avatar:border-accent-theme/50 overflow-hidden transition-all bg-background/50 flex items-center justify-center">
+                                                        {avatarPreview || currentUser.avatar_url ? (
+                                                            <img
+                                                                src={avatarPreview || `${typeof window !== 'undefined' ? `http://${window.location.hostname}:8080` : 'http://localhost:8080'}${currentUser.avatar_url}`}
+                                                                alt="Avatar"
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full bg-gradient-to-br from-accent-theme/20 to-primary-theme/10 flex items-center justify-center text-accent-theme text-3xl font-black">
+                                                                {(currentUser.full_name || currentUser.username || '?')[0]?.toUpperCase()}
+                                                            </div>
+                                                        )}
+                                                        <label className="absolute inset-0 flex items-center justify-center bg-background/80 opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer rounded-[2rem]">
+                                                            <div className="flex flex-col items-center gap-1">
+                                                                <Upload className="w-5 h-5 text-accent-theme" />
+                                                                <span className="text-[9px] font-black uppercase tracking-widest text-accent-theme">Foto</span>
+                                                            </div>
+                                                            <input
+                                                                type="file"
+                                                                className="hidden"
+                                                                accept="image/png,image/jpeg,image/webp"
+                                                                onChange={(e) => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (file) {
+                                                                        setAvatarFile(file);
+                                                                        const reader = new FileReader();
+                                                                        reader.onloadend = () => setAvatarPreview(reader.result as string);
+                                                                        reader.readAsDataURL(file);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    {(avatarPreview || currentUser.avatar_url) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                setAvatarPreview(null);
+                                                                setAvatarFile(null);
+                                                                if (isEditingUser && currentUser.id && currentUser.avatar_url) {
+                                                                    try {
+                                                                        await removeUserAvatar(currentUser.id);
+                                                                        setCurrentUser({ ...currentUser, avatar_url: undefined });
+                                                                        fetchUsers();
+                                                                    } catch (err) {
+                                                                        showNotification('Erro ao remover foto', 'error');
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center border-2 border-background hover:bg-red-600 transition-all"
+                                                        >
+                                                            <XCircle className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <p className="text-[9px] text-[var(--color-text-muted)] uppercase tracking-widest">Passe o mouse para alterar a foto</p>
+                                            </div>
+
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-black uppercase text-[var(--color-text-muted)]">Nome Completo</label>
                                                 <input type="text" required value={currentUser.full_name || ''} onChange={e => setCurrentUser({ ...currentUser, full_name: e.target.value })} className="w-full bg-background/50 border border-border-theme rounded-2xl p-4 text-sm outline-none focus:border-accent-theme/50 transition-all" />

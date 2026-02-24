@@ -9,6 +9,7 @@ interface SystemSettings {
     logo_url_light: string | null;
     logo_url_dark: string | null;
     custom_colors: Record<string, string> | null;
+    favicon_url: string | null;
 }
 
 interface SystemSettingsContextType {
@@ -17,6 +18,7 @@ interface SystemSettingsContextType {
     logoUrlLight: string | null;
     logoUrlDark: string | null;
     logoUrlOnAccent: string | null;
+    faviconUrl: string | null;
     customColors: Record<string, string> | null;
     refreshSettings: () => Promise<void>;
     isLoading: boolean;
@@ -38,7 +40,8 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         system_name: 'TicketFlow',
         logo_url_light: null,
         logo_url_dark: null,
-        custom_colors: null
+        custom_colors: null,
+        favicon_url: null
     });
     const [isLoading, setIsLoading] = useState(true);
 
@@ -87,7 +90,8 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
                 system_name: data.system_name || 'TicketFlow',
                 logo_url_light: resolveUrl(data.logo_url_light) || resolveUrl(data.logo_url) || null,
                 logo_url_dark: resolveUrl(data.logo_url_dark) || resolveUrl(data.logo_url) || null,
-                custom_colors: data.custom_colors || null
+                custom_colors: data.custom_colors || null,
+                favicon_url: resolveUrl(data.favicon_url) || null
             });
         } catch (error: any) {
             const isNetworkError = !error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK');
@@ -103,12 +107,22 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         refreshSettings();
     }, [refreshSettings]);
 
-    // Atualiza o título da aba do navegador dinamicamente
+    // Atualiza o título e favicon da aba do navegador dinamicamente
     useEffect(() => {
-        if (typeof window !== 'undefined' && settings.system_name) {
-            document.title = settings.system_name;
+        if (typeof window !== 'undefined') {
+            if (settings.system_name) document.title = settings.system_name;
+
+            if (settings.favicon_url) {
+                let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+                if (!link) {
+                    link = document.createElement('link');
+                    link.rel = 'icon';
+                    document.getElementsByTagName('head')[0].appendChild(link);
+                }
+                link.href = settings.favicon_url;
+            }
         }
-    }, [settings.system_name]);
+    }, [settings.system_name, settings.favicon_url]);
 
     // Aplicar cores customizadas se o tema for 'custom'
     useEffect(() => {
@@ -208,6 +222,7 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
             logoUrlLight: settings.logo_url_light,
             logoUrlDark: settings.logo_url_dark,
             logoUrlOnAccent: logoUrlOnAccent,
+            faviconUrl: settings.favicon_url,
             customColors: settings.custom_colors,
             refreshSettings,
             isLoading

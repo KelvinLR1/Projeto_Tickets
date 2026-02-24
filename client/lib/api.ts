@@ -3,13 +3,16 @@ import axios from 'axios';
 // Determina a BaseURL inicial dinamicamente para suportar acesso remoto
 export const getDefaultBaseURL = () => {
   if (typeof window !== 'undefined') {
+    // Porta dinâmica injetada via config.js gerada pelo controller.py
+    const customPort = (window as any).TICKETFLOW_BACKEND_PORT || 8080;
+
     // Se for localhost ou terminal do VSCode/Codespaces, usa 127.0.0.1
     // Caso contrário, assume que a API está no mesmo IP do frontend (rede local)
     const hostname = window.location.hostname;
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
-      return 'http://127.0.0.1:8080';
+      return `http://127.0.0.1:${customPort}`;
     }
-    return `http://${hostname}:8080`;
+    return `http://${hostname}:${customPort}`;
   }
   return 'http://127.0.0.1:8080';
 };
@@ -33,10 +36,13 @@ api.interceptors.request.use((config) => {
         let { apiUrl } = configData;
 
         if (apiUrl) {
-          // Auto-migração da porta 8000 para 8080 se detectada
-          if (apiUrl.includes(':8000')) {
-            console.log("[API] Detectada porta antiga 8000. Migrando para 8080...");
-            apiUrl = apiUrl.replace(':8000', ':8080');
+          const expectedPort = (window as any).TICKETFLOW_BACKEND_PORT || 8080;
+          // Auto-migração/sincronização de portas (Ex: 8000 -> 8080 ou 8080 -> 8085)
+          const currentUrlObj = new URL(apiUrl);
+          if (currentUrlObj.port && parseInt(currentUrlObj.port) !== expectedPort) {
+            console.log(`[API] Detectada divergência de porta. Migrando de ${currentUrlObj.port} para ${expectedPort}...`);
+            currentUrlObj.port = expectedPort.toString();
+            apiUrl = currentUrlObj.toString().replace(/\/$/, "");
             configData.apiUrl = apiUrl;
             localStorage.setItem('system_config', JSON.stringify(configData));
           }
@@ -108,10 +114,10 @@ api.interceptors.response.use(
         });
       } else {
         console.error('[API Error]', {
-          url: error.config?.url,
-          baseURL: error.config?.baseURL,
+          url: error.config?.url || '(unknown)',
+          baseURL: error.config?.baseURL || '(unknown)',
           status: error.response?.status || 'NETWORK_ERROR',
-          message: error.message,
+          message: error.message || String(error),
           location: typeof window !== 'undefined' ? window.location.href : 'SSR'
         });
       }
@@ -135,6 +141,7 @@ export interface User {
   email: string;
   full_name?: string;
   role: string;
+  avatar_url?: string;
   sectors?: Sector[];
 }
 
@@ -635,6 +642,8 @@ export interface User {
   profile_id?: number;
   profile?: Profile;
   sectors?: Sector[];
+  avatar_url?: string;
+  last_seen?: string;
 }
 
 export interface Profile {
@@ -711,6 +720,25 @@ export const updateUser = async (id: number, user: any) => {
 
 export const deleteUser = async (id: number) => {
   const response = await api.delete(`/users/${id}`);
+  return response.data;
+};
+
+export const getOnlineUsers = async (): Promise<User[]> => {
+  const response = await api.get<User[]>('/users/online');
+  return response.data;
+};
+
+export const uploadUserAvatar = async (userId: number, file: File): Promise<User> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post<User>(`/users/${userId}/avatar`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const removeUserAvatar = async (userId: number): Promise<User> => {
+  const response = await api.delete<User>(`/users/${userId}/avatar`);
   return response.data;
 };
 

@@ -44,6 +44,11 @@ const DB_ENGINE_OPTIONS = [
     { value: 'sqlserver', label: 'SQL Server (MSSQL)', icon: <Server className="w-4 h-4" /> },
 ];
 
+const CONTACT_TYPE_OPTIONS = [
+    { value: 'phone', label: 'FONE', icon: <Phone className="w-3 h-3" /> },
+    { value: 'email', label: 'E-mail', icon: <Mail className="w-3 h-3" /> },
+];
+
 export default function ClientsPage() {
     const { user } = useAuth();
     const { showNotification, confirm: askConfirm } = useNotification();
@@ -217,6 +222,30 @@ export default function ClientsPage() {
                 .replace(/(\d{4})(\d{1,2})/, '$1-$2')
                 .replace(/(-\d{2})\d+?$/, '$1');
         }
+    };
+
+    const formatPhone = (value: string) => {
+        const digits = value.replace(/\D/g, '');
+        if (digits.length <= 10) {
+            // (00) 0000-0000
+            return digits
+                .replace(/(\d{2})(\d)/, '($1) $2')
+                .replace(/(\d{4})(\d)/, '$1-$2')
+                .replace(/(-\d{4})\d+?$/, '$1');
+        } else {
+            // (00) 00000-0000
+            return digits
+                .replace(/(\d{2})(\d)/, '($1) $2')
+                .replace(/(\d{5})(\d)/, '$1-$2')
+                .replace(/(-\d{4})\d+?$/, '$1');
+        }
+    };
+
+    const formatCEP = (value: string) => {
+        return value
+            .replace(/\D/g, '')
+            .replace(/(\d{5})(\d)/, '$1-$2')
+            .replace(/(-\d{3})\d+?$/, '$1');
     };
 
     const handleOpenModal = (client: Client | null = null) => {
@@ -917,7 +946,7 @@ export default function ClientsPage() {
                                                     className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold pr-14"
                                                     placeholder="00000-000"
                                                     value={formData.cep}
-                                                    onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                                                    onChange={(e) => setFormData({ ...formData, cep: formatCEP(e.target.value) })}
                                                 />
                                                 <button
                                                     type="button"
@@ -1014,13 +1043,13 @@ export default function ClientsPage() {
                                             />
                                         </div>
                                         <div className="space-y-3">
-                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Telefone Principal</label>
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">FONE Principal</label>
                                             <input
                                                 type="text"
                                                 className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
                                                 placeholder="(00) 00000-0000"
                                                 value={formData.phone}
-                                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                                onChange={(e) => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
                                             />
                                         </div>
                                     </div>
@@ -1028,15 +1057,12 @@ export default function ClientsPage() {
                                     <div className="space-y-4">
                                         {formData.extra_contacts.map((contact, idx) => (
                                             <div key={idx} className="flex gap-4 items-end animate-in slide-in-from-left-4 duration-300">
-                                                <div className="w-32">
-                                                    <select
-                                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-4 py-4 text-xs font-bold focus:outline-none"
+                                                <div className="w-40">
+                                                    <CustomSelect
                                                         value={contact.type}
-                                                        onChange={(e) => updateContact(idx, 'type', e.target.value as any)}
-                                                    >
-                                                        <option value="phone">Telefone</option>
-                                                        <option value="email">E-mail</option>
-                                                    </select>
+                                                        onChange={(val) => updateContact(idx, 'type', val)}
+                                                        options={CONTACT_TYPE_OPTIONS}
+                                                    />
                                                 </div>
                                                 <div className="flex-1">
                                                     <input
@@ -1044,7 +1070,7 @@ export default function ClientsPage() {
                                                         className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
                                                         placeholder={contact.type === 'email' ? 'outro@email.com' : '(00) 0000-0000'}
                                                         value={contact.value}
-                                                        onChange={(e) => updateContact(idx, 'value', e.target.value)}
+                                                        onChange={(e) => updateContact(idx, 'value', contact.type === 'phone' ? formatPhone(e.target.value) : e.target.value)}
                                                     />
                                                 </div>
                                                 <button
@@ -1357,7 +1383,7 @@ export default function ClientsPage() {
                                                     nickname: 'Nome Fantasia',
                                                     email: 'E-mail',
                                                     cpf_cnpj: 'CPF ou CNPJ',
-                                                    phone: 'Telefone com DDD',
+                                                    phone: 'FONE com DDD',
                                                     cep: 'CEP',
                                                     city: 'Cidade',
                                                     uf: 'UF (Estado)',

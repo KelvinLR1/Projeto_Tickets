@@ -7,6 +7,7 @@ import { formatDateTime } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users, MapPin, Phone, Mail, Package, CreditCard, Building2, Globe } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import Link from 'next/link';
 import clsx from 'clsx';
 import { useNotification } from '@/components/NotificationProvider';
@@ -732,8 +733,20 @@ export default function TicketDetailsPage() {
                             </button>
 
                             <div className="flex items-center gap-5 p-5 rounded-3xl bg-background/40 border border-border-theme/30">
-                                <div className="w-14 h-14 rounded-2xl bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme shadow-xl">
-                                    <ShieldCheck className="w-6 h-6" />
+                                <div className="w-14 h-14 rounded-2xl overflow-hidden bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-accent-theme shadow-xl flex-shrink-0">
+                                    {ticket.assigned_user?.avatar_url ? (
+                                        <img
+                                            src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${ticket.assigned_user.avatar_url}`}
+                                            alt={ticket.assigned_user.full_name || ticket.assigned_user.username}
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : ticket.assigned_user ? (
+                                        <span className="text-xl font-black">
+                                            {(ticket.assigned_user.full_name || ticket.assigned_user.username)[0]?.toUpperCase()}
+                                        </span>
+                                    ) : (
+                                        <ShieldCheck className="w-6 h-6" />
+                                    )}
                                 </div>
                                 <div className="flex-1">
                                     <p className="text-[10px] font-black text-accent-theme uppercase tracking-widest mb-1 font-shadow-none">Responsável</p>
@@ -1069,6 +1082,7 @@ export default function TicketDetailsPage() {
                                                                 </div>
                                                                 <div className="text-sm text-gray-300 font-medium leading-relaxed pl-1 prose-none max-w-full break-words overflow-hidden">
                                                                     <ReactMarkdown
+                                                                        rehypePlugins={[rehypeSanitize]}
                                                                         components={{
                                                                             strong: ({ node, ...props }) => (
                                                                                 <strong
@@ -1454,7 +1468,7 @@ export default function TicketDetailsPage() {
                                                         <Phone className="w-3.5 h-3.5 text-gray-500" />
                                                     </div>
                                                     <div>
-                                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Telefone</p>
+                                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">FONE</p>
                                                         <p className="text-xs font-bold">{client?.phone || 'N/A'}</p>
                                                     </div>
                                                 </div>
@@ -1462,7 +1476,7 @@ export default function TicketDetailsPage() {
                                                     <div className="pt-2 border-t border-border-theme/30 space-y-2">
                                                         {client.extra_contacts.map((contact, idx) => (
                                                             <div key={idx} className="flex items-center gap-2 text-[10px] text-gray-400">
-                                                                <span className="font-black uppercase">{contact.type}:</span>
+                                                                <span className="font-black uppercase">{contact.type === 'phone' ? 'FONE' : contact.type === 'email' ? 'E-mail' : contact.type}:</span>
                                                                 <span className="font-bold text-foreground/70">{contact.value}</span>
                                                             </div>
                                                         ))}

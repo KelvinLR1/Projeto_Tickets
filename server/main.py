@@ -14,6 +14,14 @@ from typing import List, Dict, Optional, Any
 from fastapi import Request, Response
 import pandas as pd
 
+# Drivers de banco de dados para garantir inclusão no executável (PyInstaller)
+try:
+    import pyodbc
+    import pymysql
+    import pymssql
+except ImportError:
+    pass
+
 # Importando módulos locais
 try:
     from . import models, database, schemas, crud, rag, auth
