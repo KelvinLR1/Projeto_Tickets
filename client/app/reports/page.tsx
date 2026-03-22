@@ -44,6 +44,10 @@ function StatCard({ title, value, subtitle, icon }: { title: string, value: stri
 }
 
 function ReportSection({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) {
+    // Automates separating parenthesized text and dropping it to keep headers minimal
+    const splitTitle = title.split(' (');
+    const mainTitle = splitTitle[0];
+
     return (
         <div className="glass-card p-8 rounded-[2.5rem] border border-border-theme shadow-2xl flex flex-col h-full relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-all duration-700 pointer-events-none">
@@ -53,11 +57,13 @@ function ReportSection({ title, icon, children }: { title: string, icon: React.R
                     strokeWidth: 1.5
                 }) : null}
             </div>
-            <div className="flex items-center gap-4 relative mb-8">
-                <div className="p-3 bg-accent-theme/10 rounded-2xl text-accent-theme shadow-inner border border-accent-theme/20">
+            <div className="flex flex-col md:flex-row md:items-center gap-4 relative mb-8">
+                <div className="p-3 bg-accent-theme/10 rounded-2xl text-accent-theme shadow-inner border border-accent-theme/20 w-fit shrink-0">
                     {icon}
                 </div>
-                <h2 className="text-xl font-black font-display uppercase tracking-tight italic">{title}</h2>
+                <h2 className="text-xl font-black font-display uppercase tracking-tight italic flex flex-wrap items-center gap-2">
+                    {mainTitle}
+                </h2>
             </div>
             <div className="relative flex-1">
                 {children}
@@ -279,9 +285,9 @@ export default function ReportsPage() {
             <div className="max-w-7xl mx-auto space-y-12">
 
                 {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 border-b border-border-theme pb-10">
                     <div className="space-y-2">
-                        <h1 className="text-5xl font-black font-display tracking-tight italic uppercase">
+                        <h1 className="text-5xl font-black font-display tracking-tight italic uppercase leading-none">
                             Centro de <span className="text-accent-theme">Relatórios</span>
                         </h1>
                         <p className="text-[var(--color-text-muted)] text-sm font-medium">Extraia insights e dados consolidados do seu sistema.</p>
@@ -444,7 +450,7 @@ export default function ReportsPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     {/* Tickets por Cliente */}
                     <ReportSection title="Top 5 Clientes (Maior Volume)" icon={<Users className="w-4 h-4" />}>
-                        <div className="flex flex-col justify-between gap-4 h-full min-h-[400px]">
+                        <div className="flex flex-col justify-start gap-4 h-full min-h-[400px]">
                             {summary?.by_client.map((client, i) => (
                                 <div key={client.name} className="flex items-center gap-4 p-4 rounded-2xl bg-background/50 border border-border-theme/50 hover:border-accent-theme/30 transition-all group shadow-sm">
                                     <div className="w-8 text-[10px] font-black text-[var(--color-text-muted)] font-mono opacity-50">#{i + 1}</div>
@@ -467,7 +473,7 @@ export default function ReportsPage() {
 
                     {/* Tickets por Categoria */}
                     <ReportSection title="Top 5 Categorias (Mais Chamados)" icon={<Tag className="w-4 h-4" />}>
-                        <div className="flex flex-col justify-between gap-4 h-full min-h-[400px]">
+                        <div className="flex flex-col justify-start gap-4 h-full min-h-[400px]">
                             {summary?.by_category.map((cat) => (
                                 <div key={cat.name} className="flex items-center justify-between p-5 rounded-2xl bg-background/50 border border-border-theme group hover:border-accent-theme/30 transition-all shadow-sm">
                                     <div className="flex items-center gap-4">
@@ -621,7 +627,7 @@ export default function ReportsPage() {
                                     </motion.button>
                                 </div>
 
-                                <div className="relative min-h-[300px]">
+                                <div className="relative">
                                     <AnimatePresence mode="wait">
                                         {modalStep === 'list' && (
                                             <motion.div
@@ -631,7 +637,7 @@ export default function ReportsPage() {
                                                 exit={{ opacity: 0, x: -20 }}
                                                 className="space-y-4"
                                             >
-                                                <div className="space-y-3 max-h-[450px] overflow-y-auto overflow-x-hidden pr-3 custom-scrollbar">
+                                                <div className="space-y-3">
                                                     {/* Relatório Nativo */}
                                                     <motion.button
                                                         whileHover={{ scale: 1.02, x: 5 }}

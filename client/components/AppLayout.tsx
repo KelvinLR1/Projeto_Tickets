@@ -6,27 +6,64 @@ import { usePathname, useRouter } from "next/navigation";
 import { canAccessPath, getFirstAllowedPath } from "@/lib/permissions";
 import { Ticket, ShieldAlert, ArrowLeft, Clock } from "lucide-react";
 import React, { useState, useEffect } from "react";
+import clsx from 'clsx';
 
+/**
+ * Componente de Layout Principal da aplicação.
+ * Gerencia a estrutura global, estados de carregamento e proteção de rotas (RBAC).
+ */
+/**
+ * Componente de Layout Principal (Shell da Aplicação).
+ * Gerencia a estrutura global, estados de carregamento iniciais,
+ * proteção de rotas (RBAC) e variantes de exibição (Login, Monitor, Desktop).
+ */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const { user, loading } = useAuth();
     const pathname = usePathname();
     const router = useRouter();
+
+    // 1. ESTADOS (useState) - Ordem Fixa
     const [timer, setTimer] = useState(5);
     const [lastPath, setLastPath] = useState(pathname);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [hasHydrated, setHasHydrated] = useState(false);
 
-    // Reset síncrono do timer quando a rota muda (evita piscadas)
-    if (pathname !== lastPath) {
-        setLastPath(pathname);
-        setTimer(5);
-    }
-
-    const isLoginPage = pathname === "/login";
-    const accessAllowed = user ? canAccessPath(user, pathname) : true;
-
+    // 2. EFEITOS (useEffect) - Ordem Fixa
+    
+    // Auto-colapso em telas menores no carregamento inicial
+    // Sincronizar estado da sidebar com localStorage ou largura da tela
     useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('sidebar_collapsed');
+            if (saved !== null) {
+                setIsSidebarCollapsed(JSON.parse(saved));
+            } else if (window.innerWidth < 1280) {
+                setIsSidebarCollapsed(true);
+            }
+            setHasHydrated(true);
+        }
+    }, []);
+
+    // Salvar estado da sidebar ao mudar
+    useEffect(() => {
+        if (hasHydrated) {
+            localStorage.setItem('sidebar_collapsed', JSON.stringify(isSidebarCollapsed));
+        }
+    }, [isSidebarCollapsed, hasHydrated]);
+
+    // Reset do timer de segurança em mudança de rota
+    useEffect(() => {
+        if (pathname !== lastPath) {
+            setLastPath(pathname);
+            setTimer(5);
+        }
+    }, [pathname, lastPath]);
+
+    // Redirecionamento automático em caso de acesso negado
+    useEffect(() => {
+        const accessAllowed = user ? canAccessPath(user, pathname) : true;
         if (!user || accessAllowed) return;
 
-        // Se o timer chegar a zero, redireciona
         if (timer <= 0) {
             const firstPath = getFirstAllowedPath(user);
             router.push(firstPath);
@@ -38,8 +75,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [user, accessAllowed, timer, router]);
+    }, [user, pathname, timer, router]);
 
+    // 3. VARIÁVEIS DE CÁLCULO (Sem Hooks)
+    const isLoginPage = pathname === "/login";
+    const accessAllowed = user ? canAccessPath(user, pathname) : true;
+    const isMonitorPage = pathname === "/monitor";
+
+    // 4. RETORNOS CONDICIONAIS (Sempre DEPOIS de todos os hooks)
+    
+    // Tela de Carregamento
     if (loading) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-6">
@@ -57,14 +102,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         );
     }
 
+    // Tela de Login
     if (isLoginPage) {
         return <>{children}</>;
     }
 
+    // Usuário não autenticado (Fallback)
     if (!user) {
-        return null; // O AuthProvider tratará o redirecionamento
+        return null;
     }
 
+    // Acesso Negado
     if (!accessAllowed) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-8 p-8 text-center animate-in fade-in duration-700">
@@ -105,16 +153,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         );
     }
 
-    const isMonitorPage = pathname === "/monitor";
-
+    // Página de Monitor
     if (isMonitorPage) {
         return <main className="min-h-screen">{children}</main>;
     }
 
+    // Layout Padrão
     return (
         <div className="flex min-h-screen">
-            <Sidebar />
-            <main className="flex-1 pl-64 transition-all duration-300">
+            <Sidebar 
+                isCollapsed={isSidebarCollapsed} 
+                onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+            />
+            <main 
+                className={clsx(
+                    "flex-1 transition-all",
+                    isSidebarCollapsed ? "pl-[length:var(--sidebar-width-collapsed)]" : "pl-[length:var(--sidebar-width-expanded)]"
+                )}
+                style={{ 
+                    transitionDuration: 'var(--sidebar-transition-duration)',
+                    transitionTimingFunction: 'var(--sidebar-transition-timing)'
+                }}
+            >
                 {children}
             </main>
         </div>

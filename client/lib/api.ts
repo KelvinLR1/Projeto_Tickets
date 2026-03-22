@@ -1,6 +1,11 @@
 import axios from 'axios';
 
 // Determina a BaseURL inicial dinamicamente para suportar acesso remoto
+/**
+ * Determina a BaseURL inicial dinamicamente.
+ * Garante que o frontend consiga se conectar ao backend mesmo em acessos via rede local (IP),
+ * utilizando a mesma hostname do navegador e a porta injetada pelo sistema.
+ */
 export const getDefaultBaseURL = () => {
   if (typeof window !== 'undefined') {
     // Porta dinâmica injetada via config.js gerada pelo controller.py
@@ -17,18 +22,14 @@ export const getDefaultBaseURL = () => {
   return 'http://127.0.0.1:8080';
 };
 
-const api = axios.create({
-  baseURL: getDefaultBaseURL(),
-  timeout: 60000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+/**
+ * Resolve a URL da API dinamicamente considerando TICKETFLOW_BACKEND_PORT,
+ * localStorage (system_config) e mapeamento inteligente de hostname.
+ */
+export const getDynamicApiUrl = () => {
+  let url = getDefaultBaseURL();
 
-// Interceptor para usar URL dinâmica e anexar Token
-api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    // 1. Configurar BaseURL das configurações locais
     const localConfig = localStorage.getItem('system_config');
     if (localConfig) {
       try {
@@ -36,52 +37,106 @@ api.interceptors.request.use((config) => {
         let { apiUrl } = configData;
 
         if (apiUrl) {
+          const userConfigured = configData.userConfigured === true;
+          
+          // SE FOR CONFIGURADO MANUALMENTE, respeitamos 100% e não fazemos automações.
+          if (userConfigured) {
+            return apiUrl.replace(/\/$/, "");
+          }
+
           const expectedPort = (window as any).TICKETFLOW_BACKEND_PORT || 8080;
+
           // Auto-migração/sincronização de portas (Ex: 8000 -> 8080 ou 8080 -> 8085)
-          const currentUrlObj = new URL(apiUrl);
-          if (currentUrlObj.port && parseInt(currentUrlObj.port) !== expectedPort) {
-            console.log(`[API] Detectada divergência de porta. Migrando de ${currentUrlObj.port} para ${expectedPort}...`);
-            currentUrlObj.port = expectedPort.toString();
-            apiUrl = currentUrlObj.toString().replace(/\/$/, "");
-            configData.apiUrl = apiUrl;
-            localStorage.setItem('system_config', JSON.stringify(configData));
+          try {
+            const currentUrlObj = new URL(apiUrl);
+            
+            // Sincronização Automática: 
+            // Só forçamos a troca se a configuração NÃO for manual (userConfigured: false/undefined)
+            // OU se a porta salva for a "porta padrão antiga" (8000).
+            const isOldDefault = currentUrlObj.port === "8000";
+            const needsSync = !userConfigured || isOldDefault;
+            
+            if (needsSync && parseInt(currentUrlObj.port || "0") !== expectedPort && expectedPort !== 8000) {
+              console.log(`[API] Sincronização automática para ${expectedPort} (Porta atual: ${currentUrlObj.port || 'default'})...`);
+              currentUrlObj.port = expectedPort.toString();
+              apiUrl = currentUrlObj.toString().replace(/\/$/, "");
+              
+              // Atualiza o localStorage para persistir a nova porta (mantendo como não-manual para futuras atualizações de sistema)
+              configData.apiUrl = apiUrl;
+              localStorage.setItem('system_config', JSON.stringify(configData));
+            }
+          } catch (e) {
+             console.warn("[API] Falha ao analisar apiUrl para sincronização de porta:", e);
           }
 
           // INTELLIGENT HOSTNAME: Se apiUrl for localhost/127.0.0.1 mas estivermos acessando remotamente,
           // substituímos pelo hostname atual para que o frontend consiga falar com o backend remoto.
           const currentHost = window.location.hostname;
-          const isRemoteAccess = currentHost !== 'localhost' && currentHost !== '127.0.0.1';
-          const isApiLocal = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
+          const isRemoteAccess = currentHost !== 'localhost' && currentHost !== '127.0.0.1' && currentHost !== '[::1]';
+          const isApiLocal = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1') || apiUrl.includes('[::1]');
 
           if (isRemoteAccess && isApiLocal) {
             const newApiUrl = apiUrl.replace(/localhost|127\.0\.0\.1|\[::1\]/g, currentHost);
-            console.log(`[API] Acesso remoto detectado (${currentHost}). Redirecionando API de localhost para o servidor atual: ${newApiUrl}`);
             apiUrl = newApiUrl;
           }
 
-          config.baseURL = apiUrl.replace(/\/$/, "");
-          console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url} | BaseURL: ${config.baseURL}`);
+          url = apiUrl.replace(/\/$/, "");
         }
       } catch (e) {
         console.error("[API] Erro ao ler configurações locais:", e);
       }
     }
+    
+    // Fallback de Segurança: Se a URL parece inválida ou injetada erroneamente
+    if (url.includes('undefined')) {
+      url = getDefaultBaseURL();
+    }
+  }
+
+  return url;
+};
+
+/**
+ * Instância global do Axios configurada com timeout e headers padrão.
+ * O baseURL é inicializado dinamicamente mas pode ser sobrescrito pelo interceptor.
+ */
+const api = axios.create({
+  baseURL: getDynamicApiUrl(),
+  timeout: 60000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Interceptor para usar URL dinâmica e anexar Token
+/**
+ * Interceptor de Requisição:
+ * 1. Atualiza dinamicamente o baseURL com base nas configurações locais (system_config).
+ * 2. Realiza o mapeamento inteligente de hostname para acessos remotos.
+ * 3. Anexa o Token JWT de autenticação em todas as chamadas.
+ */
+api.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    // 1. Atualizar BaseURL dinamicamente para cada requisição
+    // Isso garante que mudanças no localStorage ou config.js sejam detectadas sem reload (se houver HMR ou re-instanciação)
+    config.baseURL = getDynamicApiUrl();
+    console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url} | BaseURL: ${config.baseURL}`);
 
     // 2. Anexar Token de Autenticação com AxiosHeaders (v1.x layout)
     const token = localStorage.getItem('auth_token');
     if (token && token !== 'undefined' && token !== 'null') {
       config.headers.set('Authorization', `Bearer ${token}`);
     }
-
-    // 3. Fallback de Segurança: Se a URL parece inválida ou injetada erroneamente
-    if (config.baseURL && config.baseURL.includes('undefined')) {
-      config.baseURL = getDefaultBaseURL();
-    }
   }
 
   return config;
 });
 
+/**
+ * Interceptor de Resposta:
+ * Centraliza o tratamento de erros globais (401 Unauthorized, Network Errors).
+ * Realiza o 'logout silencioso' caso o token expire.
+ */
 api.interceptors.response.use(
   response => response,
   error => {
@@ -230,10 +285,40 @@ export interface Client {
   neighborhood?: string;
   state_registration?: string;
   tax_regime?: string;
-  extra_contacts?: { type: 'phone' | 'email', value: string }[];
-  contracted_items?: { name: string, description: string }[];
+  responsible_name?: string;
+  extra_contacts?: { type: 'phone' | 'email', value: string, name?: string, observation?: string }[];
+  contracted_items?: { catalog_item_id?: number, name: string, description?: string, observation?: string }[];
   created_at?: string;
 }
+
+export interface CatalogItem {
+  id: number;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export const getCatalogItems = async (activeOnly: boolean = false) => {
+  const response = await api.get<CatalogItem[]>('/catalog-items/', {
+    params: { active_only: activeOnly }
+  });
+  return response.data;
+};
+
+export const createCatalogItem = async (item: Omit<CatalogItem, 'id' | 'created_at'>) => {
+  const response = await api.post<CatalogItem>('/catalog-items/', item);
+  return response.data;
+};
+
+export const updateCatalogItem = async (id: number, item: Partial<CatalogItem>) => {
+  const response = await api.put<CatalogItem>(`/catalog-items/${id}`, item);
+  return response.data;
+};
+
+export const deleteCatalogItem = async (id: number) => {
+  await api.delete(`/catalog-items/${id}`);
+};
 
 export interface Status {
   id: number;

@@ -10,9 +10,9 @@ body {
 }
 
 :root {
-  /* Dynamic Spacing Variables */
-  --spacing-section: clamp(1rem, 5vw, 2.5rem);
-  --spacing-card: clamp(1rem, 3vw, 2rem);
+  /* Dynamic Spacing Variables - Adjusted for lower resolutions */
+  --spacing-section: clamp(0.75rem, 4vw, 2.5rem);
+  --spacing-card: clamp(0.75rem, 2.5vw, 2rem);
 
   /* Default / Dark Theme Refined */
   --color-background: #0f172a;
@@ -25,6 +25,12 @@ body {
   --color-text-muted: #94a3b8;
   --color-input: rgba(15, 23, 42, 0.5);
   --prose-class: invert;
+
+  /* Sidebar Variables - Sincronização e Fluidez */
+  --sidebar-width-expanded: clamp(240px, 18vw, 280px);
+  --sidebar-width-collapsed: 80px;
+  --sidebar-transition-duration: 0.6s;
+  --sidebar-transition-timing: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Fallback dark theme explícito */
@@ -250,6 +256,26 @@ body {
 }
 
 
+/* ROOT & THEMING */
+@layer base {
+  @media (min-width: 1024px) {
+    html {
+      font-size: clamp(10px, 0.8333vw, 16px) !important;
+    }
+  }
+
+  :root {
+    --color-background: var(--color-background);
+    --color-foreground: var(--color-foreground);
+    --color-card: var(--color-card);
+    --color-card-hover: var(--color-card-hover);
+    --color-primary-theme: var(--color-primary-theme);
+    --color-border-theme: var(--color-border-theme);
+    --color-accent-theme: var(--color-accent-theme);
+    --color-text-muted: var(--color-text-muted);
+  }
+}
+
 /* Registrando Tokens de Tema para o Tailwind v4 */
 @theme {
   --color-background: var(--color-background);
@@ -386,7 +412,16 @@ body {
       transform: translateY(0);
     }
   }
+
+  /* Responsive Typography Scale */
+  --font-h1: clamp(2rem, 5vw, 3.5rem);
+  --font-h2: clamp(1.5rem, 4vw, 2.5rem);
+  --font-h3: clamp(1.25rem, 3vw, 1.75rem);
 }
+
+h1 { font-size: var(--font-h1); }
+h2 { font-size: var(--font-h2); }
+h3 { font-size: var(--font-h3); }
 
 body {
   background: var(--color-background);

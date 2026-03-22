@@ -269,7 +269,7 @@ export default function NotificationsPage() {
                                                                 <div className="space-y-1">
                                                                     <div className="flex items-center gap-2">
                                                                         <h3 className={clsx(
-                                                                            "text-lg font-black uppercase tracking-tight transition-colors",
+                                                                            "text-lg font-black font-display uppercase italic tracking-tight transition-colors",
                                                                             notif.read ? "text-foreground/70" : "text-foreground"
                                                                         )}>
                                                                             {notif.title}

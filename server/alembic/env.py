@@ -23,6 +23,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from models import Base
 target_metadata = Base.metadata
 
+def get_url():
+    """Retorna a URL do banco de dados priorizando a variável de ambiente DATABASE_URL."""
+    # Tenta carregar do ambiente
+    url = os.getenv("DATABASE_URL")
+    if url:
+        # Corrige prefixo para pg8000 se for PostgreSQL
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+pg8000://")
+        return url
+    
+    # Fallback para o valor fixo no alembic.ini
+    return config.get_main_option("sqlalchemy.url")
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -41,7 +54,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = get_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -60,11 +73,17 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Tenta usar a URL dinâmica se disponível
+    url = get_url()
+    if url:
+        from sqlalchemy import create_engine
+        connectable = create_engine(url)
+    else:
+        connectable = engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
 
     with connectable.connect() as connection:
         context.configure(

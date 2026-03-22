@@ -11,6 +11,10 @@ import Link from 'next/link';
 import { TicketRowSkeleton } from './Skeleton';
 import { motion, AnimatePresence } from 'framer-motion';
 
+/**
+ * Componente de Lista de Tickets (Visualização em Tabela).
+ * Oferece uma visão tabular densa com ordenação, filtros e ações rápidas.
+ */
 export default function TicketList({
     tickets: initialTickets,
     statuses: initialStatuses,
@@ -40,6 +44,8 @@ export default function TicketList({
 
     const [categories, setCategories] = useState<Category[]>([]);
     const [statuses, setStatuses] = useState<Status[]>(initialStatuses || []);
+
+    // Sincroniza estado se as props iniciais mudarem
 
     useEffect(() => {
         if (initialTickets) {
@@ -88,6 +94,10 @@ export default function TicketList({
         }
     };
 
+    /**
+     * Cicla o status de um ticket diretamente na lista.
+     * Oferece feedback visual imediato e sincroniza com o backend.
+     */
     const handleStatusChange = async (ticketId: number, currentStatusName: string) => {
         if (statuses.length === 0) return;
 
@@ -127,6 +137,9 @@ export default function TicketList({
         }
     };
 
+    /**
+     * Resolve o estilo (cor e nome) de um status para exibição na tabela.
+     */
     const getStatusStyle = (statusName: string, statusObj?: Status) => {
         // Se tivermos o objeto de status vindo do ticket, usamos ele direto
         if (statusObj) {
@@ -170,6 +183,9 @@ export default function TicketList({
         }
     };
 
+    /**
+     * Gerencia a configuração de ordenação da tabela.
+     */
     const handleSort = (key: string) => {
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -210,7 +226,6 @@ export default function TicketList({
                                 <th className="px-8 py-6 w-40 text-center">Status</th>
                                 <th className="px-8 py-6 w-36 text-center">Prioridade</th>
                                 <th className="px-8 py-6 w-48">Responsável</th>
-                                <th className="px-8 py-6 text-right w-24">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border-theme/30">
@@ -257,7 +272,6 @@ export default function TicketList({
                                         Responsável {sortConfig.key === 'assigned_user' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                                     </div>
                                 </th>
-                                <th className="px-8 py-6 text-right w-24">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border-theme/30">
@@ -266,7 +280,7 @@ export default function TicketList({
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                 >
-                                    <td colSpan={6} className="py-24 text-center">
+                                    <td colSpan={5} className="py-24 text-center">
                                         <div className="w-20 h-20 bg-background rounded-full mx-auto flex items-center justify-center border border-border-theme shadow-inner opacity-20 mb-4">
                                             <ReceiptText className="w-10 h-10" />
                                         </div>
@@ -294,11 +308,11 @@ export default function TicketList({
                                         >
                                             <td className="px-8 py-6">
                                                 <div className="flex items-center gap-4">
+                                                    {/*ID e Controles de Cronômetro */}
                                                     <div className="w-6 flex justify-center">
                                                         <span className="font-mono text-xs font-bold text-[var(--color-text-muted)] group-hover:text-accent-theme transition-colors leading-none">{ticket.id}</span>
                                                     </div>
 
-                                                    {/* Timer Controls */}
                                                     <div className="flex items-center justify-center min-w-[32px] h-8">
                                                         {activeTimers.find(t => t.ticket_id === ticket.id) ? (
                                                             <button
@@ -330,7 +344,7 @@ export default function TicketList({
                                                         {ticket.title}
                                                         <ExternalLink className="w-3 h-3 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all text-accent-theme" />
                                                     </div>
-                                                    <div className="text-[10px] font-bold text-accent-theme/70 flex items-center gap-1.5">
+                                                    <div className="text-[10px] font-black italic uppercase tracking-[-0.05em] text-accent-theme/70 flex items-center gap-1.5">
                                                         <User className="w-3 h-3" />
                                                         {ticket.client?.name || 'Cliente Desconhecido'}
                                                     </div>
@@ -391,14 +405,6 @@ export default function TicketList({
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-8 py-6 text-right">
-                                                <button
-                                                    onClick={() => { }} // TODO: Add more actions or menu
-                                                    className="p-3 text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                                >
-                                                    <RefreshCw className="w-4 h-4" />
-                                                </button>
-                                            </td>
                                         </motion.tr>
                                     )
                                 })}
@@ -406,7 +412,7 @@ export default function TicketList({
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </div >
         </>
     );
 }

@@ -7,13 +7,20 @@ try:
 except ImportError:
     import models, schemas, rag
 
+# ==============================================================================
+# ESTATÍSTICAS E RELATÓRIOS (REPORTING)
+# ==============================================================================
+
 def get_detailed_report_stats(db: Session, 
                               start_date: Optional[str] = None, 
                               end_date: Optional[str] = None, 
                               sector_id: Optional[int] = None, 
                               user_id: Optional[int] = None,
                               current_user: Optional[models.User] = None):
-    """Retorna estatísticas detalhadas do sistema com suporte a filtros opcionais."""
+    """
+    Retorna um compilado de estatísticas para o dashboard de relatórios.
+    Inclui filtros por data, setor, usuário e respeita permissões de perfil.
+    """
     
     # Base query filter for Ticket-related stats
     def apply_filters(q):
@@ -183,19 +190,26 @@ def get_detailed_report_stats(db: Session,
         "by_user": by_user_data
     }
 
-# --- Client CRUD ---
+# ==============================================================================
+# GESTÃO DE CLIENTES (CLIENTS)
+# ==============================================================================
+
 def get_client(db: Session, client_id: int):
+    """Busca um cliente pelo ID único."""
     return db.query(models.Client).filter(models.Client.id == client_id).first()
 
 def get_client_by_email(db: Session, email: str):
+    """Busca um cliente pelo endereço de e-mail."""
     return db.query(models.Client).filter(models.Client.email == email).first()
 
 def get_client_by_cpf_cnpj(db: Session, cpf_cnpj: str):
+    """Busca um cliente pelo documento CPF ou CNPJ."""
     if not cpf_cnpj:
         return None
     return db.query(models.Client).filter(models.Client.cpf_cnpj == cpf_cnpj).first()
 
 def _apply_client_filters(query, q=None, doc_type=None, has_phone=None, start_date=None, end_date=None):
+    """Helper interno para aplicar múltiplos filtros à listagem de clientes."""
     if q:
         from sqlalchemy import or_
         search = f"%{q}%"
@@ -208,6 +222,7 @@ def _apply_client_filters(query, q=None, doc_type=None, has_phone=None, start_da
     
     if doc_type:
         if doc_type == 'cpf':
+            # Filtra por comprimento (CPF geralmente tem até 11 dígitos s/ formatação)
             query = query.filter(func.length(func.replace(models.Client.cpf_cnpj, '.', '')) <= 12) 
         elif doc_type == 'cnpj':
             query = query.filter(func.length(func.replace(models.Client.cpf_cnpj, '.', '')) > 12)
@@ -228,16 +243,19 @@ def _apply_client_filters(query, q=None, doc_type=None, has_phone=None, start_da
     return query
 
 def get_clients(db: Session, skip: int = 0, limit: int = 100, q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
+    """Retorna lista paginada e filtrada de clientes."""
     query = db.query(models.Client)
     query = _apply_client_filters(query, q, doc_type, has_phone, start_date, end_date)
     return query.order_by(models.Client.name.asc()).offset(skip).limit(limit).all()
 
 def get_clients_count(db: Session, q: Optional[str] = None, doc_type: Optional[str] = None, has_phone: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
+    """Retorna o total de clientes que batem com os filtros ativos."""
     query = db.query(models.Client)
     query = _apply_client_filters(query, q, doc_type, has_phone, start_date, end_date)
     return query.count()
 
 def create_client(db: Session, client: schemas.ClientCreate):
+    """Cadastra um novo cliente no banco de dados."""
     db_client = models.Client(**client.dict())
     db.add(db_client)
     db.commit()
@@ -245,6 +263,7 @@ def create_client(db: Session, client: schemas.ClientCreate):
     return db_client
 
 def update_client(db: Session, client_id: int, client_update: schemas.ClientCreate):
+    """Atualiza os dados de um cliente existente."""
     db_client = get_client(db, client_id)
     if db_client:
         update_data = client_update.dict(exclude_unset=True)
@@ -255,6 +274,10 @@ def update_client(db: Session, client_id: int, client_update: schemas.ClientCrea
     return db_client
 
 def bulk_create_clients(db: Session, clients_data: List[dict]):
+    """
+    Importação massiva de clientes.
+    Se já existir um cliente com o mesmo CPF/CNPJ, os dados são atualizados.
+    """
     results: Dict[str, Any] = {"total": len(clients_data), "imported": 0, "updated": 0, "errors": []}
     
     for c_data in clients_data:
@@ -287,6 +310,7 @@ def bulk_create_clients(db: Session, clients_data: List[dict]):
     return results
 
 def get_idle_clients(db: Session, start_date: datetime, end_date: datetime):
+    """Busca clientes que não abriram nenhum chamado no período especificado."""
     active_client_ids = db.query(models.Ticket.client_id).filter(
         models.Ticket.created_at >= start_date,
         models.Ticket.created_at <= end_date
@@ -300,7 +324,12 @@ def get_idle_clients(db: Session, start_date: datetime, end_date: datetime):
     
     return idle_clients
 
+# ==============================================================================
+# GESTÃO DE CATEGORIAS (CATEGORIES)
+# ==============================================================================
+
 def get_categories(db: Session, sector_id: Optional[int] = None):
+    """Retorna categorias raízes, opcionalmente filtradas por setor."""
     query = db.query(models.Category).filter(models.Category.parent_id == None)
     if sector_id is not None:
         from sqlalchemy import or_
@@ -308,6 +337,7 @@ def get_categories(db: Session, sector_id: Optional[int] = None):
     return query.all()
 
 def create_category(db: Session, cat: schemas.CategoryCreate):
+    """Cria uma nova categoria ou subcategoria."""
     db_cat = models.Category(**cat.dict())
     db.add(db_cat)
     db.commit()
@@ -315,6 +345,7 @@ def create_category(db: Session, cat: schemas.CategoryCreate):
     return db_cat
 
 def delete_category(db: Session, cat_id: int):
+    """Exclui uma categoria se não houver vínculos impeditivos (tickets)."""
     db_cat = db.query(models.Category).filter(models.Category.id == cat_id).first()
     if not db_cat:
         return False, "Categoria não encontrada"
@@ -332,6 +363,7 @@ def delete_category(db: Session, cat_id: int):
     return True, "Categoria excluída com sucesso"
 
 def update_category(db: Session, cat_id: int, cat_update: schemas.CategoryCreate):
+    """Atualiza dados da categoria. Se desativar, desativa subcategorias recursivamente."""
     db_cat = db.query(models.Category).filter(models.Category.id == cat_id).first()
     if not db_cat:
         return None
@@ -355,6 +387,7 @@ def update_category(db: Session, cat_id: int, cat_update: schemas.CategoryCreate
     return db_cat
 
 def get_or_create_default_category(db: Session, sector_id: Optional[int] = None):
+    """Garante a existência de uma categoria padrão 'Sem Categoria'."""
     default_cat_name = "Sem Categoria"
     db_cat = db.query(models.Category).filter(models.Category.name == default_cat_name).first()
     if not db_cat:
@@ -367,7 +400,12 @@ def get_or_create_default_category(db: Session, sector_id: Optional[int] = None)
         db.commit()
     return db_cat
 
+# ==============================================================================
+# GESTÃO DE STATUS (STATUSES)
+# ==============================================================================
+
 def get_statuses(db: Session, sector_id: Optional[int] = None):
+    """Retorna todos os status, opcionalmente filtrados por setor."""
     query = db.query(models.Status)
     if sector_id is not None:
         from sqlalchemy import or_
@@ -375,6 +413,7 @@ def get_statuses(db: Session, sector_id: Optional[int] = None):
     return query.all()
 
 def create_status(db: Session, status: schemas.StatusCreate):
+    """Cria um novo status customizado."""
     db_status = models.Status(**status.dict())
     db.add(db_status)
     db.commit()
@@ -382,6 +421,7 @@ def create_status(db: Session, status: schemas.StatusCreate):
     return db_status
 
 def delete_status(db: Session, status_id: int):
+    """Remove um status se não houver chamados vinculados (impede quebra de integridade)."""
     db_status = db.query(models.Status).filter(models.Status.id == status_id).first()
     if not db_status:
         return False, "Status não encontrado"
@@ -394,6 +434,7 @@ def delete_status(db: Session, status_id: int):
     return True, "Status excluído com sucesso"
 
 def update_status(db: Session, status_id: int, status_update: schemas.StatusBase):
+    """Atualiza um status. Se o nome mudar, atualiza referências legadas na tabela de Tickets."""
     db_status = db.query(models.Status).filter(models.Status.id == status_id).first()
     if not db_status:
         return None
@@ -415,6 +456,7 @@ def update_status(db: Session, status_id: int, status_update: schemas.StatusBase
     return db_status
 
 def get_or_create_default_status(db: Session, sector_id: Optional[int] = None):
+    """Garante a existência dos status básicos (Aberto e Finalizado) no banco."""
     # Status padrão inicial: Aberto
     default_name = "Aberto"
     db_status = db.query(models.Status).filter(models.Status.name == default_name).first()
@@ -440,6 +482,10 @@ def get_or_create_default_status(db: Session, sector_id: Optional[int] = None):
 
     return db_status
 
+# ==============================================================================
+# GESTÃO DE CHAMADOS (TICKETS)
+# ==============================================================================
+
 def _get_tickets_base_query(db: Session, 
                             status: Optional[str] = None, client_id: Optional[int] = None, 
                             unassigned_only: bool = False, exclude_finalized: bool = False, 
@@ -448,15 +494,18 @@ def _get_tickets_base_query(db: Session,
                             assigned_user_id: Optional[int] = None, start_date: Optional[str] = None, 
                             end_date: Optional[str] = None, created_by_id: Optional[int] = None, 
                             follower_id: Optional[int] = None, my_plus_unassigned_id: Optional[int] = None):
+    """Helper para construir a query base de chamados com todos os filtros possíveis."""
     from sqlalchemy.orm import joinedload
     from sqlalchemy import or_
     
+    # Carregamento antecipado (Eager Loading) de relacionamentos comuns
     query = db.query(models.Ticket).options(
         joinedload(models.Ticket.client),
         joinedload(models.Ticket.assigned_user),
         joinedload(models.Ticket.status_obj)
     )
     
+    # Busca global (Texto ou ID numérico)
     if q:
         search_filters = [
             models.Ticket.title.ilike(f"%{q}%"),
@@ -469,16 +518,12 @@ def _get_tickets_base_query(db: Session,
             
         query = query.filter(or_(*search_filters))
     
-    if status:
-        query = query.filter(models.Ticket.status == status)
-    if client_id:
-        query = query.filter(models.Ticket.client_id == client_id)
-    if sector_id:
-        query = query.filter(models.Ticket.sector_id == sector_id)
-    if priority:
-        query = query.filter(models.Ticket.priority == priority)
-    if category_id:
-        query = query.filter(models.Ticket.category_id == category_id)
+    # Filtros exatos
+    if status: query = query.filter(models.Ticket.status == status)
+    if client_id: query = query.filter(models.Ticket.client_id == client_id)
+    if sector_id: query = query.filter(models.Ticket.sector_id == sector_id)
+    if priority: query = query.filter(models.Ticket.priority == priority)
+    if category_id: query = query.filter(models.Ticket.category_id == category_id)
     if my_plus_unassigned_id:
         query = query.filter(or_(
             models.Ticket.assigned_user_id == my_plus_unassigned_id,
@@ -486,26 +531,23 @@ def _get_tickets_base_query(db: Session,
         ))
     elif assigned_user_id:
         query = query.filter(models.Ticket.assigned_user_id == assigned_user_id)
-    if created_by_id:
-        query = query.filter(models.Ticket.created_by_id == created_by_id)
-    if follower_id:
-        query = query.filter(models.Ticket.followers.any(models.User.id == follower_id))
-    if unassigned_only:
-        query = query.filter(models.Ticket.assigned_user_id == None)
+    if created_by_id: query = query.filter(models.Ticket.created_by_id == created_by_id)
+    if follower_id: query = query.filter(models.Ticket.followers.any(models.User.id == follower_id))
+    if unassigned_only: query = query.filter(models.Ticket.assigned_user_id == None)
     
+    # Filtros de data
     if start_date:
         try:
             start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
             query = query.filter(models.Ticket.created_at >= start_dt)
-        except ValueError:
-            pass
+        except ValueError: pass
     if end_date:
         try:
             end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
             query = query.filter(models.Ticket.created_at <= end_dt)
-        except ValueError:
-            pass
+        except ValueError: pass
         
+    # Exclusão de tickets finalizados/cancelados
     if exclude_finalized:
         query = query.outerjoin(models.Status, models.Ticket.status_id == models.Status.id).filter(
             or_(
@@ -520,16 +562,19 @@ def _get_tickets_base_query(db: Session,
     return query
 
 def get_tickets(db: Session, skip: int = 0, limit: int = 100, **kwargs):
+    """Lista chamados paginados com filtros."""
     query = _get_tickets_base_query(db, **kwargs)
     return query.order_by(models.Ticket.created_at.desc()).offset(skip).limit(limit).all()
 
 def get_tickets_count(db: Session, **kwargs):
+    """Conta total de chamados para paginação."""
     kwargs.pop('skip', None)
     kwargs.pop('limit', None)
     query = _get_tickets_base_query(db, **kwargs)
     return query.count()
 
 def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int = None):
+    """Abre um novo chamado com categoria e status padrões se não informados."""
     ticket_data = ticket.dict()
     if not ticket_data.get("category_id"):
         default_cat = get_or_create_default_category(db)
@@ -540,6 +585,7 @@ def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int 
         ticket_data["status_id"] = default_status.id
         ticket_data["status"] = default_status.name
 
+    # Normalização de rótulos de prioridade
     priority_map = {
         "low": "Baixa", "baixa": "Baixa",
         "medium": "Média", "media": "Média", "média": "Média",
@@ -558,6 +604,7 @@ def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int 
     db.commit()
     db.refresh(db_ticket)
     
+    # Indexação no RAG (Busca na Base de Conhecimento)
     try:
         rag.add_document(
             doc_id=f"ticket_{db_ticket.id}",
@@ -570,6 +617,7 @@ def create_ticket(db: Session, ticket: schemas.TicketCreate, created_by_id: int 
     return db_ticket
 
 def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
+    """Abre um chamado simplificado, criando o cliente automaticamente se necessário."""
     client = db.query(models.Client).filter(models.Client.name == ticket.client_name).first()
     if not client:
         client = models.Client(name=ticket.client_name, email=f"{ticket.client_name.lower().replace(' ', '.')}@local.com")
@@ -587,7 +635,6 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
     
     default_status = get_or_create_default_status(db)
     
-    # Ensure we don't duplicate keys between ticket_data and explicit args
     assigned_user = ticket_data.pop("assigned_user_id", None)
     created_by = ticket_data.pop("created_by_id", 1) 
 
@@ -605,6 +652,7 @@ def create_ticket_simple(db: Session, ticket: schemas.TicketCreateSimple):
     return db_ticket
 
 def get_ticket(db: Session, ticket_id: int):
+    """Busca um chamado completo pelo ID, carregando relacionamentos essenciais."""
     return db.query(models.Ticket).options(
         joinedload(models.Ticket.client),
         joinedload(models.Ticket.assigned_user),
@@ -613,9 +661,11 @@ def get_ticket(db: Session, ticket_id: int):
     ).filter(models.Ticket.id == ticket_id).first()
 
 def get_followed_tickets(db: Session, user_id: int):
+    """Retorna a lista de chamados que um usuário específico está acompanhando."""
     return db.query(models.Ticket).filter(models.Ticket.followers.any(id=user_id)).all()
 
 def create_ticket_message(db: Session, message: schemas.TicketMessageCreate, ticket_id: int):
+    """Adiciona uma nova mensagem (interação) a um chamado."""
     db_message = models.TicketMessage(**message.dict(), ticket_id=ticket_id)
     db.add(db_message)
     db.commit()
@@ -623,6 +673,7 @@ def create_ticket_message(db: Session, message: schemas.TicketMessageCreate, tic
     return db_message
 
 def create_ticket_history(db: Session, history: schemas.TicketHistoryCreate):
+    """Registra um evento no histórico de auditoria do chamado."""
     db_history = models.TicketHistory(**history.dict())
     db.add(db_history)
     db.commit()
@@ -630,18 +681,25 @@ def create_ticket_history(db: Session, history: schemas.TicketHistoryCreate):
     return db_history
 
 def get_ticket_history(db: Session, ticket_id: int):
+    """Busca o histórico de eventos de um chamado, do mais recente para o mais antigo."""
     return db.query(models.TicketHistory).filter(models.TicketHistory.ticket_id == ticket_id).order_by(models.TicketHistory.created_at.desc()).all()
 
 def get_ticket_history_list(db: Session, ticket_id: int):
+    """Alias para get_ticket_history."""
     return db.query(models.TicketHistory).filter(models.TicketHistory.ticket_id == ticket_id).order_by(models.TicketHistory.created_at.desc()).all()
 
 def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpdate, user_id: Optional[int] = None):
+    """
+    Atualiza os dados de um chamado e gera registros automáticos no histórico.
+    Também dispara notificações para os envolvidos dependendo da alteração.
+    """
     db_ticket = get_ticket(db, ticket_id)
     if not db_ticket:
         return None
         
     update_data = ticket_update.dict(exclude_unset=True)
 
+    # Normaliza prioridade no update
     if "priority" in update_data and update_data["priority"]:
         priority_map = {
             "low": "Baixa", "baixa": "Baixa",
@@ -658,9 +716,11 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
             
         old_value = getattr(db_ticket, field)
         if old_value != new_value:
+            # Define o tipo de evento para o histórico baseado no campo alterado
             event_type = "status_change" if field == "status_id" else ("category_change" if field == "category_id" else ("sector_change" if field == "sector_id" else ("assigned_user_change" if field == "assigned_user_id" else f"{field}_change")))
             desc = f"Alterou {field} de '{old_value}' para '{new_value}'"
             
+            # Formata descrições amigáveis para o histórico
             if field == "description":
                 if "---" in str(new_value):
                     desc = "Adicionada nova informação ao chamado"
@@ -678,6 +738,8 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 old_label = (old_user.full_name or old_user.username) if old_user else "Ninguém"
                 new_label = (new_user.full_name or new_user.username) if new_user else "Ninguém"
                 desc = f"Alterou responsável de **{old_label}** para **{new_label}**"
+                
+                # Notifica o novo responsável
                 if new_value and new_value != user_id:
                     create_notification(db, schemas.NotificationCreate(
                         user_id=new_value,
@@ -704,6 +766,7 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 new_label = new_cat.name if new_cat else "Sem Categoria"
                 desc = f"Alterou categoria de **{old_label}** para **{new_label}**"
 
+            # Grava a alteração no histórico
             create_ticket_history(db, schemas.TicketHistoryCreate(
                 ticket_id=ticket_id,
                 user_id=user_id,
@@ -711,6 +774,7 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 description=desc
             ))
         
+        # Notifica o responsável atual sobre mudanças de status ou prioridade
         if field in ["status_id", "priority"] and db_ticket.assigned_user_id and db_ticket.assigned_user_id != user_id:
                 create_notification(db, schemas.NotificationCreate(
                 user_id=db_ticket.assigned_user_id,
@@ -720,6 +784,7 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
                 link=f"/tickets/{ticket_id}"
             ))
 
+    # Atualiza o nome legacy do status se o ID do status mudou
     if "status_id" in update_data:
         db_status = db.query(models.Status).filter(models.Status.id == update_data["status_id"]).first()
         if db_status:
@@ -731,13 +796,20 @@ def update_ticket(db: Session, ticket_id: int, ticket_update: schemas.TicketUpda
     db.refresh(db_ticket)
     return db_ticket
 
+# ==============================================================================
+# GESTÃO DE SETORES (SECTORS)
+# ==============================================================================
+
 def get_sector(db: Session, sector_id: int):
+    """Busca um setor pelo ID."""
     return db.query(models.Sector).filter(models.Sector.id == sector_id).first()
 
 def get_sectors(db: Session, skip: int = 0, limit: int = 100):
+    """Lista todos os setores paginados."""
     return db.query(models.Sector).offset(skip).limit(limit).all()
 
 def create_sector(db: Session, sector: schemas.SectorCreate):
+    """Cadastra um novo setor de atendimento."""
     db_sector = models.Sector(**sector.dict())
     db.add(db_sector)
     db.commit()
@@ -745,6 +817,7 @@ def create_sector(db: Session, sector: schemas.SectorCreate):
     return db_sector
 
 def update_sector(db: Session, sector_id: int, sector_update: schemas.SectorUpdate):
+    """Atualiza os dados de um setor existente."""
     db_sector = get_sector(db, sector_id)
     if db_sector:
         update_data = sector_update.dict(exclude_unset=True)
@@ -755,6 +828,9 @@ def update_sector(db: Session, sector_id: int, sector_update: schemas.SectorUpda
     return db_sector
 
 def delete_sector(db: Session, sector_id: int):
+    """
+    Remove um setor se não houver vínculos impeditivos (tickets ou usuários).
+    """
     db_sector = get_sector(db, sector_id)
     if not db_sector:
         return False, "Setor não encontrado"
@@ -768,6 +844,7 @@ def delete_sector(db: Session, sector_id: int):
     return True, "Setor excluído com sucesso"
 
 def add_user_to_sector(db: Session, user_id: int, sector_id: int):
+    """Vincula um usuário a um setor específico."""
     user = db.query(models.User).filter(models.User.id == user_id).first()
     sector = db.query(models.Sector).filter(models.Sector.id == sector_id).first()
     if user and sector:
@@ -777,7 +854,12 @@ def add_user_to_sector(db: Session, user_id: int, sector_id: int):
             return True
     return False
 
+# ==============================================================================
+# SISTEMA DE ACOMPANHAMENTO (FOLLOWERS)
+# ==============================================================================
+
 def add_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: Optional[int] = None):
+    """Adiciona um usuário como acompanhante de um chamado."""
     ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if ticket and user:
@@ -789,6 +871,8 @@ def add_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: Opt
                 actor_name = actor.full_name or actor.username if actor else "Um usuário"
                 user_name = user.full_name or user.username
                 description = f"O usuário {actor_name} adicionou {user_name} como acompanhante."
+            
+            # Registra no histórico do ticket
             create_ticket_history(db, schemas.TicketHistoryCreate(
                 ticket_id=ticket_id,
                 user_id=actor_id if actor_id else user_id,
@@ -801,6 +885,7 @@ def add_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: Opt
     return False, None
 
 def remove_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: Optional[int] = None):
+    """Remove um usuário da lista de acompanhantes de um chamado."""
     ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if ticket and user:
@@ -812,6 +897,8 @@ def remove_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: 
                 actor_name = actor.full_name or actor.username if actor else "Um usuário"
                 user_name = user.full_name or user.username
                 description = f"O usuário {actor_name} removeu {user_name} dos acompanhantes."
+            
+            # Registra a remoção no histórico
             create_ticket_history(db, schemas.TicketHistoryCreate(
                 ticket_id=ticket_id,
                 user_id=actor_id if actor_id else user_id,
@@ -824,6 +911,7 @@ def remove_ticket_follower(db: Session, ticket_id: int, user_id: int, actor_id: 
     return False, None
 
 def delete_ticket(db: Session, ticket_id: int):
+    """Exclui permanentemente um chamado (cuidado: apaga histórico e mensagens vinculadas)."""
     db_ticket = get_ticket(db, ticket_id)
     if db_ticket:
         db.delete(db_ticket)
@@ -831,10 +919,16 @@ def delete_ticket(db: Session, ticket_id: int):
         return True
     return False
 
+# ==============================================================================
+# BASE DE CONHECIMENTO (KNOWLEDGE BASE)
+# ==============================================================================
+
 def get_knowledge_documents(db: Session, skip: int = 0, limit: int = 100):
+    """Lista todos os documentos da base de conhecimento com paginação."""
     return db.query(models.KnowledgeDocument).offset(skip).limit(limit).all()
 
 def create_knowledge_document(db: Session, doc: schemas.KnowledgeDocumentCreate):
+    """Cria um novo artigo ou tutorial na base de conhecimento."""
     db_doc = models.KnowledgeDocument(**doc.dict())
     db.add(db_doc)
     db.commit()
@@ -842,31 +936,44 @@ def create_knowledge_document(db: Session, doc: schemas.KnowledgeDocumentCreate)
     return db_doc
 
 def search_knowledge_documents(db: Session, query: str, limit: int = 3):
+    """
+    Realiza busca textual na base de conhecimento.
+    Tenta correspondência exata primeiro e depois busca por palavras-chave relevantes.
+    """
     exact_match = db.query(models.KnowledgeDocument).filter(
         (models.KnowledgeDocument.title.ilike(f"%{query}%")) | 
         (models.KnowledgeDocument.content.ilike(f"%{query}%"))
     ).limit(limit).all()
+    
     if exact_match:
         return exact_match
+        
+    # Busca por palavras com mais de 3 caracteres
     words = [w.lower() for w in query.split() if len(w) > 3]
     if not words:
+        # Fallback para buscas genéricas
         if any(x in query.lower() for x in ["base", "documento", "lista", "manual", "tutorial"]):
             return db.query(models.KnowledgeDocument).order_by(models.KnowledgeDocument.created_at.desc()).limit(limit).all()
         return []
+        
     from sqlalchemy import or_
     filters = []
     for word in words:
         filters.append(models.KnowledgeDocument.title.ilike(f"%{word}%"))
         filters.append(models.KnowledgeDocument.content.ilike(f"%{word}%"))
     results = db.query(models.KnowledgeDocument).filter(or_(*filters)).limit(limit).all()
+    
+    # Se não achar nada, retorna os mais recentes se a query sugerir busca geral
     if not results and any(x in query.lower() for x in ["base", "documento", "manual", "tem", "unico"]):
         return db.query(models.KnowledgeDocument).order_by(models.KnowledgeDocument.created_at.desc()).limit(limit).all()
     return results
 
 def get_knowledge_document(db: Session, doc_id: int):
+    """Busca um documento específico pelo ID."""
     return db.query(models.KnowledgeDocument).filter(models.KnowledgeDocument.id == doc_id).first()
 
 def update_knowledge_document(db: Session, doc_id: int, doc_update: schemas.KnowledgeDocumentCreate):
+    """Atualiza o conteúdo de um artigo existente."""
     db_doc = get_knowledge_document(db, doc_id)
     if db_doc:
         db_doc.title = doc_update.title
@@ -877,6 +984,7 @@ def update_knowledge_document(db: Session, doc_id: int, doc_update: schemas.Know
     return db_doc
 
 def search_tickets(db: Session, query: str, limit: int = 3):
+    """Busca textual simplificada em chamados antigos para auxílio na resolução."""
     words = [w.lower() for w in query.split() if len(w) > 3]
     if not words:
         return []
@@ -888,6 +996,7 @@ def search_tickets(db: Session, query: str, limit: int = 3):
     return db.query(models.Ticket).filter(or_(*filters)).order_by(models.Ticket.created_at.desc()).limit(limit).all()
 
 def delete_knowledge_document(db: Session, doc_id: int):
+    """Remove um documento da base de conhecimento."""
     db_doc = get_knowledge_document(db, doc_id)
     if db_doc:
         db.delete(db_doc)
@@ -895,13 +1004,20 @@ def delete_knowledge_document(db: Session, doc_id: int):
         return True
     return False
 
+# ==============================================================================
+# GESTÃO DE PERFIS DE ACESSO (PROFILES)
+# ==============================================================================
+
 def get_profiles(db: Session, skip: int = 0, limit: int = 100):
+    """Lista todos os perfis de permissão."""
     return db.query(models.Profile).offset(skip).limit(limit).all()
 
 def get_profile(db: Session, profile_id: int):
+    """Busca um perfil específico pelo ID."""
     return db.query(models.Profile).filter(models.Profile.id == profile_id).first()
 
 def create_profile(db: Session, profile: schemas.ProfileCreate):
+    """Cadastra um novo perfil de acesso com seu conjunto de permissões (JSON)."""
     db_profile = models.Profile(**profile.dict())
     db.add(db_profile)
     db.commit()
@@ -909,6 +1025,7 @@ def create_profile(db: Session, profile: schemas.ProfileCreate):
     return db_profile
 
 def update_profile(db: Session, profile_id: int, profile_update: schemas.ProfileCreate):
+    """Atualiza o nome, descrição ou permissões de um perfil."""
     db_profile = get_profile(db, profile_id)
     if db_profile:
         db_profile.name = profile_update.name
@@ -919,6 +1036,7 @@ def update_profile(db: Session, profile_id: int, profile_update: schemas.Profile
     return db_profile
 
 def delete_profile(db: Session, profile_id: int):
+    """Exclui um perfil, desde que nenhum usuário esteja vinculado a ele."""
     db_profile = get_profile(db, profile_id)
     if db_profile:
         if db_profile.users:
@@ -928,25 +1046,35 @@ def delete_profile(db: Session, profile_id: int):
         return True
     return False
 
+# ==============================================================================
+# GESTÃO DE USUÁRIOS (USERS)
+# ==============================================================================
+
 def get_user(db: Session, user_id: int):
+    """Busca um usuário pelo ID, incluindo perfil e setores vinculados."""
     return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.id == user_id).first()
 
 def get_user_by_username(db: Session, username: str):
+    """Busca um usuário pelo nome de login (username)."""
     return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.username == username).first()
 
+def get_user_by_email(db: Session, email: str):
+    """Busca um usuário pelo e-mail cadastrado."""
+    return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.email == email).first()
+
 def get_users_short(db: Session, sector_id: Optional[int] = None):
+    """Retorna lista simplificada de usuários ativos (ID e Nome) para dropdowns."""
     query = db.query(models.User.id, models.User.full_name, models.User.username).filter(models.User.is_active == True)
     if sector_id:
         query = query.filter(models.User.sectors.any(id=sector_id))
     return query.all()
 
-def get_user_by_email(db: Session, email: str):
-    return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).filter(models.User.email == email).first()
-
 def get_users(db: Session, skip: int = 0, limit: int = 100):
+    """Lista todos os usuários cadastrados com seus detalhes paginados."""
     return db.query(models.User).options(joinedload(models.User.profile), joinedload(models.User.sectors)).offset(skip).limit(limit).all()
 
 def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
+    """Cria um novo usuário no sistema com senha já hasheada e setores vinculados."""
     db_user = models.User(
         username=user.username,
         email=user.email,
@@ -956,6 +1084,7 @@ def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
         profile_id=user.profile_id
     )
     if user.sector_ids:
+        # Busca os setores pelos IDs informados para criar o relacionamento
         sectors = db.query(models.Sector).filter(models.Sector.id.in_(user.sector_ids)).all()
         db_user.sectors = sectors
     db.add(db_user)
@@ -964,17 +1093,20 @@ def create_user(db: Session, user: schemas.UserCreate, hashed_password: str):
     return db_user
 
 def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate, hashed_password: Optional[str] = None):
+    """Atualiza dados do usuário, permitindo troca de senha e reatribuição de setores."""
     db_user = get_user(db, user_id)
     if db_user:
         update_data = user_update.dict(exclude_unset=True)
         if hashed_password:
             db_user.hashed_password = hashed_password
             update_data.pop("password", None)
+            
         if "sector_ids" in update_data:
             sector_ids = update_data.pop("sector_ids")
             if sector_ids is not None:
                 sectors = db.query(models.Sector).filter(models.Sector.id.in_(sector_ids)).all()
                 db_user.sectors = sectors
+                
         for key, value in update_data.items():
             if key != "password":
                 setattr(db_user, key, value)
@@ -983,6 +1115,7 @@ def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate, hash
     return db_user
 
 def delete_user(db: Session, user_id: int):
+    """Remove permanentemente um usuário do banco."""
     db_user = get_user(db, user_id)
     if db_user:
         db.delete(db_user)
@@ -991,8 +1124,13 @@ def delete_user(db: Session, user_id: int):
     return False
 
 def reset_entities(db: Session, entities: List[str], current_user_id: int):
+    """
+    Limpa seletivamente entidades do sistema para fins de manutenção ou reinício.
+    CUIDADO: Esta operação é destrutiva e irreversível.
+    """
     results: Dict[str, Any] = {"total": 0, "deleted": [], "errors": []}
     try:
+        # Remove todos os chamados e dados relacionados
         if "tickets" in entities:
             num_msgs = db.query(models.TicketMessage).delete(synchronize_session=False)
             num_logs = db.query(models.TicketTimeLog).delete(synchronize_session=False)
@@ -1000,16 +1138,22 @@ def reset_entities(db: Session, entities: List[str], current_user_id: int):
             num_tickets = db.query(models.Ticket).delete(synchronize_session=False)
             results["deleted"].append("tickets")
             results["total"] += (num_msgs + num_tickets + num_logs + num_hist)
+            
+        # Remove clientes (desvincula de tickets se estes não forem removidos)
         if "clients" in entities:
             if "tickets" not in entities:
                 db.query(models.Ticket).update({models.Ticket.client_id: None})
             num_clients = db.query(models.Client).delete(synchronize_session=False)
             results["deleted"].append("clients")
             results["total"] += num_clients
+            
+        # Limpa base de conhecimento
         if "knowledge" in entities:
             num_kb = db.query(models.KnowledgeDocument).delete(synchronize_session=False)
             results["deleted"].append("knowledge")
             results["total"] += num_kb
+            
+        # Reinicia configurações de categorias e status
         if "settings" in entities:
             if "tickets" not in entities:
                 db.query(models.Ticket).update({models.Ticket.category_id: None, models.Ticket.status_id: None})
@@ -1017,10 +1161,13 @@ def reset_entities(db: Session, entities: List[str], current_user_id: int):
             num_status = db.query(models.Status).delete(synchronize_session=False)
             results["deleted"].append("settings")
             results["total"] += (num_cats + num_status)
+            
+        # Remove usuários (preservando o ROOT e o usuário atual)
         if "users" in entities:
             target_users_query = db.query(models.User).filter(models.User.id != current_user_id, models.User.username != "admin")
             target_ids = [u.id for u in target_users_query.all()]
             if target_ids:
+                # Limpa todas as referências dos usuários antes de deletar
                 db.execute(models.user_sectors.delete().where(models.user_sectors.c.user_id.in_(target_ids)))
                 db.query(models.Notification).filter((models.Notification.user_id.in_(target_ids)) | (models.Notification.created_by_user_id.in_(target_ids))).delete(synchronize_session=False)
                 db.query(models.TicketTimeLog).filter(models.TicketTimeLog.user_id.in_(target_ids)).delete(synchronize_session=False)
@@ -1036,22 +1183,34 @@ def reset_entities(db: Session, entities: List[str], current_user_id: int):
         results["errors"].append(str(e))
     return results
 
+# ==============================================================================
+# CONTROLE DE TEMPO (TIMERS)
+# ==============================================================================
+
 def get_active_timers(db: Session, user_id: int):
+    """Retorna cronômetros ativos para um usuário específico."""
     return db.query(models.TicketTimeLog).options(joinedload(models.TicketTimeLog.ticket).joinedload(models.Ticket.client)).filter(models.TicketTimeLog.user_id == user_id, models.TicketTimeLog.is_active == True).all()
 
 def start_ticket_timer(db: Session, ticket_id: int, user_id: int):
+    """
+    Inicia a contagem de tempo em um chamado. 
+    Interrompe automaticamente qualquer cronômetro ativo do mesmo usuário.
+    """
     active_timers = get_active_timers(db, user_id)
     for timer in active_timers:
         stop_ticket_timer(db, timer.ticket_id, user_id)
+        
     db_ticket = db.query(models.Ticket).filter(models.Ticket.id == ticket_id).first()
     if not db_ticket:
         return None
+        
     db_log = models.TicketTimeLog(ticket_id=ticket_id, user_id=user_id, status_id=db_ticket.status_id, start_time=datetime.utcnow(), is_active=True)
     db.add(db_log)
     db.commit()
     return db.query(models.TicketTimeLog).options(joinedload(models.TicketTimeLog.ticket).joinedload(models.Ticket.client)).filter(models.TicketTimeLog.id == db_log.id).first()
 
 def stop_ticket_timer(db: Session, ticket_id: int, user_id: int):
+    """Finaliza a contagem de tempo e calcula a duração total do log em segundos."""
     db_log = db.query(models.TicketTimeLog).filter(models.TicketTimeLog.ticket_id == ticket_id, models.TicketTimeLog.user_id == user_id, models.TicketTimeLog.is_active == True).first()
     if db_log:
         db_log.end_time = datetime.utcnow()
@@ -1064,10 +1223,12 @@ def stop_ticket_timer(db: Session, ticket_id: int, user_id: int):
     return None
 
 def get_ticket_total_duration(db: Session, ticket_id: int):
+    """Calcula a soma de todos os logs de tempo finalizados para um chamado."""
     results = db.query(func.sum(models.TicketTimeLog.duration)).filter(models.TicketTimeLog.ticket_id == ticket_id).scalar()
     return results or 0
 
 def create_notification(db: Session, notification: schemas.NotificationCreate):
+    """Gera uma nova notificação simples no sistema."""
     db_notification = models.Notification(**notification.dict())
     db.add(db_notification)
     db.commit()
@@ -1075,6 +1236,7 @@ def create_notification(db: Session, notification: schemas.NotificationCreate):
     return db_notification
 
 def get_notifications(db: Session, user_id: int, skip: int = 0, limit: int = 50):
+    """Lista notificações de um usuário com detalhes do remetente, paginadas."""
     notifications = db.query(models.Notification).filter(models.Notification.user_id == user_id).order_by(models.Notification.created_at.desc()).offset(skip).limit(limit).all()
     result = []
     for notif in notifications:
@@ -1087,9 +1249,11 @@ def get_notifications(db: Session, user_id: int, skip: int = 0, limit: int = 50)
     return result
 
 def get_unread_notification_count(db: Session, user_id: int):
+    """Conta quantas notificações não lidas o usuário possui."""
     return db.query(models.Notification).filter(models.Notification.user_id == user_id, models.Notification.read == False).count()
 
 def mark_notification_as_read(db: Session, notification_id: int, user_id: int):
+    """Marca uma notificação específica como lida."""
     notification = db.query(models.Notification).filter(models.Notification.id == notification_id, models.Notification.user_id == user_id).first()
     if notification:
         notification.read = True
@@ -1098,6 +1262,7 @@ def mark_notification_as_read(db: Session, notification_id: int, user_id: int):
     return notification
 
 def mark_notification_as_unread(db: Session, notification_id: int, user_id: int):
+    """Reverte o status de uma notificação para não lida."""
     notification = db.query(models.Notification).filter(models.Notification.id == notification_id, models.Notification.user_id == user_id).first()
     if notification:
         notification.read = False
@@ -1106,6 +1271,7 @@ def mark_notification_as_unread(db: Session, notification_id: int, user_id: int)
     return notification
 
 def delete_notification(db: Session, notification_id: int, user_id: int):
+    """Exclui permanentemente uma notificação."""
     notification = db.query(models.Notification).filter(models.Notification.id == notification_id, models.Notification.user_id == user_id).first()
     if notification:
         db.delete(notification)
@@ -1114,18 +1280,62 @@ def delete_notification(db: Session, notification_id: int, user_id: int):
     return False
 
 def mark_all_notifications_as_read(db: Session, user_id: int):
+    """Marca todas as notificações pendentes do usuário como lidas."""
     db.query(models.Notification).filter(models.Notification.user_id == user_id, models.Notification.read == False).update({models.Notification.read: True}, synchronize_session=False)
     db.commit()
     return True
 
+# ==============================================================================
+# GESTÃO DE ITENS DO CATÁLOGO (CATALOG ITEMS)
+# ==============================================================================
+
+def get_catalog_items(db: Session, skip: int = 0, limit: int = 100, active_only: bool = False):
+    """Lista itens do catálogo com opção de filtrar apenas ativos."""
+    query = db.query(models.CatalogItem)
+    if active_only:
+        query = query.filter(models.CatalogItem.is_active == True)
+    return query.order_by(models.CatalogItem.name.asc()).offset(skip).limit(limit).all()
+
+def create_catalog_item(db: Session, item: schemas.CatalogItemCreate):
+    """Cria um novo item no catálogo de serviços/produtos."""
+    db_item = models.CatalogItem(**item.dict())
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+def update_catalog_item(db: Session, item_id: int, item_update: schemas.CatalogItemUpdate):
+    """Atualiza dados de um item do catálogo."""
+    db_item = db.query(models.CatalogItem).filter(models.CatalogItem.id == item_id).first()
+    if db_item:
+        update_data = item_update.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_item, key, value)
+        db.commit()
+        db.refresh(db_item)
+    return db_item
+
+def delete_catalog_item(db: Session, item_id: int):
+    """Exclui um item do catálogo."""
+    db_item = db.query(models.CatalogItem).filter(models.CatalogItem.id == item_id).first()
+    if not db_item:
+        return False
+    db.delete(db_item)
+    db.commit()
+    return True
+
 def send_user_notification(db: Session, sender_id: int, data: schemas.NotificationSend):
+    """Envia uma notificação para múltiplos destinatários (usuários ou setores)."""
     target_user_ids = set()
     if data.recipient_ids: target_user_ids.update(data.recipient_ids)
     if data.recipient_user_id: target_user_ids.add(data.recipient_user_id)
     if data.sector_ids:
+        # Notifica todos os usuários ativos dos setores selecionados
         sector_users = db.query(models.User).join(models.User.sectors).filter(models.Sector.id.in_(data.sector_ids), models.User.is_active == True).all()
         for user in sector_users: target_user_ids.add(user.id)
+        
     if not target_user_ids: return None
+    
     link = f"/tickets/{data.ticket_id}" if data.ticket_id else None
     notifications_created = []
     for u_id in target_user_ids:
@@ -1136,6 +1346,10 @@ def send_user_notification(db: Session, sender_id: int, data: schemas.Notificati
     return notifications_created[0] if notifications_created else None
 
 def get_system_settings(db: Session):
+    """
+    Busca as configurações gerais do sistema (marca, cores, favicon).
+    Cria um registro padrão se a tabela estiver vazia.
+    """
     try:
         settings = db.query(models.SystemSettings).first()
         if not settings:
@@ -1146,7 +1360,7 @@ def get_system_settings(db: Session):
         return settings
     except Exception as e:
         print(f"⚠️ Erro ao buscar configurações do sistema no banco: {e}")
-        # Retorna um objeto mock que segue o esquema se o banco não estiver acessível
+        # Fallback seguro para evitar que a aplicação pare se o banco falhar
         from datetime import datetime
         return {
             "id": 0,
@@ -1159,43 +1373,80 @@ def get_system_settings(db: Session):
         }
 
 def update_system_settings(db: Session, update: schemas.SystemSettingsUpdate):
+    """
+    Atualiza a identidade visual e nome do sistema. 
+    Trata o caso onde o banco de dados pode retornar um dicionário de fallback em caso de erro.
+    """
     settings = get_system_settings(db)
+    
+    # Se settings for um dicionário (fallback de erro), não tentamos atualizar o objeto SQLAlchemy
+    if isinstance(settings, dict):
+        return settings
+        
     if update.system_name is not None: settings.system_name = update.system_name
     if update.logo_url_light is not None: settings.logo_url_light = update.logo_url_light
     if update.logo_url_dark is not None: settings.logo_url_dark = update.logo_url_dark
     if update.custom_colors is not None: settings.custom_colors = update.custom_colors
     if update.favicon_url is not None: settings.favicon_url = update.favicon_url
+    
     db.commit()
     db.refresh(settings)
     return settings
 
 def get_ticket_timer_stats(db: Session, ticket_id: int):
+    """
+    Gera estatísticas consolidadas de tempo gasto em um chamado, 
+    agrupadas por status e detalhadas por usuário.
+    """
     logs = db.query(models.TicketTimeLog).filter(models.TicketTimeLog.ticket_id == ticket_id, models.TicketTimeLog.is_active == False).all()
     stats_map: Dict[int, Any] = {}
+    
     for log in logs:
+        # Extrai informações do status ou define padrão se não houver status vinculado
         status_name, status_color, status_id = (log.status.name, log.status.color, log.status.id) if log.status else ("Sem Status", "#9ca3af", 0)
+        
         if status_id not in stats_map:
-            stats_map[status_id] = {"status_id": status_id, "status_name": status_name, "status_color": status_color, "total_duration": 0, "users": {}}
+            stats_map[status_id] = {
+                "status_id": status_id, 
+                "status_name": status_name, 
+                "status_color": status_color, 
+                "total_duration": 0, 
+                "users": {}
+            }
+            
         group = stats_map[status_id]
         group["total_duration"] += log.duration
+        
+        # Agrupa tempo por usuário dentro de cada status
         user_id, user_name = log.user_id, (log.user.full_name or log.user.username)
         if user_id not in group["users"]:
             group["users"][user_id] = {"user_id": user_id, "full_name": user_name, "duration": 0}
         group["users"][user_id]["duration"] += log.duration
+        
     result = []
     for s_data in stats_map.values():
+        # Converte o dicionário de usuários em lista para facilitar o consumo no frontend
         s_data["users"] = list(s_data["users"].values())
         result.append(s_data)
+        
     return result
 
-# --- Custom Reports CRUD ---
+# ==============================================================================
+# RELATÓRIOS CUSTOMIZADOS (CUSTOM REPORTS)
+# ==============================================================================
+
 def get_custom_reports(db: Session, skip: int = 0, limit: int = 100):
+    """Lista todos os relatórios personalizados salvos."""
     return db.query(models.CustomReport).offset(skip).limit(limit).all()
 
 def get_custom_report(db: Session, report_id: int):
+    """Busca um relatório personalizado pelo ID."""
     return db.query(models.CustomReport).filter(models.CustomReport.id == report_id).first()
 
 def create_custom_report(db: Session, report: schemas.CustomReportCreate, user_id: int):
+    """
+    Cria um novo relatório personalizado, convertendo as variáveis para JSON.
+    """
     # Converte os schemas de variáveis para dicionários puros para o campo JSON
     variables_data = [v.dict() for v in report.variables]
     
@@ -1212,6 +1463,7 @@ def create_custom_report(db: Session, report: schemas.CustomReportCreate, user_i
     return db_report
 
 def update_custom_report(db: Session, report_id: int, report_update: schemas.CustomReportUpdate):
+    """Atualiza dados e variáveis de um relatório personalizado."""
     db_report = get_custom_report(db, report_id)
     if not db_report:
         return None
@@ -1228,6 +1480,7 @@ def update_custom_report(db: Session, report_id: int, report_update: schemas.Cus
     return db_report
 
 def delete_custom_report(db: Session, report_id: int):
+    """Exclui um relatório personalizado do banco."""
     db_report = get_custom_report(db, report_id)
     if db_report:
         db.delete(db_report)
@@ -1236,7 +1489,10 @@ def delete_custom_report(db: Session, report_id: int):
     return False
 
 def validate_sql_query(query: str):
-    """Valida se a query contém comandos destrutivos ou não-autorizados."""
+    """
+    Valida se a query contém comandos destrutivos ou não-autorizados.
+    Lança exceção se detectar SQL perigoso.
+    """
     forbidden = ["DROP", "DELETE", "TRUNCATE", "UPDATE", "INSERT", "ALTER", "CREATE", "GRANT", "REVOKE"]
     query_upper = query.upper()
     for cmd in forbidden:
@@ -1248,19 +1504,21 @@ def validate_sql_query(query: str):
     return True
 
 def execute_custom_report(db: Session, query: str, variables: Dict[str, Any]):
-    """Executa uma query SQL customizada de forma segura usando parâmetros nomeados."""
+    """
+    Executa uma query SQL customizada de forma segura usando parâmetros nomeados.
+    Retorna os resultados como uma lista de dicionários.
+    """
     try:
-        # Validação de segurança básica
+        # Validação de segurança básica contra injeção e comandos DDL/DML
         validate_sql_query(query)
         
         # Prepara a query SQL usando a sintaxe de bind parameters (:var_name)
         sql = text(query)
         
-        # Executa a query com os parâmetros fornecidos
+        # Executa a query com os parâmetros fornecidos para segurança máxima
         result = db.execute(sql, variables)
         
-        # Converte o resultado em uma lista de dicionários
-        # Para SQLAlchemy 1.4/2.0+
+        # Converte o resultado em uma lista de dicionários (mapeia nomes de colunas aos valores)
         return [dict(zip(result.keys(), row)) for row in result.fetchall()]
     except Exception as e:
         raise Exception(f"Erro ao executar query: {str(e)}")

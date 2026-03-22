@@ -6,7 +6,7 @@ import {
     Plus, Edit2, Trash2, Shield, User as UserIcon, Mail, ShieldCheck,
     Settings as SettingsIcon, Key, UserSquare2, Users, ArrowLeft, ArrowRight,
     Link2, Tag, PlusCircle, HardDrive, FolderPlus, Download, Upload, AlertTriangle,
-    XCircle, Eye, EyeOff, Check
+    XCircle, Eye, EyeOff, Check, Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getOllamaModels } from '@/lib/ollama';
@@ -19,6 +19,7 @@ import api, {
     resetDatabase, downloadBackup, restoreSystem,
     getProfiles, createProfile, updateProfile, deleteProfile, Profile,
     getSectors, createSector, updateSector, deleteSector, Sector,
+    getCatalogItems, createCatalogItem, updateCatalogItem, deleteCatalogItem, CatalogItem,
     getDefaultBaseURL
 } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
@@ -223,6 +224,12 @@ export default function SettingsPage() {
     const [showOnlyActiveSectors, setShowOnlyActiveSectors] = useState(false);
     const [showOnlyActiveCategories, setShowOnlyActiveCategories] = useState(false);
     const [showOnlyActiveStatuses, setShowOnlyActiveStatuses] = useState(false);
+    const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
+    const [newCatalogItemName, setNewCatalogItemName] = useState('');
+    const [newCatalogItemDescription, setNewCatalogItemDescription] = useState('');
+    const [loadingCatalog, setLoadingCatalog] = useState(false);
+    const [editingCatalogItem, setEditingCatalogItem] = useState<CatalogItem | null>(null);
+    const [showOnlyActiveCatalog, setShowOnlyActiveCatalog] = useState(false);
 
     const expandAllCategories = () => {
         const allParentIdsWithSubs = categories
@@ -265,10 +272,97 @@ export default function SettingsPage() {
     }, [theme, systemSettings.custom_colors]);
 
     const toggleCategory = (id: number) => {
-        console.log('Toggling category:', id, 'Current expanded:', expandedCategories);
         setExpandedCategories(prev =>
             prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
         );
+    };
+
+    const fetchCatalogItemsData = async () => {
+        setLoadingCatalog(true);
+        try {
+            const data = await getCatalogItems();
+            setCatalogItems(data || []);
+        } catch (error) {
+            console.error('Failed to fetch catalog items:', error);
+        } finally {
+            setLoadingCatalog(false);
+        }
+    };
+
+    const handleCreateCatalogItem = async () => {
+        if (!newCatalogItemName.trim()) return;
+        setLoadingCatalog(true);
+        try {
+            if (editingCatalogItem) {
+                await updateCatalogItem(editingCatalogItem.id, {
+                    name: newCatalogItemName,
+                    description: newCatalogItemDescription,
+                    is_active: editingCatalogItem.is_active
+                });
+                showNotification('Item do catálogo atualizado!', 'success');
+            } else {
+                await createCatalogItem({
+                    name: newCatalogItemName,
+                    description: newCatalogItemDescription,
+                    is_active: true
+                });
+                showNotification('Item do catálogo criado!', 'success');
+            }
+            setNewCatalogItemName('');
+            setNewCatalogItemDescription('');
+            setEditingCatalogItem(null);
+            fetchCatalogItemsData();
+        } catch (error) {
+            showNotification(editingCatalogItem ? 'Erro ao atualizar item' : 'Erro ao criar item', 'error');
+        } finally {
+            setLoadingCatalog(false);
+        }
+    };
+
+    const handleToggleCatalogItemActive = async (item: CatalogItem) => {
+        const previousItems = [...catalogItems];
+        const newIsActive = !item.is_active;
+
+        setCatalogItems(prev => prev.map(i => i.id === item.id ? { ...i, is_active: newIsActive } : i));
+
+        try {
+            await updateCatalogItem(item.id, { is_active: newIsActive });
+            showNotification(`Item ${newIsActive ? 'ativado' : 'desativado'}`, 'success');
+        } catch (error) {
+            setCatalogItems(previousItems);
+            showNotification('Erro ao alterar status do item', 'error');
+        }
+    };
+
+    const handleEditCatalogItem = (item: CatalogItem) => {
+        setEditingCatalogItem(item);
+        setNewCatalogItemName(item.name);
+        setNewCatalogItemDescription(item.description || '');
+    };
+
+    const cancelEditCatalogItem = () => {
+        setEditingCatalogItem(null);
+        setNewCatalogItemName('');
+        setNewCatalogItemDescription('');
+    };
+
+    const handleDeleteCatalogItem = async (id: number) => {
+        const confirmed = await askConfirm({
+            title: 'Excluir Item do Catálogo',
+            message: 'Deseja excluir este serviço/produto do catálogo?',
+            type: 'danger',
+            confirmText: 'Excluir'
+        });
+
+        if (confirmed) {
+            try {
+                await deleteCatalogItem(id);
+                showNotification('Item removido', 'success');
+                fetchCatalogItemsData();
+            } catch (error) {
+                showNotification('Erro ao excluir item', 'error');
+            }
+        }
     };
 
     useEffect(() => {
@@ -280,6 +374,7 @@ export default function SettingsPage() {
         fetchCategories();
         fetchStatuses();
         fetchSectors();
+        fetchCatalogItemsData();
         if (user && (user.role === 'ADMIN' || user.role === 'ROOT')) {
             fetchUsers();
             fetchProfiles();
@@ -965,7 +1060,12 @@ export default function SettingsPage() {
     };
 
     const handleSave = () => {
-        localStorage.setItem('system_config', JSON.stringify(config));
+        const configToSave = {
+            ...config,
+            userConfigured: true // Marca como configuração manual para evitar auto-reversão
+        };
+        setConfig(configToSave); // Atualiza o estado também
+        localStorage.setItem('system_config', JSON.stringify(configToSave));
         setSaved(true);
         savedRef.current = true; // Força atualização imediata do ref
         originalThemeRef.current = config.theme; // Atualiza o "original" para o novo salvo
@@ -1016,7 +1116,8 @@ export default function SettingsPage() {
                 aiSource: 'centralized' as 'centralized' | 'local',
                 textModel: 'phi3',
                 visionModel: 'moondream',
-                theme: 'dark' as any
+                theme: 'dark' as any,
+                userConfigured: false // Resetar para automático ao restaurar padrões
             };
             setConfig(defaults);
             setTheme('dark');
@@ -1107,12 +1208,14 @@ export default function SettingsPage() {
                                         <div className="p-2.5 bg-accent-theme/10 rounded-xl">
                                             <Globe className="w-6 h-6" />
                                         </div>
-                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Conectividade</h2>
+                                        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                            Conectividade <span className="text-accent-theme">de Rede</span>
+                                        </h2>
                                     </div>
 
                                     <div className="space-y-6">
                                         <div>
-                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Servidor Central (API)</label>
+                                            <h4 className="block text-[13px] font-black font-display uppercase italic tracking-[0.15em] text-foreground/80 mb-4">Servidor Central (API)</h4>
                                             <input
                                                 className="w-full bg-[var(--color-input)] border border-border-theme rounded-2xl p-4 text-foreground focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all placeholder-[var(--color-text-muted)] font-mono text-sm shadow-inner"
                                                 type="text"
@@ -1157,9 +1260,7 @@ export default function SettingsPage() {
                                             </div>
                                         </div>
                                         <div className="space-y-4">
-                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-2">
-                                                Processamento de IA (Ollama)
-                                            </label>
+                                            <h4 className="block text-[13px] font-black font-display uppercase italic tracking-[0.15em] text-foreground/80 mb-4">Processamento de IA (Ollama)</h4>
                                             <div className="flex gap-4">
                                                 <button
                                                     onClick={() => setConfig({ ...config, aiSource: 'centralized' })}
@@ -1194,7 +1295,7 @@ export default function SettingsPage() {
                                         </div>
 
                                         <div className={clsx("transition-all duration-300", config.aiSource === 'local' ? "opacity-100 scale-100" : "opacity-40 grayscale pointer-events-none scale-95 origin-top")}>
-                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest mb-2 border-l-2 border-accent-theme pl-2">Ollama Local (URL)</label>
+                                            <h4 className="block text-[13px] font-black font-display uppercase italic tracking-[0.15em] text-foreground/80 mb-2">Ollama Local (URL)</h4>
                                             <input
                                                 className="w-full bg-[var(--color-input)] border border-border-theme rounded-2xl p-4 text-foreground focus:ring-2 focus:ring-accent-theme/30 outline-none transition-all font-mono text-sm shadow-inner"
                                                 type="text"
@@ -1205,9 +1306,7 @@ export default function SettingsPage() {
 
                                         {/* Banco de Dados Ativo */}
                                         <div className="border-t border-border-theme pt-6 space-y-3">
-                                            <label className="block text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-2">
-                                                Banco de Dados Ativo
-                                            </label>
+                                            <h4 className="block text-[13px] font-black font-display uppercase italic tracking-[0.15em] text-foreground/80 mb-4">Banco de Dados Ativo</h4>
                                             <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-border-theme">
                                                 {dbInfo ? (
                                                     <>
@@ -1270,7 +1369,9 @@ export default function SettingsPage() {
                                         <div className="p-2.5 bg-accent-theme/10 rounded-xl">
                                             <Cpu className="w-6 h-6" />
                                         </div>
-                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Motores de IA</h2>
+                                        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                            Motores <span className="text-accent-theme">de IA</span>
+                                        </h2>
                                     </div>
 
                                     <div className="space-y-6">
@@ -1334,18 +1435,20 @@ export default function SettingsPage() {
                                         </div>
                                         <div className="flex items-center gap-3 text-emerald-500 relative z-10">
                                             <div className="p-2.5 bg-emerald-500/10 rounded-xl">
-                                                <Tag className="w-6 h-6" />
+                                                <Layers className="w-5 h-5 text-emerald-500" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Gestão de Setores</h2>
+                                            <h2 className="text-xl font-black italic uppercase tracking-tighter text-foreground">
+                                                Gestão <span className="text-emerald-500">de Setores</span>
+                                            </h2>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                             {/* Formulário */}
                                             <div className="space-y-6">
                                                 <div className="flex h-[42px] items-center justify-between">
-                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">
+                                                    <h4 className="text-[13px] font-black font-display text-[var(--color-text-muted)] uppercase italic tracking-[0.15em]">
                                                         {editingSector ? 'Editar Setor' : 'Novo Setor'}
-                                                    </h3>
+                                                    </h4>
                                                     {editingSector && (
                                                         <button
                                                             onClick={cancelEditSector}
@@ -1379,7 +1482,7 @@ export default function SettingsPage() {
                                             <div className="space-y-6">
                                                 <div className="flex h-[42px] items-center justify-between">
                                                     <div className="flex items-center gap-3">
-                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-emerald-500 pl-3">Setores Ativos</h3>
+                                                        <h4 className="text-[13px] font-black font-display italic text-foreground uppercase tracking-[0.15em]">Setores <span className="text-accent-theme">Ativos</span></h4>
                                                         <button
                                                             onClick={() => setShowOnlyActiveSectors(!showOnlyActiveSectors)}
                                                             className={clsx(
@@ -1446,23 +1549,22 @@ export default function SettingsPage() {
                                                 <FolderPlus className="w-24 h-24" />
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-3 text-accent-theme relative z-10">
-                                            <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                                <Tag className="w-6 h-6" />
+                                        <div className="flex items-center gap-3 text-blue-500 relative z-10">
+                                            <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                                                <FolderPlus className="w-5 h-5 text-blue-500" />
                                             </div>
-                                            <div className="flex-1">
-                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Organização de Categorias</h2>
-                                                <p className="text-[9px] text-[var(--color-text-muted)] font-black uppercase tracking-widest opacity-60">Categorização granular por setor.</p>
-                                            </div>
+                                            <h2 className="text-xl font-black italic uppercase tracking-tighter text-foreground">
+                                                Estrutura <span className="text-blue-500">de Categorias</span>
+                                            </h2>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                             {/* Formulário */}
                                             <div className="space-y-6">
                                                 <div className="flex h-[42px] items-center justify-between">
-                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">
+                                                    <h4 className="text-[13px] font-black font-display text-[var(--color-text-muted)] uppercase italic tracking-[0.15em]">
                                                         {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
-                                                    </h3>
+                                                    </h4>
                                                     {editingCategory && (
                                                         <button onClick={cancelEditCategory} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
                                                     )}
@@ -1517,7 +1619,7 @@ export default function SettingsPage() {
                                             <div className="space-y-6">
                                                 <div className="flex h-[42px] items-center justify-between">
                                                     <div className="flex items-center gap-3">
-                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-accent-theme pl-3">Categorias Ativas</h3>
+                                                        <h4 className="text-[13px] font-black font-display italic text-foreground/80 uppercase tracking-[0.15em]">Categorias <span className="text-accent-theme">Ativas</span></h4>
 
                                                         {/* Bulk Expand/Collapse */}
                                                         <div className="flex items-center bg-background/40 rounded-full border border-border-theme p-0.5">
@@ -1690,6 +1792,131 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
 
+
+                                    {/* Catálogo de Serviços/Produtos */}
+                                    <div className="glass-card p-10 rounded-3xl space-y-10 relative group transition-all z-10">
+                                        <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+                                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                <Layers className="w-24 h-24" />
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-amber-500 relative z-10">
+                                            <div className="p-2.5 bg-amber-500/10 rounded-xl">
+                                                <Layers className="w-5 h-5 text-amber-500" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h2 className="text-xl font-black italic uppercase tracking-tighter text-foreground">
+                                                    Catálogo de <span className="text-amber-500">Serviços e Produtos</span>
+                                                </h2>
+                                                <p className="text-[9px] text-[var(--color-text-muted)] font-black uppercase tracking-widest opacity-60">Cadastre os itens que podem ser contratados pelos clientes.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                            {/* Formulário */}
+                                            <div className="space-y-6">
+                                                <div className="flex h-[42px] items-center justify-between">
+                                                    <h4 className="text-[13px] font-black font-display text-[var(--color-text-muted)] uppercase italic tracking-[0.15em]">
+                                                        {editingCatalogItem ? 'Editar Item' : 'Novo Item'}
+                                                    </h4>
+                                                    {editingCatalogItem && (
+                                                        <button onClick={cancelEditCatalogItem} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-5 bg-background/20 p-6 rounded-3xl border border-border-theme shadow-inner">
+                                                    <div>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Nome do Serviço/Produto</label>
+                                                        <input
+                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none transition-all shadow-sm"
+                                                            placeholder="Ex: Consultoria, Pacote 10h, Licença X..."
+                                                            value={newCatalogItemName}
+                                                            onChange={e => setNewCatalogItemName(e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-2">Descrição (Opcional)</label>
+                                                        <textarea
+                                                            className="w-full bg-[var(--color-input)] border border-border-theme rounded-xl p-4 text-sm focus:ring-2 focus:ring-amber-500/30 outline-none transition-all shadow-sm min-h-[100px]"
+                                                            placeholder="Detalhes sobre o serviço ou produto..."
+                                                            value={newCatalogItemDescription}
+                                                            onChange={e => setNewCatalogItemDescription(e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        onClick={handleCreateCatalogItem}
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-amber-500/20 active:scale-95"
+                                                    >
+                                                        {editingCatalogItem ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
+                                                        {editingCatalogItem ? 'Salvar Alterações' : 'Adicionar ao Catálogo'}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Listagem */}
+                                            <div className="space-y-6">
+                                                <div className="flex h-[42px] items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <h4 className="text-[13px] font-black font-display italic text-foreground uppercase tracking-[0.15em]">Itens do <span className="text-amber-500">Catálogo</span></h4>
+                                                        <button
+                                                            onClick={() => setShowOnlyActiveCatalog(!showOnlyActiveCatalog)}
+                                                            className={clsx(
+                                                                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all border",
+                                                                showOnlyActiveCatalog
+                                                                    ? "bg-amber-500/20 text-amber-500 border-amber-500/40"
+                                                                    : "bg-white/5 text-[var(--color-text-muted)] border-white/5 hover:bg-white/10"
+                                                            )}
+                                                            title={showOnlyActiveCatalog ? "Mostrar todos" : "Mostrar apenas ativos"}
+                                                        >
+                                                            {showOnlyActiveCatalog ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-background/20 rounded-3xl border border-border-theme p-6 space-y-2 shadow-inner max-h-[500px] overflow-y-auto custom-scrollbar">
+                                                    {loadingCatalog ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-amber-500" /></div> :
+                                                        catalogItems.filter(item => !showOnlyActiveCatalog || item.is_active).length === 0 ? <div className="p-8 text-center text-xs text-[var(--color-text-muted)] italic">Nenhum item cadastrado no catálogo.</div> :
+                                                            catalogItems.filter(item => !showOnlyActiveCatalog || item.is_active).map(item => (
+                                                                <div key={item.id} className={clsx(
+                                                                    "flex items-center justify-between p-4 bg-card/40 rounded-2xl border border-border-theme group/item hover:bg-card/60 transition-all shadow-sm",
+                                                                    !item.is_active && "opacity-50 grayscale-[0.5]"
+                                                                )}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <Layers className={clsx("w-4 h-4", item.is_active ? "text-amber-500" : "text-gray-500")} />
+                                                                        <div className="flex flex-col">
+                                                                            <span className={clsx(
+                                                                                "text-sm font-bold tracking-tight",
+                                                                                !item.is_active && "line-through"
+                                                                            )}>{item.name}</span>
+                                                                            {item.description && (
+                                                                                <span className="text-[10px] text-[var(--color-text-muted)] line-clamp-1">{item.description}</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                                                                        <button
+                                                                            onClick={() => handleToggleCatalogItemActive(item)}
+                                                                            className={clsx(
+                                                                                "p-2 rounded-xl transition-all",
+                                                                                item.is_active ? "text-amber-500 hover:bg-amber-500/10" : "text-gray-400 hover:text-amber-500 hover:bg-amber-500/10"
+                                                                            )}
+                                                                            title={item.is_active ? "Desativar" : "Ativar"}
+                                                                        >
+                                                                            {item.is_active ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                                                        </button>
+                                                                        <button onClick={() => handleEditCatalogItem(item)} className="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-xl transition-all">
+                                                                            <Edit2 className="w-4 h-4" />
+                                                                        </button>
+                                                                        <button onClick={() => handleDeleteCatalogItem(item.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all">
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ))
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     {/* Gestão de Status */}
                                     <div className="glass-card p-10 rounded-3xl space-y-10 relative overflow-hidden group transition-all">
                                         <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -1700,7 +1927,9 @@ export default function SettingsPage() {
                                                 <CheckCircle2 className="w-6 h-6" />
                                             </div>
                                             <div className="flex-1">
-                                                <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Fluxo e Status de Chamado</h2>
+                                                <h2 className="text-xl font-black italic uppercase tracking-tighter text-foreground">
+                                                    Fluxo e Status <span className="text-accent-theme">de Chamado</span>
+                                                </h2>
                                                 <p className="text-[9px] text-[var(--color-text-muted)] font-black uppercase tracking-widest opacity-60">Gerencie os estados dos chamados por setor.</p>
                                             </div>
                                         </div>
@@ -1709,9 +1938,9 @@ export default function SettingsPage() {
                                             {/* Formulário */}
                                             <div className="space-y-6">
                                                 <div className="flex h-[42px] items-center justify-between">
-                                                    <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">
+                                                    <h4 className="text-[13px] font-black font-display text-[var(--color-text-muted)] uppercase italic tracking-[0.15em]">
                                                         {editingStatus ? 'Editar Estado' : 'Novo Estado'}
-                                                    </h3>
+                                                    </h4>
                                                     {editingStatus && (
                                                         <button onClick={cancelEditStatus} className="text-[9px] font-black text-red-500 uppercase hover:underline">Cancelar Edição</button>
                                                     )}
@@ -1740,8 +1969,8 @@ export default function SettingsPage() {
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-[9px] font-black text-[var(--color-text-muted)] uppercase mb-3 border-l-2 border-blue-500/50 pl-2">Representação Visual (Cor)</label>
-                                                        <div className="flex items-center gap-4 bg-background/40 p-3 rounded-2xl border border-border-theme group/color">
+                                                        <h4 className="block text-[13px] font-black font-display uppercase italic tracking-[0.15em] text-foreground/80 mb-3">Representação Visual (Cor)</h4>
+                                                        <div className="flex items-center gap-4 p-3 rounded-2xl border border-border-theme group/color bg-background/40">
                                                             <div className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
                                                                 <input
                                                                     type="color"
@@ -1820,7 +2049,7 @@ export default function SettingsPage() {
                                             <div className="space-y-6">
                                                 <div className="flex h-[42px] items-center justify-between">
                                                     <div className="flex items-center gap-3">
-                                                        <h3 className="text-[10px] font-black text-[var(--color-text-muted)] uppercase tracking-widest border-l-2 border-blue-500 pl-3">Lista de Estados Ativos</h3>
+                                                        <h4 className="text-[13px] font-black font-display italic text-foreground uppercase tracking-[0.15em]">Estados do <span className="text-accent-theme">Fluxo</span></h4>
                                                         <button
                                                             onClick={() => setShowOnlyActiveStatuses(!showOnlyActiveStatuses)}
                                                             className={clsx(
@@ -1913,7 +2142,9 @@ export default function SettingsPage() {
                                 >
                                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                                         <div className="space-y-1">
-                                            <h2 className="text-2xl font-black italic uppercase tracking-tight">Gestão de Equipe</h2>
+                                            <h2 className="text-2xl font-black italic uppercase tracking-tight">
+                                                Gestão <span className="text-accent-theme">de Equipe</span>
+                                            </h2>
                                             <p className="text-[var(--color-text-muted)] text-[10px] font-black uppercase tracking-widest pl-1">Controle de acesso granular e perfis de permissão.</p>
                                         </div>
                                         <button
@@ -2028,7 +2259,9 @@ export default function SettingsPage() {
                                         <div className="p-2.5 bg-accent-theme/10 rounded-xl">
                                             <ShieldCheck className="w-6 h-6" />
                                         </div>
-                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Identidade do Sistema</h2>
+                                        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                            Identidade <span className="text-accent-theme">do Sistema</span>
+                                        </h2>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -2063,9 +2296,7 @@ export default function SettingsPage() {
 
                                         <div className="space-y-6">
                                             <div className="space-y-3">
-                                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">
-                                                    Logos do Sistema
-                                                </h3>
+                                                <h4 className="text-[13px] font-black font-display italic uppercase tracking-[0.15em] text-foreground/80 mb-4">Logos <span className="text-accent-theme">do Sistema</span></h4>
 
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                                     {/* Logo Tema Claro */}
@@ -2151,9 +2382,7 @@ export default function SettingsPage() {
                                             </div>
 
                                             <div className="pt-10">
-                                                <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1 mb-4 flex items-center gap-2">
-                                                    <Globe className="w-3 h-3" /> Favicon do Sistema
-                                                </h2>
+                                                <h4 className="text-[13px] font-black font-display italic uppercase tracking-[0.15em] text-foreground/80 mb-4">Favicon <span className="text-accent-theme">do Sistema</span></h4>
 
                                                 <div className="flex flex-col sm:flex-row items-center gap-8">
                                                     <div className="w-24 h-24 rounded-3xl bg-slate-800 border-2 border-dashed border-slate-600 flex items-center justify-center overflow-hidden group relative flex-shrink-0">
@@ -2218,7 +2447,9 @@ export default function SettingsPage() {
                                         <div className="p-2.5 bg-pink-500/10 rounded-xl">
                                             <Palette className="w-6 h-6" />
                                         </div>
-                                        <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Identidade Visual</h2>
+                                        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                            Identidade <span className="text-accent-theme">Visual</span>
+                                        </h2>
                                     </div>
 
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
@@ -2273,7 +2504,7 @@ export default function SettingsPage() {
                                                 <div className="p-2 bg-accent-theme/10 rounded-lg">
                                                     <Palette className="w-4 h-4" />
                                                 </div>
-                                                <h3 className="font-bold text-sm uppercase tracking-widest text-foreground">Ajustar Cores Personalizadas</h3>
+                                                <h4 className="text-[13px] font-black font-display uppercase italic tracking-tighter text-foreground">Ajustar Cores <span className="text-accent-theme">Personalizadas</span></h4>
                                             </div>
 
                                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
@@ -2368,7 +2599,9 @@ export default function SettingsPage() {
                                 >
                                     <div className="flex justify-between items-center">
                                         <div className="space-y-1">
-                                            <h2 className="text-2xl font-black italic uppercase tracking-tight">Perfis de Acesso</h2>
+                                            <h2 className="text-2xl font-black italic uppercase tracking-tight">
+                                                Perfis <span className="text-accent-theme">de Acesso</span>
+                                            </h2>
                                             <p className="text-[var(--color-text-muted)] text-[10px] font-black uppercase tracking-widest pl-1">Defina permissões granulares.</p>
                                         </div>
                                         <button
@@ -2408,7 +2641,7 @@ export default function SettingsPage() {
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <h3 className="font-bold text-lg mb-1 text-foreground">{profile.name}</h3>
+                                                <h4 className="text-[13px] font-black font-display italic uppercase tracking-[0.15em] text-foreground/80 mb-2">{profile.name}</h4>
                                                 <p className="text-xs text-[var(--color-text-muted)] mb-6 h-8 line-clamp-2 leading-relaxed">
                                                     {profile.description || 'Sem descrição definida.'}
                                                 </p>
@@ -2450,7 +2683,9 @@ export default function SettingsPage() {
                                             <div className="p-2.5 bg-blue-500/10 rounded-xl">
                                                 <HardDrive className="w-6 h-6" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Backup & Restauração</h2>
+                                            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                                Backup <span className="text-accent-theme">& Restauração</span>
+                                            </h2>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -2461,7 +2696,7 @@ export default function SettingsPage() {
                                                         <div className="p-2.5 bg-blue-500/10 rounded-xl">
                                                             <Download className="w-5 h-5 text-blue-500" />
                                                         </div>
-                                                        <h3 className="text-base font-bold text-foreground">Exportar Dados</h3>
+                                                        <h4 className="text-[13px] font-black font-display uppercase italic tracking-[0.15em] text-foreground/80">Exportar Dados</h4>
                                                     </div>
                                                     <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
                                                         Baixe um arquivo ZIP contendo todo o banco de dados, uploads e memória da IA.
@@ -2511,7 +2746,7 @@ export default function SettingsPage() {
                                                         <div className="p-2.5 bg-emerald-500/10 rounded-xl">
                                                             <Upload className="w-5 h-5 text-emerald-500" />
                                                         </div>
-                                                        <h3 className="text-base font-bold text-foreground">Restaurar Sistema</h3>
+                                                        <h4 className="text-[13px] font-black font-display uppercase italic tracking-[0.15em] text-foreground/80">Restaurar <span className="text-accent-theme">Sistema</span></h4>
                                                     </div>
                                                     <div className="space-y-3">
                                                         <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
@@ -2594,7 +2829,9 @@ export default function SettingsPage() {
                                             <div className="p-2.5 bg-white/5 rounded-xl">
                                                 <RotateCcw className="w-6 h-6" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest">Ações do Sistema</h2>
+                                            <h4 className="text-[13px] font-black font-display italic uppercase tracking-[0.15em] text-foreground/80">
+                                                Ações <span className="text-accent-theme">do Sistema</span>
+                                            </h4>
                                         </div>
                                         <p className="text-xs text-[var(--color-text-muted)]">Restaura as configurações de fábrica (Conectividade e Aparência).</p>
                                         <button
@@ -2615,7 +2852,9 @@ export default function SettingsPage() {
                                             <div className="p-2.5 bg-red-500/10 rounded-xl">
                                                 <Trash2 className="w-6 h-6" />
                                             </div>
-                                            <h2 className="font-bold text-lg uppercase tracking-widest text-foreground">Zona de Perigo: Limpeza</h2>
+                                            <h4 className="text-[13px] font-black font-display italic uppercase tracking-[0.15em] text-foreground/80">
+                                                Zona <span className="text-accent-theme">de Perigo</span>
+                                            </h4>
                                         </div>
 
                                         <p className="text-sm text-[var(--color-text-muted)] max-w-2xl leading-relaxed mb-8 font-medium">
@@ -2698,7 +2937,9 @@ export default function SettingsPage() {
                                     <div className="inline-flex p-5 bg-red-500/20 rounded-3xl text-red-500 animate-bounce">
                                         <Trash2 className="w-10 h-10" />
                                     </div>
-                                    <h2 className="text-3xl font-black italic uppercase tracking-tight text-red-500">Confirmação Crítica</h2>
+                                    <h2 className="text-4xl font-black italic uppercase tracking-tight text-red-500">
+                                        Confirmação <span className="text-white">Crítica</span>
+                                    </h2>
                                     <p className="text-xs text-[var(--color-text-muted)]">Ação irreversível em {resetEntities.length} módulo(s). Digite DELETAR para prosseguir.</p>
                                     <input
                                         type="text"
@@ -2749,7 +2990,7 @@ export default function SettingsPage() {
                         <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
                             <div className="glass-card w-full max-w-lg rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] flex flex-col overflow-hidden">
                                 <div className="p-10 border-b border-border-theme/50 flex-shrink-0">
-                                    <h2 className="text-3xl font-black italic uppercase tracking-tight">
+                                    <h2 className="text-4xl font-black italic uppercase tracking-tight">
                                         {isEditingUser ? 'Editar' : 'Novo'} <span className="text-accent-theme">Usuário</span>
                                     </h2>
                                 </div>
@@ -2963,8 +3204,8 @@ export default function SettingsPage() {
                         <div className="fixed inset-0 bg-background/80 backdrop-blur-xl flex items-center justify-center z-[2000] p-4 animate-fade-in">
                             <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border border-border-theme shadow-3xl animate-zoom-in max-h-[90vh] flex flex-col overflow-hidden">
                                 <div className="p-10 border-b border-border-theme/50 flex-shrink-0 bg-background/50 backdrop-blur-md z-10">
-                                    <h2 className="text-3xl font-black italic uppercase tracking-tight">
-                                        {currentProfile.id ? 'Editar' : 'Novo'} <span className="text-orange-500">Perfil</span>
+                                    <h2 className="text-4xl font-black italic uppercase tracking-tight">
+                                        {currentProfile.id ? 'Editar' : 'Novo'} <span className="text-accent-theme">Perfil</span>
                                     </h2>
                                 </div>
                                 <div className="flex-grow overflow-y-auto custom-scrollbar p-10">
@@ -2994,7 +3235,7 @@ export default function SettingsPage() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                             {/* Permissões de Menu */}
                                             <div className="space-y-4">
-                                                <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Acesso a Menus</h3>
+                                                <h3 className="text-[10px] font-black italic text-foreground uppercase tracking-widest border-l-4 border-accent-theme pl-3">Acesso <span className="text-accent-theme">a Menus</span></h3>
                                                 <div className="space-y-2">
                                                     <div
                                                         onClick={() => toggleProfilePermission('menus', '*')}
@@ -3052,7 +3293,7 @@ export default function SettingsPage() {
 
                                             {/* Permissões de Ação */}
                                             <div className="space-y-4">
-                                                <h3 className="text-xs font-black uppercase text-accent-theme border-b border-white/10 pb-2">Permissões de Ação</h3>
+                                                <h3 className="text-[10px] font-black italic text-foreground uppercase tracking-widest border-l-4 border-accent-theme pl-3">Permissões <span className="text-accent-theme">de Ação</span></h3>
                                                 <div className="space-y-2">
                                                     <div
                                                         onClick={() => toggleProfilePermission('actions', '*')}

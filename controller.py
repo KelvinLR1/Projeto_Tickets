@@ -33,6 +33,10 @@ def is_admin() -> bool:
         return False
 
 class TicketFlowController:
+    """
+    Interface gráfica (Tkinter) para gerenciamento dos serviços do TicketFlow.
+    Permite instalar, iniciar, parar e configurar portas dos serviços Backend e Frontend.
+    """
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("TicketFlow - Painel de Controle")
@@ -54,9 +58,11 @@ class TicketFlowController:
         }
 
         self.setup_ui()
+        # Inicia o loop de atualização do status dos serviços em segundo plano
         self.update_status_loop()
 
     def setup_ui(self):
+        """Monta os componentes visuais da interface."""
         main_frame = ttk.Frame(self.root, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -119,6 +125,7 @@ class TicketFlowController:
                       foreground="orange", font=("Arial", 8, "italic"), justify=tk.CENTER).pack(pady=(5, 0))
 
     def get_service_status(self, service_name: str):
+        """Consulta o estado atual do serviço no Windows (Rodando, Parado, etc)."""
         if win32serviceutil is Any: return "Erro Lib", "gray"
         try:
             status = win32serviceutil.QueryServiceStatus(service_name)[1]

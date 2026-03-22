@@ -6,30 +6,43 @@ import MultiSelectUser from './MultiSelectUser';
 import MultiSelectSector from './MultiSelectSector';
 import TicketSearchSelect from './TicketSearchSelect';
 
+/**
+ * Propriedades do componente de composição de notificações.
+ */
 interface NotificationComposerProps {
-    onClose: () => void;
-    onSuccess: () => void;
+    onClose: () => void;   // Função para fechar o modal
+    onSuccess: () => void; // Função chamada após envio bem-sucedido
 }
 
+/**
+ * Componente Compositor de Notificações.
+ * Permite criar e enviar mensagens personalizadas para usuários individuais
+ * ou setores inteiros, com suporte a tipos de alerta e vínculo com tickets.
+ */
 export default function NotificationComposer({ onClose, onSuccess }: NotificationComposerProps) {
     const [users, setUsers] = useState<any[]>([]);
     const [sectors, setSectors] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // Selection State
+    // Estados de Seleção e Destinatários
     const [targetType, setTargetType] = useState<'users' | 'sectors'>('users');
     const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
     const [selectedSectorIds, setSelectedSectorIds] = useState<number[]>([]);
 
+    // Conteúdo da Notificação
     const [title, setTitle] = useState('');
     const [message, setMessage] = useState('');
     const [type, setType] = useState('info');
     const [ticketId, setTicketId] = useState<number | null>(null);
 
+    // Carrega usuários e setores disponíveis ao montar o componente
     useEffect(() => {
         loadData();
     }, []);
 
+    /**
+     * Busca dados necessários para popular as listas de seleção múltipla.
+     */
     const loadData = async () => {
         try {
             const [usersData, sectorsData] = await Promise.all([
@@ -43,9 +56,13 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
         }
     };
 
+    /**
+     * Processa o envio da notificação para o servidor.
+     */
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        // Verifica se há destinatários selecionados conforme o tipo de alvo
         const hasRecipients = targetType === 'users'
             ? selectedUserIds.length > 0
             : selectedSectorIds.length > 0;
@@ -58,7 +75,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
         setLoading(true);
         try {
             await sendNotification({
-                recipient_user_id: 0, // Ignored by new backend logic but kept for type safety if needed temporarily
+                recipient_user_id: 0, // Mantido por compatibilidade de tipo, mas ignorado pela lógica de múltiplos IDs no backend
                 recipient_ids: targetType === 'users' ? selectedUserIds : undefined,
                 sector_ids: targetType === 'sectors' ? selectedSectorIds : undefined,
                 title,
@@ -77,6 +94,9 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
         }
     };
 
+    /**
+     * Opções visuais para o tipo de notificação (estilização e ícones).
+     */
     const typeOptions = [
         { value: 'info', label: 'Informação', icon: Info, color: 'text-blue-500' },
         { value: 'success', label: 'Sucesso', icon: CheckCircle, color: 'text-green-500' },
@@ -87,14 +107,15 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="glass-card rounded-3xl max-w-2xl w-full p-8 border border-border-theme shadow-2xl animate-in fade-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                {/* Header */}
+
+                {/* Cabeçalho do Modal */}
                 <div className="flex items-center justify-between mb-8 pb-6 border-b border-border-theme">
                     <div className="flex items-center gap-4">
                         <div className="p-3 rounded-2xl premium-gradient shadow-lg shadow-accent-theme/20">
                             <Send className="w-6 h-6 text-white" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-black tracking-tight">Nova Notificação</h2>
+                            <h2 className="text-2xl font-black font-display uppercase italic tracking-tight">Nova Notificação</h2>
                             <p className="text-sm text-muted-foreground">Envie mensagens para usuários ou setores</p>
                         </div>
                     </div>
@@ -106,10 +127,10 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                     </button>
                 </div>
 
-                {/* Form */}
+                {/* Formulário de Criação */}
                 <form onSubmit={handleSubmit} className="space-y-6">
 
-                    {/* Target Type Tabs */}
+                    {/* Abas de Tipo de Alvo (Usuários vs Setores) */}
                     <div className="flex bg-background/50 p-1 rounded-2xl border border-border-theme">
                         <button
                             type="button"
@@ -139,7 +160,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         </button>
                     </div>
 
-                    {/* Recipient Selection */}
+                    {/* Seleção de Destinatários */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                             {targetType === 'users' ? <User className="w-3.5 h-3.5" /> : <Layers className="w-3.5 h-3.5" />}
@@ -167,7 +188,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         </p>
                     </div>
 
-                    {/* Type */}
+                    {/* Seleção do Tipo de Alerta */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                             Tipo
@@ -195,7 +216,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         </div>
                     </div>
 
-                    {/* Title */}
+                    {/* Título da Notificação */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                             <MessageSquare className="w-3.5 h-3.5" />
@@ -212,7 +233,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         />
                     </div>
 
-                    {/* Message */}
+                    {/* Corpo da Mensagem */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                             Mensagem *
@@ -229,7 +250,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         <p className="text-xs text-muted-foreground text-right">{message.length}/500</p>
                     </div>
 
-                    {/* Ticket (Optional) */}
+                    {/* Vínculo com Ticket (Opcional) */}
                     <div className="space-y-2">
                         <TicketSearchSelect
                             label="Vincular Ticket (Opcional)"
@@ -238,7 +259,7 @@ export default function NotificationComposer({ onClose, onSuccess }: Notificatio
                         />
                     </div>
 
-                    {/* Actions */}
+                    {/* Botões de Ação */}
                     <div className="flex gap-4 pt-6 border-t border-border-theme">
                         <button
                             type="button"

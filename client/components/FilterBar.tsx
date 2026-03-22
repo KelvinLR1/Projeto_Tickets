@@ -11,6 +11,10 @@ interface FilterBarProps {
     isLoading?: boolean;
 }
 
+/**
+ * Barra de Filtros Avançados para Relatórios.
+ * Permite filtrar dados por período, setor e atendente.
+ */
 export default function FilterBar({ onFilter, isLoading }: FilterBarProps) {
     const [sectors, setSectors] = useState<Sector[]>([]);
     const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
@@ -24,6 +28,10 @@ export default function FilterBar({ onFilter, isLoading }: FilterBarProps) {
 
     const [isExpanded, setIsExpanded] = useState(false);
 
+    /**
+     * Busca dados auxiliares (setores e atendentes) para popular
+     * as opções dos selects de filtro.
+     */
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -81,8 +89,8 @@ export default function FilterBar({ onFilter, isLoading }: FilterBarProps) {
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-bold ${isExpanded || hasActiveFilters
-                            ? "bg-accent-theme/10 border-accent-theme/30 text-accent-theme"
-                            : "bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10"
+                        ? "bg-accent-theme/10 border-accent-theme/30 text-accent-theme"
+                        : "bg-white/5 border-white/10 text-[var(--color-text-muted)] hover:bg-white/10"
                         }`}
                 >
                     <Filter className="w-4 h-4" />

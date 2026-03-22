@@ -4,22 +4,33 @@ import React, { useState, useMemo } from 'react';
 import { Search, Check, X, User as UserIcon, CheckSquare, Square } from 'lucide-react';
 import clsx from 'clsx';
 
+/**
+ * Interface que representa um usuário para exibição na lista de seleção.
+ */
 interface User {
     id: number;
     username: string;
     full_name?: string;
-    // Add other fields if necessary
 }
 
+/**
+ * Propriedades do componente de seleção múltipla de usuários.
+ */
 interface MultiSelectUserProps {
-    users: User[];
-    selectedIds: number[];
-    onChange: (ids: number[]) => void;
+    users: User[];                  // Lista total de usuários disponíveis
+    selectedIds: number[];          // IDs dos usuários selecionados atualmente
+    onChange: (ids: number[]) => void; // Função disparada ao alterar a seleção
 }
 
+/**
+ * Componente de Seleção Múltipla de Usuários.
+ * Utilizado em filtros e formulários onde é necessário selecionar vários colaboradores.
+ * Inclui busca por nome real ou username e controles de seleção em massa.
+ */
 export default function MultiSelectUser({ users, selectedIds, onChange }: MultiSelectUserProps) {
     const [searchTerm, setSearchTerm] = useState('');
 
+    // Filtra os usuários com base no termo de busca (busca no nome e no username)
     const filteredUsers = useMemo(() => {
         return users.filter(user =>
             user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -27,6 +38,9 @@ export default function MultiSelectUser({ users, selectedIds, onChange }: MultiS
         );
     }, [users, searchTerm]);
 
+    /**
+     * Alterna a seleção de um usuário individual.
+     */
     const handleToggle = (id: number) => {
         if (selectedIds.includes(id)) {
             onChange(selectedIds.filter(prevId => prevId !== id));
@@ -35,13 +49,19 @@ export default function MultiSelectUser({ users, selectedIds, onChange }: MultiS
         }
     };
 
+    /**
+     * Seleciona todos os usuários visíveis na lista filtrada.
+     */
     const handleSelectAll = () => {
         const visibleIds = filteredUsers.map(u => u.id);
-        // Add visible IDs that aren't already selected
+        // Adiciona IDs visíveis que ainda não estão selecionados
         const newIds = [...selectedIds, ...visibleIds.filter(id => !selectedIds.includes(id))];
         onChange(newIds);
     };
 
+    /**
+     * Desmarca todos os usuários visíveis na lista filtrada.
+     */
     const handleDeselectAll = () => {
         const visibleIds = filteredUsers.map(u => u.id);
         onChange(selectedIds.filter(id => !visibleIds.includes(id)));
@@ -49,7 +69,7 @@ export default function MultiSelectUser({ users, selectedIds, onChange }: MultiS
 
     return (
         <div className="space-y-3">
-            {/* Search and Actions */}
+            {/* Buscador e Ações Globais */}
             <div className="flex flex-col gap-3">
                 <div className="relative">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -64,6 +84,7 @@ export default function MultiSelectUser({ users, selectedIds, onChange }: MultiS
                     />
                 </div>
 
+                {/* Status da Seleção e Ações Rápidas */}
                 <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">
                     <span>{selectedIds.length} Selecionado(s)</span>
                     <div className="flex gap-3">
@@ -85,7 +106,7 @@ export default function MultiSelectUser({ users, selectedIds, onChange }: MultiS
                 </div>
             </div>
 
-            {/* User List */}
+            {/* Lista Rolável de Usuários */}
             <div className="max-h-60 overflow-y-auto custom-scrollbar border border-border-theme rounded-2xl bg-background/20 backdrop-blur-sm p-2 space-y-1">
                 {filteredUsers.length === 0 ? (
                     <div className="p-4 text-center text-muted-foreground text-xs">
@@ -106,6 +127,7 @@ export default function MultiSelectUser({ users, selectedIds, onChange }: MultiS
                                         : "bg-transparent border-transparent hover:bg-white/5 hover:border-border-theme/50"
                                 )}
                             >
+                                {/* Avatar Genérico ou Marcador de Seleção */}
                                 <div className={clsx(
                                     "w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0",
                                     isSelected ? "bg-accent-theme text-white" : "bg-white/10 text-muted-foreground group-hover:bg-white/20"

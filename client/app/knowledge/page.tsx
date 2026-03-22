@@ -213,7 +213,7 @@ export default function KnowledgePage() {
                             <BookOpen className="w-16 h-16 text-accent-theme" />
                         </div>
 
-                        <h2 className="text-xl font-black font-display uppercase tracking-tight italic relative">
+                        <h2 className="text-2xl font-black font-display uppercase tracking-tight italic relative">
                             {editingDocId ? 'Atualizar' : 'Novo'} <span className="text-accent-theme">Documento</span>
                         </h2>
 

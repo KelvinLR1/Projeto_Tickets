@@ -14,63 +14,89 @@ import {
 } from '@/lib/api';
 import { useAuth } from './AuthProvider';
 
+// Tipos de notificações visuais (Toasts)
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 
+/**
+ * Estrutura interna de um objeto Toast (Notificação flutuante temporária).
+ */
 interface Toast {
     id: number;
     message: string;
     type: NotificationType;
 }
 
+/**
+ * Opções para o diálogo de confirmação (Confirm Modal).
+ */
 interface ConfirmOptions {
-    title: string;
-    message: string;
-    confirmText?: string;
-    cancelText?: string;
-    type?: 'danger' | 'info';
+    title: string;          // Título do modal
+    message: string;        // Mensagem explicativa
+    confirmText?: string;   // Texto do botão de confirmação (padrão 'Confirmar')
+    cancelText?: string;    // Texto do botão de cancelamento (padrão 'Cancelar')
+    type?: 'danger' | 'info'; // Estilo visual (danger = vermelho, info = azul)
 }
 
+/**
+ * Definição das funções e estados expostos pelo NotificationProvider.
+ */
 interface NotificationContextType {
-    showNotification: (message: string, type?: NotificationType) => void;
-    confirm: (options: ConfirmOptions) => Promise<boolean>;
-    notifications: ApiNotification[];
-    unreadCount: number;
-    fetchNotifications: () => Promise<void>;
-    markAsRead: (id: number) => Promise<void>;
-    markAsUnread: (id: number) => Promise<void>;
-    deleteNotif: (id: number) => Promise<void>;
-    markAllAsRead: () => Promise<void>;
+    showNotification: (message: string, type?: NotificationType) => void; // Exibe um toast
+    confirm: (options: ConfirmOptions) => Promise<boolean>;              // Abre um modal de confirmação
+    notifications: ApiNotification[];                                     // Lista de notificações persistentes do sistema
+    unreadCount: number;                                                  // Contador de notificações não lidas
+    fetchNotifications: () => Promise<void>;                              // Atualiza a lista via API
+    markAsRead: (id: number) => Promise<void>;                            // Marca uma como lida
+    markAsUnread: (id: number) => Promise<void>;                          // Marca uma como não lida
+    deleteNotif: (id: number) => Promise<void>;                           // Exclui uma notificação
+    markAllAsRead: () => Promise<void>;                                   // Limpa todas as não lidas
 }
 
+// Criação do contexto
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
+/**
+ * Hook customizado para usar notificações e diálogos de confirmação em qualquer lugar.
+ */
 export const useNotification = () => {
     const context = useContext(NotificationContext);
     if (!context) {
-        throw new Error('useNotification must be used within a NotificationProvider');
+        throw new Error('useNotification deve ser usado dentro de um NotificationProvider');
     }
     return context;
 };
 
+/**
+ * Provider global que gerencia Toasts, Modais de Confirmação e as Notificações do sistema (Bell).
+ */
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     const { isAuthenticated } = useAuth();
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [notifications, setNotifications] = useState<ApiNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
+
+    // Estado para gerenciar o modal de confirmação via Promise
     const [confirmDialog, setConfirmDialog] = useState<{
         open: boolean;
         options: ConfirmOptions;
         resolve: (value: boolean) => void;
     } | null>(null);
 
+    /**
+     * Exibe um toast temporário no canto da tela.
+     */
     const showNotification = useCallback((message: string, type: NotificationType = 'info') => {
         const id = Date.now();
         setToasts((prev) => [...prev, { id, message, type }]);
+        // Remove automaticamente após 5 segundos
         setTimeout(() => {
             setToasts((prev) => prev.filter((n) => n.id !== id));
         }, 5000);
     }, []);
 
+    /**
+     * Busca notificações e contagem de não lidas do backend.
+     */
     const fetchNotifications = useCallback(async () => {
         if (!isAuthenticated) return;
         try {
@@ -79,33 +105,42 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
             const countData = await getUnreadNotificationCount();
             setUnreadCount(countData.count);
         } catch (error: any) {
-            // Silencia 401 pois o AuthProvider lida com redirecionamento
+            // Ignora erros 401 (já tratados pelo AuthProvider)
             if (error.response?.status !== 401) {
-                console.error('Failed to fetch notifications:', error);
+                console.error('Falha ao buscar notificações:', error);
             }
         }
     }, [isAuthenticated]);
 
+    /**
+     * Marca uma notificação específica como lida.
+     */
     const markAsRead = useCallback(async (id: number) => {
         try {
             await markNotificationRead(id);
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
             setUnreadCount(prev => Math.max(0, prev - 1));
         } catch (error) {
-            console.error('Failed to mark notification as read:', error);
+            console.error('Erro ao marcar notificação como lida:', error);
         }
     }, []);
 
+    /**
+     * Desfaz a marcação de lida de uma notificação.
+     */
     const markAsUnread = useCallback(async (id: number) => {
         try {
             await markNotificationUnread(id);
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
             setUnreadCount(prev => prev + 1);
         } catch (error) {
-            console.error('Failed to mark notification as unread:', error);
+            console.error('Erro ao marcar notificação como não lida:', error);
         }
     }, []);
 
+    /**
+     * Exclui uma notificação permanente do banco de dados.
+     */
     const deleteNotif = useCallback(async (id: number) => {
         try {
             const notif = notifications.find(n => n.id === id);
@@ -114,24 +149,30 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
             if (notif && !notif.read) {
                 setUnreadCount(prev => Math.max(0, prev - 1));
             }
-            showNotification('Notificação excluída.', 'success');
+            showNotification('Notificação excluída com sucesso.', 'success');
         } catch (error) {
-            console.error('Failed to delete notification:', error);
-            showNotification('Erro ao excluir notificação.', 'error');
+            console.error('Erro ao excluir notificação:', error);
+            showNotification('Ocorreu um erro ao excluir a notificação.', 'error');
         }
     }, [notifications, showNotification]);
 
+    /**
+     * Marca todas as notificações do usuário como lidas simultaneamente.
+     */
     const markAllAsRead = useCallback(async () => {
         try {
             await markAllNotificationsRead();
             setNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setUnreadCount(0);
         } catch (error) {
-            console.error('Failed to mark all as read:', error);
+            console.error('Erro ao marcar tudo como lido:', error);
         }
     }, []);
 
-    // Polling de notificações
+    /**
+     * Efeito de Ciclo de Vida: Mantém as notificações atualizadas via polling.
+     * Limpa o estado caso o usuário deslogue.
+     */
     useEffect(() => {
         if (!isAuthenticated) {
             setNotifications([]);
@@ -144,6 +185,9 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         return () => clearInterval(interval);
     }, [isAuthenticated, fetchNotifications]);
 
+    /**
+     * Abre um modal de confirmação e aguarda a resposta do usuário (true/false).
+     */
     const confirm = useCallback((options: ConfirmOptions) => {
         return new Promise<boolean>((resolve) => {
             setConfirmDialog({
@@ -171,7 +215,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         }}>
             {children}
 
-            {/* Toasts Container */}
+            {/* Container para Toasts (Notificações Flutuantes) */}
             <div className="fixed bottom-8 right-8 z-[100] flex flex-col gap-3 pointer-events-none">
                 {toasts.map((n) => (
                     <div
@@ -201,7 +245,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
                 ))}
             </div>
 
-            {/* Confirmation Modal */}
+            {/* Modal de Confirmação customizado (Premium Dark Design) */}
             {confirmDialog && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-card w-full max-w-sm rounded-3xl border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-foreground">

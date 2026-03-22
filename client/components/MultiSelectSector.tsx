@@ -4,27 +4,42 @@ import React, { useState, useMemo } from 'react';
 import { Search, Check, Layers, CheckSquare, Square } from 'lucide-react';
 import clsx from 'clsx';
 
+/**
+ * Interface que representa um setor do sistema.
+ */
 interface Sector {
     id: number;
     name: string;
     description?: string;
 }
 
+/**
+ * Propriedades do componente de seleção múltipla de setores.
+ */
 interface MultiSelectSectorProps {
-    sectors: Sector[];
-    selectedIds: number[];
-    onChange: (ids: number[]) => void;
+    sectors: Sector[];               // Lista total de setores disponíveis
+    selectedIds: number[];           // IDs dos setores selecionados atualmente
+    onChange: (ids: number[]) => void; // Função disparada ao alterar a seleção
 }
 
+/**
+ * Componente de Seleção Múltipla de Setores.
+ * Fornece uma interface de lista com busca, seleção individual,
+ * e botões de ação rápida para selecionar/desmarcar todos os itens visíveis.
+ */
 export default function MultiSelectSector({ sectors, selectedIds, onChange }: MultiSelectSectorProps) {
     const [searchTerm, setSearchTerm] = useState('');
 
+    // Filtra os setores com base no termo de busca
     const filteredSectors = useMemo(() => {
         return sectors.filter(sector =>
             sector.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [sectors, searchTerm]);
 
+    /**
+     * Alterna a seleção de um setor individual.
+     */
     const handleToggle = (id: number) => {
         if (selectedIds.includes(id)) {
             onChange(selectedIds.filter(prevId => prevId !== id));
@@ -33,12 +48,18 @@ export default function MultiSelectSector({ sectors, selectedIds, onChange }: Mu
         }
     };
 
+    /**
+     * Seleciona todos os setores que estão visíveis após o filtro de busca.
+     */
     const handleSelectAll = () => {
         const visibleIds = filteredSectors.map(s => s.id);
         const newIds = [...selectedIds, ...visibleIds.filter(id => !selectedIds.includes(id))];
         onChange(newIds);
     };
 
+    /**
+     * Desmarca todos os setores que estão visíveis após o filtro de busca.
+     */
     const handleDeselectAll = () => {
         const visibleIds = filteredSectors.map(s => s.id);
         onChange(selectedIds.filter(id => !visibleIds.includes(id)));
@@ -46,7 +67,7 @@ export default function MultiSelectSector({ sectors, selectedIds, onChange }: Mu
 
     return (
         <div className="space-y-3">
-            {/* Search and Actions */}
+            {/* Buscador e Ações de Massa */}
             <div className="flex flex-col gap-3">
                 <div className="relative">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -61,6 +82,7 @@ export default function MultiSelectSector({ sectors, selectedIds, onChange }: Mu
                     />
                 </div>
 
+                {/* Resumo e Controles de Seleção Rápida */}
                 <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">
                     <span>{selectedIds.length} Selecionado(s)</span>
                     <div className="flex gap-3">
@@ -82,7 +104,7 @@ export default function MultiSelectSector({ sectors, selectedIds, onChange }: Mu
                 </div>
             </div>
 
-            {/* Sector List */}
+            {/* Lista Rolável de Setores */}
             <div className="max-h-60 overflow-y-auto custom-scrollbar border border-border-theme rounded-2xl bg-background/20 backdrop-blur-sm p-2 space-y-1">
                 {filteredSectors.length === 0 ? (
                     <div className="p-4 text-center text-muted-foreground text-xs">
@@ -103,6 +125,7 @@ export default function MultiSelectSector({ sectors, selectedIds, onChange }: Mu
                                         : "bg-transparent border-transparent hover:bg-white/5 hover:border-border-theme/50"
                                 )}
                             >
+                                {/* Ícone de Status (Check ou Layers) */}
                                 <div className={clsx(
                                     "w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0",
                                     isSelected ? "bg-accent-theme text-white" : "bg-white/10 text-muted-foreground group-hover:bg-white/20"

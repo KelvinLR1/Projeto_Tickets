@@ -3,12 +3,19 @@
 import React from 'react';
 import clsx from 'clsx';
 
+/**
+ * Componente base para esqueletos de carregamento (Skeletons).
+ * Cria um elemento pulsante para indicar que o conteúdo está sendo baixado.
+ */
 export function Skeleton({ className }: { className?: string }) {
     return (
         <div className={clsx("animate-pulse bg-white/5 rounded-md", className)} />
     );
 }
 
+/**
+ * Esqueleto para uma linha da tabela de chamados (TicketList).
+ */
 export function TicketRowSkeleton() {
     return (
         <tr className="border-b border-border-theme/20 last:border-0 h-[89px]">
@@ -43,15 +50,13 @@ export function TicketRowSkeleton() {
                     </div>
                 </div>
             </td>
-            <td className="px-8 py-6">
-                <div className="flex justify-end">
-                    <Skeleton className="w-8 h-8 rounded-xl" />
-                </div>
-            </td>
         </tr>
     );
 }
 
+/**
+ * Esqueleto para uma coluna do Quadro Kanban.
+ */
 export function KanbanColumnSkeleton() {
     return (
         <div className="flex-shrink-0 w-80 flex flex-col gap-4">
@@ -80,6 +85,10 @@ export function KanbanColumnSkeleton() {
         </div>
     );
 }
+
+/**
+ * Esqueleto para uma linha da tabela de clientes.
+ */
 export function ClientRowSkeleton() {
     return (
         <tr className="border-b border-border-theme/20 last:border-0 h-[89px]">

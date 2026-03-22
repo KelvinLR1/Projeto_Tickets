@@ -30,6 +30,11 @@ import { TimerProvider } from "@/components/TimerProvider";
 import { SystemSettingsProvider } from "@/components/SystemSettingsProvider";
 import AppLayout from "@/components/AppLayout";
 
+/**
+ * Layout Raiz (Global Entry Point).
+ * Define as fontes globais, metadados básicos e a hierarquia de Provedores de Contexto.
+ * A ordem dos provedores é crítica para o funcionamento das dependências (ex: Notification precisa do Auth).
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -41,6 +46,7 @@ export default function RootLayout({
         <script src="/config.js" suppressHydrationWarning></script>
       </head>
       <body>
+        {/* Hierarquia de Provedores: Tema -> Configurações -> Autenticação -> Notificações -> Timer -> Layout */}
         <ThemeProvider>
           <SystemSettingsProvider>
             <AuthProvider>

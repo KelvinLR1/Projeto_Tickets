@@ -7,9 +7,13 @@ import {
 } from 'recharts';
 import FilterBar from './FilterBar';
 import { getDashboardStats, DashboardStats, ReportFilters } from '@/lib/api';
-import { Loader2, Clock, Users, Tag } from 'lucide-react';
+import { Loader2, Clock, Users, Tag, FileText } from 'lucide-react';
 
-// Mapeamento de Cores e Nomenclatura para Prioridades
+/**
+ * Componente de Gráficos do Dashboard.
+ * Utiliza a biblioteca Recharts para visualizar indicadores de performance (KPIs)
+ * e o volume operacional de tickets.
+ */
 const PRIORITY_MAP: Record<string, { label: string, color: string }> = {
     'low': { label: 'Baixa', color: '#10b981' },      // Esmeralda
     'Baixa': { label: 'Baixa', color: '#10b981' },
@@ -23,6 +27,9 @@ const PRIORITY_MAP: Record<string, { label: string, color: string }> = {
 
 const DEFAULT_COLOR = 'var(--color-primary-theme)';
 
+/**
+ * Dicionário para tradução de status vindos do backend.
+ */
 const STATUS_MAP: Record<string, string> = {
     'open': 'Aberto',
     'in_progress': 'Em Andamento',
@@ -32,6 +39,9 @@ const STATUS_MAP: Record<string, string> = {
     'Closed': 'Fechado'
 };
 
+/**
+ * Utilitário para formatar datas ISO (YYYY-MM-DD) para padrão brasileiro (DD/MM/YYYY).
+ */
 const formatDate = (dateStr: string) => {
     try {
         const [year, month, day] = dateStr.split('-');
@@ -42,6 +52,9 @@ const formatDate = (dateStr: string) => {
     }
 };
 
+/**
+ * Componente interno para exibição de estado vazio (quando não há dados para os gráficos).
+ */
 function EmptyState({ message }: { message: string }) {
     return (
         <div className="flex flex-col items-center justify-center h-full space-y-4 animate-in fade-in duration-700">
@@ -55,25 +68,35 @@ function EmptyState({ message }: { message: string }) {
     );
 }
 
+/**
+ * Componente de Card de Estatística (Indicador Rápido).
+ */
 function StatCard({ title, value, icon: Icon, colorClass }: { title: string, value: string | number, icon: any, colorClass: string }) {
     return (
-        <div className="glass-card p-6 rounded-[2rem] border-border-theme flex items-center gap-5 group hover:scale-[1.02] transition-all">
-            <div className={`p-4 rounded-2xl ${colorClass} group-hover:scale-110 transition-transform`}>
-                <Icon className="w-6 h-6" />
+        <div className="glass-card p-4 xl:p-6 rounded-2xl xl:rounded-[2rem] border-border-theme flex items-center gap-3 xl:gap-5 group hover:scale-[1.02] transition-all overflow-hidden">
+            <div className={`p-3 xl:p-4 rounded-xl xl:rounded-2xl ${colorClass} group-hover:scale-110 transition-transform shrink-0`}>
+                <Icon className="w-5 h-5 xl:w-6 xl:h-6" />
             </div>
-            <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1">{title}</p>
-                <p className="text-2xl font-black italic">{value}</p>
+            <div className="min-w-0 pr-1">
+                <p className="text-[0.625rem] font-black italic uppercase tracking-[-0.05em] text-[var(--color-text-muted)] mb-1 truncate">{title}</p>
+                <p className="text-xl xl:text-2xl font-black italic truncate">{value}</p>
             </div>
         </div>
     );
 }
 
+/**
+ * Componente Principal de Gráficos do Dashboard.
+ * Gerencia a busca de dados estatísticos do servidor e renderiza visualizações em Recharts.
+ */
 export default function DashboardCharts() {
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [filtering, setFiltering] = useState(false);
 
+    /**
+     * Busca as estatísticas do dashboard aplicando filtros opcionais.
+     */
     const fetchStats = async (filters: ReportFilters = {}) => {
         setFiltering(true);
         try {
@@ -87,16 +110,19 @@ export default function DashboardCharts() {
         }
     };
 
+    // Carregamento inicial ao montar o componente
     useEffect(() => {
         fetchStats();
     }, []);
 
+    // Exibe spinner centralizado durante o carregamento inicial dos dados
     if (loading) return (
         <div className="flex items-center justify-center h-64 bg-card rounded-[2.5rem] border border-border-theme p-8">
             <Loader2 className="animate-spin w-8 h-8 text-accent-theme" />
         </div>
     );
 
+    // Fallback caso a API não retorne dados ou ocorra erro crítico
     if (!stats) return (
         <div className="glass-card p-12 rounded-[2.5rem] border-border-theme text-center">
             <p className="text-[var(--color-text-muted)] uppercase font-black text-xs tracking-widest">
@@ -105,11 +131,14 @@ export default function DashboardCharts() {
         </div>
     );
 
-    // Formatação de dados para Recharts
+    /**
+     * Prepara os dados brutos do backend para o formato exigido pelo Recharts.
+     */
     const statusData = Object.entries(stats.summary.by_status || {}).map(([name, value]) => ({
         name: STATUS_MAP[name] || name,
         value
     }));
+
     const priorityData = Object.entries(stats.summary.by_priority || {}).map(([name, value]) => {
         const mapping = PRIORITY_MAP[name] || { label: name, color: DEFAULT_COLOR };
         return {
@@ -118,6 +147,8 @@ export default function DashboardCharts() {
             fill: mapping.color
         };
     });
+
+    // Transforma dados de data para o padrão de área (DD/MM/YYYY) ordenado cronologicamente
     const dateData = Object.entries(stats.summary.by_date || {})
         .map(([date, count]) => ({
             originalDate: date,
@@ -126,24 +157,27 @@ export default function DashboardCharts() {
         }))
         .sort((a, b) => a.originalDate.localeCompare(b.originalDate));
 
-    // Métricas formatadas
+    // Formatação de Métricas de Tempo e Volume
     const avgSeconds = stats.summary.avg_attendance_time || 0;
     const avgTimeFormatted = avgSeconds > 0
         ? `${Math.floor(avgSeconds / 3600)}h ${Math.floor((avgSeconds % 3600) / 60)}m`
         : "0m";
 
+    const totalTickets = Object.values(stats.summary.by_status || {}).reduce((a, b: any) => a + b, 0);
     const topClients = stats.summary.by_client || [];
     const topCategories = stats.summary.by_category || [];
 
+    // Verificadores de Dados Vazios para exibição condicional
     const isStatusEmpty = statusData.length === 0 || statusData.every(d => d.value === 0);
     const isPriorityEmpty = priorityData.length === 0 || priorityData.every(d => d.value === 0);
     const isDateEmpty = dateData.length === 0 || dateData.every(d => d.count === 0);
 
     return (
         <div className="space-y-8">
+            {/* Barra de Filtros (Top) */}
             <FilterBar onFilter={fetchStats} isLoading={filtering} />
 
-            {/* Quick Indicators */}
+            {/* Grid de Indicadores Rápidos (Cards numéricos) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatCard
                     title="Tempo Médio de Atendimento"
@@ -158,17 +192,17 @@ export default function DashboardCharts() {
                     colorClass="bg-blue-500/10 text-blue-500"
                 />
                 <StatCard
-                    title="Categorias Ativas"
-                    value={topCategories.length}
-                    icon={Tag}
-                    colorClass="bg-emerald-500/10 text-emerald-500"
+                    title="Total de Chamados"
+                    value={totalTickets}
+                    icon={FileText}
+                    colorClass="bg-purple-500/10 text-purple-500"
                 />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Gráfico de Status */}
+                {/* Gráfico de Barras: Distribuição por Status */}
                 <div className="glass-card p-8 rounded-[2.5rem] transition-all border-border-theme">
-                    <h3 className="text-lg font-bold mb-8 text-foreground opacity-90 font-display uppercase tracking-tight">Tickets por Status</h3>
+                    <h3 className="text-lg font-black italic mb-8 text-foreground opacity-90 font-display uppercase tracking-[-0.05em]">Tickets por Status</h3>
                     <div className="h-64">
                         {isStatusEmpty ? (
                             <EmptyState message="Ainda não há chamados para exibir indicadores por status." />
@@ -198,6 +232,7 @@ export default function DashboardCharts() {
                                         cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                                         formatter={(value: any) => [`${value} Chamados`, 'Quantidade']}
                                     />
+                                    {/* Barra com bordas arredondadas e cor primária do tema */}
                                     <Bar dataKey="value" fill="var(--color-primary-theme)" radius={[8, 8, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
@@ -205,21 +240,21 @@ export default function DashboardCharts() {
                     </div>
                 </div>
 
-                {/* Gráfico de Prioridade */}
+                {/* Gráfico Donut: Distribuição por Prioridade */}
                 <div className="glass-card p-8 rounded-[2.5rem] transition-all border-border-theme">
-                    <h3 className="text-lg font-bold mb-8 text-foreground opacity-90 font-display uppercase tracking-tight">Tickets por Prioridade</h3>
+                    <h3 className="text-lg font-black italic mb-8 text-foreground opacity-90 font-display uppercase tracking-[-0.05em]">Tickets por Prioridade</h3>
                     <div className="h-64">
                         {isPriorityEmpty ? (
                             <EmptyState message="Defina prioridades nos seus tickets para visualizar este gráfico." />
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
+                                <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
                                     <Pie
                                         data={priorityData}
                                         cx="50%"
                                         cy="50%"
                                         labelLine={false}
-                                        outerRadius={80}
+                                        outerRadius={70}
                                         innerRadius={60}
                                         fill="#8884d8"
                                         dataKey="value"
@@ -256,9 +291,9 @@ export default function DashboardCharts() {
                     </div>
                 </div>
 
-                {/* Evolução Temporal */}
+                {/* Gráfico de Área: Evolução Temporal do Volume de Chamados */}
                 <div className="glass-card p-10 rounded-[2.5rem] md:col-span-2 transition-all border-border-theme relative overflow-hidden group">
-                    <h3 className="text-lg font-bold mb-10 text-foreground opacity-90 font-display flex items-center gap-3 relative z-10 uppercase tracking-tight">
+                    <h3 className="text-lg font-black italic mb-10 text-foreground opacity-90 font-display flex items-center gap-3 relative z-10 uppercase tracking-[-0.05em]">
                         <div className="w-1.5 h-6 bg-accent-theme rounded-full" />
                         Volume de Chamados por Dia
                     </h3>
@@ -270,6 +305,7 @@ export default function DashboardCharts() {
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={dateData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
                                     <defs>
+                                        {/* Gradientes e Filtros de Brilho para estética premium do gráfico de área */}
                                         <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="var(--color-accent-theme)" stopOpacity={0.3} />
                                             <stop offset="95%" stopColor="var(--color-accent-theme)" stopOpacity={0} />

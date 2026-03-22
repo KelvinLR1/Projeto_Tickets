@@ -17,10 +17,16 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
+/**
+ * Componente de Navegação Superior (Navbar).
+ * Utilizado principalmente em telas que não usam a Sidebar (como a de Monitor) 
+ * ou como navegação secundária em telas menores.
+ */
 export default function Navbar() {
     const pathname = usePathname();
     const { systemName, logoUrlOnAccent } = useSystemSettings();
 
+    // Itens de navegação da Navbar (pode diferir da Sidebar)
     const navItems = [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { name: 'Relatórios', href: '/reports', icon: BarChart3 },
@@ -35,7 +41,8 @@ export default function Navbar() {
         <nav className="sticky top-0 z-50 w-full border-b border-border-theme bg-background/50 backdrop-blur-md">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between h-16 items-center">
-                    {/* Logo / Brand */}
+
+                    {/* Logo / Identidade Visual */}
                     <Link href="/" className="flex items-center gap-2 group">
                         <div className="bg-accent-theme p-1.5 rounded-lg group-hover:brightness-110 transition-all w-8 h-8 flex items-center justify-center overflow-hidden">
                             {logoUrlOnAccent ? (
@@ -53,7 +60,7 @@ export default function Navbar() {
                         </span>
                     </Link>
 
-                    {/* Desktop Navigation */}
+                    {/* Navegação Desktop: Links horizontais */}
                     <div className="hidden md:flex items-center gap-1">
                         {navItems.map((item) => {
                             const Icon = item.icon;
@@ -76,7 +83,7 @@ export default function Navbar() {
                         })}
                     </div>
 
-                    {/* Action Button */}
+                    {/* Botão de Ação Rápida: Novo Ticket */}
                     <div className="flex items-center gap-4">
                         <Link
                             href="/tickets/new"

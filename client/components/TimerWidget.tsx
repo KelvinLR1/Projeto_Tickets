@@ -7,16 +7,24 @@ import { useAuth } from './AuthProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 
+/**
+ * Componente do Widget de Cronômetro (Floating / Picture-in-Picture).
+ * Exibe os atendimentos (tickets) que o usuário está monitorando ou trabalhando no momento.
+ */
 const TimerWidget: React.FC = () => {
     const { activeTimers, trackedTickets, handleStartTimer, handleStopTimer, removeFromWidget } = useTimer();
     const { user } = useAuth();
     const [currentTime, setCurrentTime] = useState(new Date());
 
+    // Atualiza o relógio interno a cada segundo para manter o contador fluido
     useEffect(() => {
         const interval = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(interval);
     }, []);
 
+    /**
+     * Formata segundos em string legível (ex: 2h 05m 10s).
+     */
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -24,11 +32,16 @@ const TimerWidget: React.FC = () => {
         return `${h > 0 ? h + 'h ' : ''}${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
     };
 
+    /**
+     * Calcula o tempo total de exibição do ticket, somando o tempo acumulado 
+     * com o tempo decorrido no cronômetro ativo (se houver).
+     */
     const getTicketDisplayTime = (ticket: any) => {
         const activeTimer = activeTimers.find(t => t.ticket_id === ticket.id);
         const sessionBase = ticket.session_duration || 0;
 
         if (activeTimer) {
+            // Garante formato ISO Z para compatibilidade de fuso horário
             const dateStr = activeTimer.start_time.endsWith('Z') ? activeTimer.start_time : activeTimer.start_time + 'Z';
             const start = new Date(dateStr).getTime();
             const elapsedSinceStart = Math.max(0, Math.floor((currentTime.getTime() - start) / 1000));
@@ -40,19 +53,22 @@ const TimerWidget: React.FC = () => {
 
     return (
         <div className="h-full bg-background text-foreground p-5 font-sans select-none overflow-hidden flex flex-col transition-colors duration-500">
+
+            {/* Cabeçalho do Widget */}
             <div className="flex items-center justify-between mb-6 border-b border-border-theme pb-4 shrink-0">
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-accent-theme animate-pulse" />
-                    <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme">Atendimentos Ativos</h2>
+                    <span className="!text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme whitespace-nowrap">Atendimentos Ativos</span>
                 </div>
                 <Clock className="w-4 h-4 opacity-20" />
             </div>
 
+            {/* Lista de Tickets Rastreados */}
             <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2 -mr-2 pb-6">
                 {trackedTickets.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-48 opacity-30 text-center">
                         <Clock className="w-12 h-12 mb-2 stroke-[1px]" />
-                        <p className="text-[10px] font-bold uppercase tracking-widest">Nenhum ticket rastreado</p>
+                        <p className="!text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Nenhum ticket rastreado</p>
                     </div>
                 ) : (
                     <AnimatePresence initial={false}>
@@ -74,15 +90,16 @@ const TimerWidget: React.FC = () => {
                                     }}
                                     className="glass-card p-4 rounded-2xl border border-border-theme bg-card/40 hover:bg-card/60 transition-colors group relative"
                                 >
+                                    {/* Info do Ticket e Tempo */}
                                     <div className="flex items-start justify-between gap-3 mb-4">
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-[8px] font-black text-accent-theme/60 uppercase tracking-tighter mb-1">
+                                            <p className="!text-[8px] font-black text-accent-theme/60 uppercase tracking-tighter mb-1 whitespace-nowrap">
                                                 Ticket {ticket.id}
                                             </p>
                                             <h3 className="text-xs font-bold truncate leading-tight mb-1 text-foreground">
                                                 {ticket.title}
                                             </h3>
-                                            <p className="text-[9px] font-bold text-[var(--color-text-muted)] truncate opacity-60">
+                                            <p className="!text-[9px] font-bold text-[var(--color-text-muted)] truncate opacity-60">
                                                 {ticket.clientName}
                                             </p>
                                         </div>
@@ -96,6 +113,7 @@ const TimerWidget: React.FC = () => {
                                         </div>
                                     </div>
 
+                                    {/* Ações: Play/Pause/Stop */}
                                     <div className="flex items-center gap-2">
                                         {isActive ? (
                                             <button
@@ -133,10 +151,11 @@ const TimerWidget: React.FC = () => {
                 )}
             </div>
 
+            {/* Rodapé do Widget */}
             <div className="mt-4 pt-4 border-t border-border-theme flex items-center justify-between opacity-30 shrink-0">
-                <p className="text-[8px] font-bold uppercase tracking-widest italic">TicketFlow OS</p>
+                <p className="!text-[8px] font-bold uppercase tracking-widest italic whitespace-nowrap">TicketFlow OS</p>
                 <div className="flex items-center gap-2 text-[8px] font-black">
-                    {activeTimers.length > 0 && <span className="animate-pulse text-accent-theme uppercase">Live Session</span>}
+                    {activeTimers.length > 0 && <span className="animate-pulse text-accent-theme uppercase">Sessão Ativa</span>}
                     <ChevronRight className="w-2 h-2" />
                 </div>
             </div>

@@ -1,7 +1,12 @@
-# Notification CRUD functions
+# Funções CRUD para gerenciamento de notificações do sistema
+from sqlalchemy.orm import Session
+import models, schemas
 
 def get_notifications(db: Session, user_id: int, skip: int = 0, limit: int = 50):
-    """Get notifications for a user with creator username"""
+    """
+    Busca notificações de um usuário específico, incluindo o nome de quem a criou.
+    Ordena pelas mais recentes.
+    """
     notifications = db.query(models.Notification).filter(
         models.Notification.user_id == user_id
     ).order_by(models.Notification.created_at.desc()).offset(skip).limit(limit).all()
@@ -26,14 +31,14 @@ def get_notifications(db: Session, user_id: int, skip: int = 0, limit: int = 50)
     return result
 
 def get_unread_notification_count(db: Session, user_id: int):
-    """Count unread notifications for a user"""
+    """Conta quantas notificações não lidas o usuário possui."""
     return db.query(models.Notification).filter(
         models.Notification.user_id == user_id,
         models.Notification.read == False
     ).count()
 
 def mark_notification_as_read(db: Session, notification_id: int, user_id: int):
-    """Mark a specific notification as read"""
+    """Marca uma notificação específica como lida."""
     notification = db.query(models.Notification).filter(
         models.Notification.id == notification_id,
         models.Notification.user_id == user_id
@@ -47,7 +52,7 @@ def mark_notification_as_read(db: Session, notification_id: int, user_id: int):
     return notification
 
 def mark_all_notifications_as_read(db: Session, user_id: int):
-    """Mark all notifications for a user as read"""
+    """Marca TODAS as notificações de um usuário como lidas."""
     db.query(models.Notification).filter(
         models.Notification.user_id == user_id,
         models.Notification.read == False
@@ -55,7 +60,7 @@ def mark_all_notifications_as_read(db: Session, user_id: int):
     db.commit()
 
 def create_notification(db: Session, notification: schemas.NotificationCreate):
-    """Create a new notification"""
+    """Cria uma nova notificação simples no banco de dados."""
     db_notification = models.Notification(**notification.dict())
     db.add(db_notification)
     db.commit()
@@ -63,7 +68,10 @@ def create_notification(db: Session, notification: schemas.NotificationCreate):
     return db_notification
 
 def send_user_notification(db: Session, sender_id: int, data: schemas.NotificationSend):
-    """Send a notification from one user to another (or multiple)"""
+    """
+    Envia uma notificação de um usuário para um ou mais destinatários (IDs individuais ou setores).
+    Gera links automáticos se um ticket_id for fornecido.
+    """
     
     target_user_ids = set()
 

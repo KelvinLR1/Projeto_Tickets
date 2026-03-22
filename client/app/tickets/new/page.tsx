@@ -11,7 +11,16 @@ import CustomSelect from '@/components/CustomSelect';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
 
+/**
+ * Página de Criação de Novo Chamado (Ticket).
+ * Oferece uma interface premium para registrar incidentes, incluindo:
+ * - Assistente IA (Ollama) para extração automática de dados de logs/imagens.
+ * - Busca preditiva de clientes por CPF/CNPJ ou Nome.
+ * - Filtros dinâmicos de categoria e atendente baseados no setor selecionado.
+ * - Suporte a Markdown e anexos de imagem na descrição técnica.
+ */
 export default function NewTicket() {
     const router = useRouter();
     const { showNotification } = useNotification();
@@ -39,6 +48,7 @@ export default function NewTicket() {
     };
 
     React.useEffect(() => {
+        // Carrega configurações do sistema (ex: modelos de IA) do localStorage
         const localConfig = localStorage.getItem('system_config');
         if (localConfig) {
             setConfig(JSON.parse(localConfig));
@@ -89,6 +99,9 @@ export default function NewTicket() {
         }
     };
 
+    /**
+     * Busca os atendentes (técnicos) disponíveis, opcionalmente filtrados por setor.
+     */
     const loadAttendants = async (sectorId?: number) => {
         try {
             const getAtts = await import('@/lib/api').then(m => m.getAttendants);
@@ -110,6 +123,9 @@ export default function NewTicket() {
         assigned_user_id: undefined as number | undefined
     });
 
+    /**
+     * Função principal de persistência: envia os dados do formulário para a API.
+     */
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.client_name) {
@@ -154,13 +170,16 @@ export default function NewTicket() {
         }
     };
 
+    /**
+     * Faz o upload de uma imagem e a insere como Markdown na descrição técnica.
+     */
     const handleDescriptionImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !file.type.startsWith('image/')) return;
 
         setUploadingImage(true);
         try {
-            // Usando a porta correta 8080 configurada anteriormente
+            // Upload para o servidor de arquivos estáticos
             const formDataUpload = new FormData();
             formDataUpload.append('file', file);
             const response = await axios.post('http://localhost:8080/upload/', formDataUpload);
@@ -176,7 +195,7 @@ export default function NewTicket() {
                 const newVal = val.substring(0, start) + markdownImage + val.substring(end);
                 setFormData({ ...formData, description: newVal });
 
-                // Dar foco de volta e posicionar cursor após a imagem no próximo render
+                // Retorna foco e posiciona cursor após a imagem
                 setTimeout(() => {
                     textarea.focus();
                     const newPos = start + markdownImage.length;
@@ -196,6 +215,10 @@ export default function NewTicket() {
         }
     };
 
+    /**
+     * Utiliza a IA (Ollama) para extrair Título, Descrição, Prioridade e Categoria
+     * a partir de um log de chat ou de uma imagem de erro.
+     */
     const generateWithAI = async () => {
         if (!aiInput.trim() && !aiImage) {
             showNotification('Forneça um histórico de conversa ou uma imagem do erro.', 'info');
@@ -238,7 +261,7 @@ Note: Be concise in the title and detailed in the description.`;
                     description: extractedText
                 });
             }
-            closeAiModal(); // Fecha o modal com animação após preencher
+            closeAiModal(); // Fecha o modal com animação após sucesso
         } catch (error) {
             console.error(error);
             showNotification('IA falhou na extração. Tente digitar manualmente.', 'error');
@@ -266,6 +289,9 @@ Note: Be concise in the title and detailed in the description.`;
         setShowClientResults(false);
     };
 
+    /**
+     * Lida com a mudança no campo de busca de cliente (Busca preditiva).
+     */
     const handleSearchChange = (val: string) => {
         setSearchTerm(val);
         setFormData({ ...formData, client_name: val });
@@ -281,7 +307,13 @@ Note: Be concise in the title and detailed in the description.`;
     };
 
     return (
-        <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
+        <motion.main 
+            initial={{ opacity: 0, y: 15 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -15 }} 
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="min-h-screen p-8 bg-background text-foreground transition-all duration-500"
+        >
             <div className="max-w-7xl mx-auto space-y-12">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
@@ -310,8 +342,8 @@ Note: Be concise in the title and detailed in the description.`;
                     </button>
                 </div>
 
-                {/* Grid Principal: 70/30 */}
-                <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_0.7fr] gap-10">
+                {/* Grid Principal do Formulário: 1.3 colunas para o form, 0.7 colunas para o perfil do cliente */}
+                <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_0.7fr] gap-10 items-stretch">
 
                     {/* Modal Overlay: Assistente IA */}
                     {(isAiActive || isClosingModal) && (
@@ -607,76 +639,80 @@ Note: Be concise in the title and detailed in the description.`;
                         </div>
                     </form>
 
-                    {/* Coluna 2: Status/Infos do Cliente */}
-                    <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
-                        {selectedClient ? (
-                            <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-2xl space-y-8 relative overflow-hidden">
-                                <div className="flex flex-col items-center text-center gap-4">
-                                    <div className="w-24 h-24 rounded-[2rem] bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-3xl font-black font-display text-accent-theme shadow-inner">
-                                        {selectedClient.name.charAt(0).toUpperCase()}
+                    <div className="flex flex-col animate-in slide-in-from-right-8 duration-500">
+                        <AnimatePresence mode="wait">
+                            {selectedClient ? (
+                                <motion.div
+                                    key="client-info"
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -20 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="glass-card p-10 rounded-[2.5rem] border border-border-theme shadow-2xl space-y-8 relative overflow-hidden h-full"
+                                >
+                                    <div className="flex flex-col items-center text-center gap-4">
+                                        <div className="w-24 h-24 rounded-[2rem] bg-accent-theme/10 border border-accent-theme/20 flex items-center justify-center text-3xl font-black font-display text-accent-theme shadow-inner">
+                                            {selectedClient.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-black font-display uppercase italic">{selectedClient.name}</h3>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4 pt-6 border-t border-white/5">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-white/5 rounded-xl text-[var(--color-text-muted)]">
+                                                <Mail className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">E-mail</div>
+                                                <div className="text-xs font-bold text-foreground">{selectedClient.email}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-white/5 rounded-xl text-[var(--color-text-muted)]">
+                                                <CheckCircle2 className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">CPF / CNPJ</div>
+                                                <div className="text-xs font-bold font-mono text-accent-theme">{selectedClient.cpf_cnpj || 'Não Informado'}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-white/5 rounded-xl text-[var(--color-text-muted)]">
+                                                <Phone className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Telefone</div>
+                                                <div className="text-xs font-bold text-foreground">{selectedClient.phone || 'Nenhum contato'}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <motion.div
+                                    key="placeholder"
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.95 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="glass-card p-10 rounded-[2.5rem] border border-border-theme border-dashed bg-background/20 flex flex-col items-center justify-center text-center gap-4 h-full min-h-[400px]"
+                                >
+                                    <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center text-[var(--color-text-muted)] opacity-30">
+                                        <User className="w-10 h-10" />
                                     </div>
                                     <div>
-                                        <h3 className="text-xl font-black font-display uppercase italic">{selectedClient.name}</h3>
-                                        <p className="text-[10px] font-bold text-accent-theme uppercase tracking-[0.2em] mt-1">Parceiro VIP</p>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Aguardando Seleção</p>
+                                        <p className="text-[9px] font-medium text-[var(--color-text-muted)]/50 uppercase mt-2 max-w-[180px]">Selecione um cliente para visualizar o perfil técnico aqui.</p>
                                     </div>
-                                </div>
-
-                                <div className="space-y-4 pt-6 border-t border-white/5">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-white/5 rounded-xl text-[var(--color-text-muted)]">
-                                            <Mail className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                            <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">E-mail</div>
-                                            <div className="text-xs font-bold text-foreground">{selectedClient.email}</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-white/5 rounded-xl text-[var(--color-text-muted)]">
-                                            <CheckCircle2 className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                            <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">CPF / CNPJ</div>
-                                            <div className="text-xs font-bold font-mono text-accent-theme">{selectedClient.cpf_cnpj || 'Não Informado'}</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-white/5 rounded-xl text-[var(--color-text-muted)]">
-                                            <Phone className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                            <div className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Telefone</div>
-                                            <div className="text-xs font-bold text-foreground">{selectedClient.phone || 'Nenhum contato'}</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="p-6 bg-accent-theme/5 border border-accent-theme/10 rounded-3xl">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className="w-2 h-2 bg-accent-theme animate-pulse rounded-full" />
-                                        <span className="text-[9px] font-black uppercase tracking-widest text-accent-theme">Snapshot de Suporte</span>
-                                    </div>
-                                    <p className="text-[10px] text-[var(--color-text-muted)] font-medium leading-relaxed italic">
-                                        "Este cliente possui 3 chamados ativos. Recomendamos atenção prioritária."
-                                    </p>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="glass-card p-10 rounded-[2.5rem] border border-border-theme border-dashed bg-background/20 flex flex-col items-center justify-center text-center gap-4 h-full min-h-[400px]">
-                                <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center text-[var(--color-text-muted)] opacity-30">
-                                    <User className="w-10 h-10" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Aguardando Seleção</p>
-                                    <p className="text-[9px] font-medium text-[var(--color-text-muted)]/50 uppercase mt-2 max-w-[180px]">Selecione um cliente para visualizar o perfil técnico aqui.</p>
-                                </div>
-                            </div>
-                        )}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
             </div>
-        </main>
+        </motion.main>
     );
 }

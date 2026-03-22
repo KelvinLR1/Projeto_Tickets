@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getTicket, Ticket, getCategories, Category, getClients, getClient, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector, followTicket, unfollowTicket, getTicketTimerStats, StatusTimeGroup } from '@/lib/api';
+import { getTicket, Ticket, getCategories, Category, getClients, getClient, Client, getTickets, getStatuses, Status, updateTicket, getTicketHistory, TicketHistory, getAttendants, uploadFile, getSectors, Sector, followTicket, unfollowTicket, getTicketTimerStats, StatusTimeGroup, getCatalogItems, CatalogItem } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users, MapPin, Phone, Mail, Package, CreditCard, Building2, Globe } from 'lucide-react';
+import { Loader2, ArrowLeft, Clock, AlertCircle, CheckCircle, User, Tag, Calendar, Paperclip, MessageSquare, ShieldCheck, ChevronDown, History, Info, Send, UserPlus, Briefcase, Plus, Image as ImageIcon, FileText, X, PlayCircle, Download, ZoomIn, Users, MapPin, Phone, Mail, Package, CreditCard, Building2, Globe, Pencil } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import Link from 'next/link';
@@ -17,6 +17,16 @@ import { useTimer } from '@/components/TimerProvider';
 import { useAuth } from '@/components/AuthProvider';
 import { Flag, Play, Pause } from 'lucide-react';
 
+/**
+ * Página de Detalhes do Ticket.
+ * Esta é uma das páginas mais complexas do sistema, gerenciando:
+ * - Exibição completa dos dados do ticket.
+ * - Edição rápida de Status, Prioridade, Categoria e Setor.
+ * - Histórico de alterações e auditoria.
+ * - Estatísticas de tempo por status (Timer).
+ * - Transferência de responsabilidade e acompanhamento (Followers).
+ * - Adição de novas informações e anexos à descrição.
+ */
 export default function TicketDetailsPage() {
     const params = useParams();
     const router = useRouter();
@@ -59,10 +69,16 @@ export default function TicketDetailsPage() {
     const [loadingAttendants, setLoadingAttendants] = useState(false);
     const [isAddFollowerModalOpen, setIsAddFollowerModalOpen] = useState(false);
     const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+    const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
     const canManage = ticket?.assigned_user_id === user?.id || user?.role === 'ADMIN' || user?.role === 'ROOT';
     const [selectedUserId, setSelectedUserId] = useState<string>('');
+    // Referência para o campo de texto do modal de nova informação
     const infoDescriptionRef = React.useRef<HTMLTextAreaElement>(null);
 
+    /**
+     * Efeito para buscar atendentes dinamicamente quando o modal de transferência é aberto
+     * ou quando o setor de destino é alterado.
+     */
     useEffect(() => {
         if (isTransferModalOpen) {
             const fetchFilteredAttendants = async () => {
@@ -92,6 +108,9 @@ export default function TicketDetailsPage() {
         }
     }, [params.id]);
 
+    /**
+     * Formata segundos em string HH:MM:SS para exibição nas estatísticas de tempo.
+     */
     const formatDuration = (seconds: number) => {
         const hrs = Math.floor(seconds / 3600);
         const mins = Math.floor((seconds % 3600) / 60);
@@ -99,6 +118,9 @@ export default function TicketDetailsPage() {
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
+    /**
+     * Busca o histórico de alterações do ticket.
+     */
     const fetchHistory = async () => {
         setLoadingHistory(true);
         try {
@@ -128,19 +150,25 @@ export default function TicketDetailsPage() {
         if (activeTab === 'timer') fetchTimerStats();
     }, [activeTab]);
 
+    /**
+     * Função principal de carregamento de dados da página.
+     * Busca o ticket, status, categorias e setores, tratando as dependências entre eles.
+     */
     const loadData = async (silent = false) => {
         if (!silent) setLoading(true);
         try {
             const ticketId = parseInt(params.id as string);
 
-            const [ticketData, statusesRaw, categoriesRaw, sectorsData] = await Promise.all([
+            const [ticketData, statusesRaw, categoriesRaw, sectorsData, catalogItemsRaw] = await Promise.all([
                 getTicket(ticketId),
                 getStatuses(),
                 getCategories(),
-                getSectors()
+                getSectors(),
+                getCatalogItems()
             ]);
 
             setSectors(sectorsData);
+            setCatalogItems(catalogItemsRaw.filter((item: any) => item.is_active));
 
             // Se o ticket tem setor, busca status e categorias específicos
             let statusesData = statusesRaw;
@@ -290,13 +318,16 @@ export default function TicketDetailsPage() {
         }
     };
 
+    /**
+     * Permite que o usuário atual se torne o responsável pelo ticket (Auto-atribuição).
+     */
     const handleSelfAssignment = async () => {
         if (!user || !ticket) return;
         setPerformingAction(true);
         try {
             await updateTicket(ticket.id, { assigned_user_id: user.id });
             showNotification("Ticket atribuído a você com sucesso!", "success");
-            await loadData(); // Refresh ticket and history
+            await loadData(); // Atualiza os dados do ticket e o histórico
         } catch (error) {
             showNotification("Erro ao se vincular ao ticket.", "error");
         } finally {
@@ -334,6 +365,9 @@ export default function TicketDetailsPage() {
         setIsClosingClientModal(true);
     };
 
+    /**
+     * Altera o status do ticket e registra no histórico.
+     */
     const handleStatusChange = async (newStatusId: string) => {
         if (!ticket) return;
 
@@ -366,6 +400,9 @@ export default function TicketDetailsPage() {
         }
     };
 
+    /**
+     * Altera a prioridade do ticket.
+     */
     const handlePriorityChange = async (newPriority: string) => {
         if (!ticket) return;
 
@@ -428,6 +465,10 @@ export default function TicketDetailsPage() {
         }
     };
 
+    /**
+     * Altera o setor do ticket. Isso pode resetar a categoria se a nova
+     * categoria não for compatível com o novo setor.
+     */
     const handleSectorChange = async (newSectorId: string) => {
         if (!ticket) return;
 
@@ -436,11 +477,11 @@ export default function TicketDetailsPage() {
         try {
             await updateTicket(ticket.id, {
                 sector_id: sId,
-                category_id: undefined // Reset category when sector changes as it might not be compatible
+                category_id: undefined // Reseta a categoria se o setor mudar para evitar incompatibilidades
             });
 
             showNotification('Setor atualizado com sucesso!', 'success');
-            await loadData(true); // Silent reload to get correct categories/statuses
+            await loadData(true); // Recarregamento silencioso para atualizar categorias/status permitidos
         } catch (error) {
             console.error(error);
             showNotification('Erro ao atualizar setor', 'error');
@@ -450,6 +491,9 @@ export default function TicketDetailsPage() {
         }
     };
 
+    /**
+     * Marca o ticket como concluído, procurando automaticamente o status adequado no fluxo.
+     */
     const handleCloseTicket = async () => {
         if (!ticket) return;
 
@@ -530,6 +574,9 @@ export default function TicketDetailsPage() {
         }
     };
 
+    /**
+     * Adiciona uma nova interação/intervenção à descrição do ticket (Sistema "Legacy" de Timeline).
+     */
     const handleAddInfo = async () => {
         if (!ticket || !newInfoContent.trim()) return;
 
@@ -555,6 +602,9 @@ export default function TicketDetailsPage() {
         }
     };
 
+    /**
+     * Transfere o ticket para outro atendente e/ou setor.
+     */
     const handleTransferTicket = async () => {
         if (!ticket || !targetAttendantId) return;
 
@@ -654,7 +704,12 @@ export default function TicketDetailsPage() {
     }
 
     return (
-        <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
+        <motion.main 
+            initial={{ opacity: 0, y: 15 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="min-h-screen p-8 bg-background text-foreground transition-all duration-500"
+        >
             <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
                 {/* Top Navigation */}
@@ -713,7 +768,11 @@ export default function TicketDetailsPage() {
                                 <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
                             </div>
                             <h1 className="text-4xl md:text-5xl font-black font-display tracking-tight uppercase italic leading-tight max-w-full break-words">
-                                {ticket.title}
+                                {ticket.title.split(' ').length > 1 ? (
+                                    <>
+                                        {ticket.title.split(' ').slice(0, -1).join(' ')} <span className="text-accent-theme">{ticket.title.split(' ').slice(-1)}</span>
+                                    </>
+                                ) : ticket.title}
                             </h1>
                         </div>
 
@@ -790,10 +849,11 @@ export default function TicketDetailsPage() {
                     </div>
                 </div>
 
+                {/* Área principal com Grid de 3 colunas (2 para conteúdo, 1 para barra lateral) */}
                 <motion.div layout className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
-                    {/* Description Area */}
+                    {/* Área da Descrição e Abas (Lado Esquerdo) */}
                     <motion.div layout className="lg:col-span-2 flex flex-col gap-6 h-[1px] min-h-full">
-                        {/* Tabs Switcher */}
+                        {/* Seletor de Abas (Tabs Switcher) */}
                         <div className="flex p-1.5 bg-background/40 backdrop-blur-xl border border-border-theme/30 rounded-[2rem] w-fit relative">
                             <button
                                 onClick={() => setActiveTab('details')}
@@ -825,14 +885,6 @@ export default function TicketDetailsPage() {
                             >
                                 <History className="w-4 h-4" />
                                 Histórico
-                                {history.length > 0 && (
-                                    <span className={clsx(
-                                        "px-1.5 py-0.5 rounded-md text-[8px] ml-1 transition-colors",
-                                        activeTab === 'history' ? "bg-background text-foreground" : "bg-accent-theme text-foreground"
-                                    )}>
-                                        {history.length}
-                                    </span>
-                                )}
                                 {activeTab === 'history' && (
                                     <motion.div
                                         layoutId="active-tab"
@@ -884,10 +936,11 @@ export default function TicketDetailsPage() {
                                                 const originalPart = parts[0];
                                                 const reversedParts = [...parts].reverse();
 
-                                                // Custom component for ReactMarkdown to handle premium attachments
+                                                // Componentes customizados para o ReactMarkdown lidarem com anexos premium e imagens zoomáveis
                                                 const MarkdownComponents = {
                                                     a: ({ href, children }: any) => {
                                                         const content = String(children);
+                                                        // Tratamento especial para tags de anexo customizadas [ATTACHMENT:TYPE:FILENAME]
                                                         if (content.startsWith('ATTACHMENT:')) {
                                                             const [_, type, filename] = content.split(':');
                                                             const isVideo = type === 'VIDEO';
@@ -961,8 +1014,7 @@ export default function TicketDetailsPage() {
                                                         );
                                                     }
 
-                                                    // Parse header for additional info
-                                                    // Support both old and new header formats for backward compatibility
+                                                    // Detecção de cabeçalhos de atualizações técnicas para suporte a formatos antigos e novos
                                                     const headerMatch = part.match(/### (?:📝 INFORMAÇÃO ADICIONADA EM|\[UPDATE\]) (.*?)\n\n/);
                                                     const cleanPart = headerMatch ? part.replace(headerMatch[0], '') : part;
                                                     const timestamp = headerMatch ? headerMatch[1] : '';
@@ -1051,6 +1103,7 @@ export default function TicketDetailsPage() {
                                                                     <div className="flex items-center gap-3 min-w-0 shrink-0">
                                                                         <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 bg-accent-theme/10 text-accent-theme rounded-lg border border-accent-theme/20">
                                                                             {(function translate(type: string, desc: string): string {
+                                                                                // Tradução dinâmica dos tipos de eventos do banco de dados para o usuário
                                                                                 const t = type.toUpperCase();
                                                                                 if (t === 'DESCRIPTION_CHANGE') {
                                                                                     return desc.includes('Adicionada nova informação') ? 'NOVA INFORMAÇÃO' : 'DESCRIÇÃO ATUALIZADA';
@@ -1179,11 +1232,14 @@ export default function TicketDetailsPage() {
                         </motion.div>
                     </motion.div>
 
-                    {/* Sidebar */}
+                    {/* Barra Lateral (Sidebar de Dados e Acompanhantes) */}
                     <div className="space-y-6 lg:pt-[82px]">
                         {/* Ações Rápidas */}
                         <div className="glass-card p-8 rounded-[2rem] border border-border-theme space-y-6">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Ações Rápidas</h3>
+                            <div className="flex items-center gap-2.5 mb-6 opacity-60">
+                                <div className="w-1 h-3 bg-accent-theme rounded-full shadow-[0_0_8px_rgba(var(--color-accent-theme-rgb),0.4)]" />
+                                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Ações Rápidas</h4>
+                            </div>
                             <div className="grid grid-cols-1 gap-3">
                                 <button
                                     onClick={() => setIsInfoModalOpen(true)}
@@ -1236,7 +1292,10 @@ export default function TicketDetailsPage() {
                             </div>
                         </div>
                         <div className="glass-card p-8 rounded-[2rem] border border-border-theme space-y-6 relative z-20">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Classificação</h3>
+                            <div className="flex items-center gap-2.5 mb-6 opacity-60">
+                                <div className="w-1 h-3 bg-accent-theme rounded-full shadow-[0_0_8px_rgba(var(--color-accent-theme-rgb),0.4)]" />
+                                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Classificação</h4>
+                            </div>
                             <div className="space-y-4">
                                 <div>
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/50 mb-3 font-shadow-none">Setor Responsável</p>
@@ -1263,7 +1322,10 @@ export default function TicketDetailsPage() {
                         </div>
 
                         <div className="glass-card p-8 rounded-[2rem] border border-border-theme relative z-10">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 mb-6">Metadados</h3>
+                            <div className="flex items-center gap-2.5 mb-8 opacity-60">
+                                <div className="w-1 h-3 bg-accent-theme rounded-full shadow-[0_0_8px_rgba(var(--color-accent-theme-rgb),0.4)]" />
+                                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Metadados</h4>
+                            </div>
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-gray-500">Criado em:</span>
@@ -1286,12 +1348,13 @@ export default function TicketDetailsPage() {
                             </div>
                         </div>
 
-                        {/* Card de Acompanhantes */}
-                        {/* Card de Acompanhantes */}
-                        {/* Card de Acompanhantes */}
+                        {/* Card de Acompanhantes e Seguidores */}
                         <motion.div layout className="glass-card p-8 rounded-[2rem] border border-border-theme relative z-10">
                             <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Acompanhantes</h3>
+                                <div className="flex items-center gap-2.5 opacity-60">
+                                    <div className="w-1 h-3 bg-accent-theme rounded-full shadow-[0_0_8px_rgba(var(--color-accent-theme-rgb),0.4)]" />
+                                    <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Acompanhantes</h4>
+                                </div>
                                 {ticket.assigned_user_id === user?.id ? (
                                     <button
                                         onClick={handleOpenAddFollowerModal}
@@ -1423,11 +1486,9 @@ export default function TicketDetailsPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Bloco 1: Identificação Fiscal */}
                                         <div className="glass-card p-6 rounded-3xl border border-border-theme/50 space-y-4">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <div className="p-2 rounded-xl bg-accent-theme/10 text-accent-theme">
-                                                    <ShieldCheck className="w-4 h-4" />
-                                                </div>
-                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Dados Fiscais</h3>
+                                            <div className="flex items-center gap-2.5 mb-2 opacity-60">
+                                                <div className="w-1 h-3 bg-accent-theme rounded-full shadow-[0_0_8px_rgba(var(--color-accent-theme-rgb),0.4)]" />
+                                                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Dados Fiscais</h4>
                                             </div>
                                             <div className="space-y-3">
                                                 <div>
@@ -1451,7 +1512,7 @@ export default function TicketDetailsPage() {
                                                 <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500">
                                                     <Phone className="w-4 h-4" />
                                                 </div>
-                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Contatos</h3>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Contatos</p>
                                             </div>
                                             <div className="space-y-3">
                                                 <div className="flex items-center gap-3">
@@ -1488,11 +1549,9 @@ export default function TicketDetailsPage() {
 
                                     {/* Bloco 3: Endereço Completo */}
                                     <div className="glass-card p-6 rounded-3xl border border-border-theme/50">
-                                        <div className="flex items-center gap-2 mb-4">
-                                            <div className="p-2 rounded-xl bg-orange-500/10 text-orange-500">
-                                                <MapPin className="w-4 h-4" />
-                                            </div>
-                                            <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Endereço e Localização</h3>
+                                        <div className="flex items-center gap-2.5 mb-4 opacity-60">
+                                            <div className="w-1 h-3 bg-orange-500 rounded-full shadow-[0_0_8px_rgba(249,115,22,0.2)]" />
+                                            <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Endereço e Localização</h4>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             <div className="md:col-span-2">
@@ -1516,20 +1575,28 @@ export default function TicketDetailsPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Produtos Contratados */}
                                         <div className="glass-card p-6 rounded-3xl border border-border-theme/50">
-                                            <div className="flex items-center gap-2 mb-4">
-                                                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
-                                                    <Package className="w-4 h-4" />
-                                                </div>
-                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Produtos / Serviços</h3>
+                                            <div className="flex items-center gap-2.5 mb-4 opacity-60">
+                                                <div className="w-1 h-3 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.2)]" />
+                                                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Produtos / Serviços</h4>
                                             </div>
                                             <div className="space-y-3">
                                                 {client?.contracted_items && client.contracted_items.length > 0 ? (
-                                                    client.contracted_items.map((item, idx) => (
-                                                        <div key={idx} className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
-                                                            <p className="text-xs font-bold text-emerald-600 uppercase tracking-tight">{item.name}</p>
-                                                            {item.description && <p className="text-[10px] text-emerald-600/70">{item.description}</p>}
-                                                        </div>
-                                                    ))
+                                                    client.contracted_items.map((item: any, idx: number) => {
+                                                        const catalogItem = catalogItems.find(ci => ci.id === (item.catalog_item_id || item.id));
+                                                        return (
+                                                            <div key={idx} className="p-4 rounded-[1.5rem] bg-emerald-500/[0.03] border border-emerald-500/10 flex flex-col gap-2 group/item">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                                                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest italic">{catalogItem?.name || item.name}</p>
+                                                                </div>
+                                                                {(item.observation || item.description) && (
+                                                                    <p className="text-[10px] text-emerald-600/70 font-semibold leading-relaxed pl-4 border-l-2 border-emerald-500/10 italic">
+                                                                        {item.observation || item.description}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })
                                                 ) : (
                                                     <p className="text-[10px] text-gray-500 italic py-2">Nenhum produto listado.</p>
                                                 )}
@@ -1538,11 +1605,9 @@ export default function TicketDetailsPage() {
 
                                         {/* Chamados Recentes */}
                                         <div className="glass-card p-6 rounded-3xl border border-border-theme/50">
-                                            <div className="flex items-center gap-2 mb-4">
-                                                <div className="p-2 rounded-xl bg-purple-500/10 text-purple-500">
-                                                    <History className="w-4 h-4" />
-                                                </div>
-                                                <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400">Últimos Chamados</h3>
+                                            <div className="flex items-center gap-2.5 mb-4 opacity-60">
+                                                <div className="w-1 h-3 bg-purple-500 rounded-full shadow-[0_0_8px_rgba(139,92,246,0.2)]" />
+                                                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/90">Últimos Chamados</h4>
                                             </div>
                                             <div className="space-y-3">
                                                 {clientTickets.length > 0 ? (
@@ -1578,21 +1643,27 @@ export default function TicketDetailsPage() {
                                     </div>
                                 </div>
 
-                                {/* Footer */}
-                                <div className="p-6 border-t border-border-theme flex justify-end">
+                                {/* Rodapé do Modal do Cliente */}
+                                <div className="p-6 border-t border-border-theme flex gap-4 justify-end bg-background/50">
                                     <button
                                         onClick={closeClientModal}
-                                        className="px-8 py-3 rounded-xl bg-background border border-border-theme text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                                        className="px-8 py-3 rounded-xl bg-background border border-border-theme text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all text-gray-500 hover:text-foreground"
                                     >
                                         Fechar
                                     </button>
+                                    <Link 
+                                        href={`/clients?name=${encodeURIComponent(client?.name || '')}`}
+                                        className="flex items-center gap-2 px-8 py-3 rounded-xl premium-gradient text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-accent-theme/20 hover:brightness-110 transition-all"
+                                    >
+                                        <Pencil className="w-3.5 h-3.5" /> Gestão do Cliente
+                                    </Link>
                                 </div>
                             </div>
                         </div>
                     )
                 }
 
-                {/* Modal Adicionar Informação */}
+                {/* Modal para Adicionar Informação ao Ticket (Interação Manual) */}
                 {
                     isInfoModalOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -1678,7 +1749,7 @@ export default function TicketDetailsPage() {
                     )
                 }
 
-                {/* Modal Transferir Ticket */}
+                {/* Modal para Transferir Ticket (Troca de Atendente ou Setor) */}
                 <AnimatePresence>
                     {isTransferModalOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -1781,7 +1852,7 @@ export default function TicketDetailsPage() {
                     )}
                 </AnimatePresence>
 
-                {/* Modal de Adicionar Acompanhante */}
+                {/* Modal para Adicionar Acompanhante (Usuário que receberá notificações) */}
                 <AnimatePresence>
                     {isAddFollowerModalOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -1802,11 +1873,15 @@ export default function TicketDetailsPage() {
                                     damping: 30,
                                     mass: 0.8
                                 }}
-                                className="relative w-full max-w-md glass-card rounded-[2.5rem] border border-border-theme shadow-2xl p-8"
+                                className="relative w-full max-w-lg glass-card rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden p-0"
                             >
-                                <h2 className="text-xl font-black text-foreground mb-6 uppercase tracking-wider">Adicionar Acompanhante</h2>
-
-                                <div className="space-y-6">
+                                <div className="premium-gradient p-8 pr-20 flex items-center gap-6">
+                                    <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-lg shrink-0">
+                                        <UserPlus className="w-6 h-6 text-white" />
+                                    </div>
+                                    <h2 className="text-2xl font-black text-white uppercase italic tracking-[-0.05em] leading-tight pr-20">Adicionar Acompanhante</h2>
+                                </div>
+                                <div className="p-8 space-y-6">
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">Usuário</label>
                                         <CustomSelect
@@ -1858,7 +1933,7 @@ export default function TicketDetailsPage() {
                 </AnimatePresence>
 
 
-                {/* Image Zoom Modal */}
+                {/* Modal de Zoom de Imagem (Lightbox Premium) */}
                 <AnimatePresence>
                     {zoomedImage && (
                         <motion.div
@@ -1889,6 +1964,6 @@ export default function TicketDetailsPage() {
                     )}
                 </AnimatePresence>
             </div>
-        </main>
+        </motion.main>
     );
 }

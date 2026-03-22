@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useSystemSettings } from '@/components/SystemSettingsProvider';
 import { Lock, User as UserIcon, Loader2, Ticket, Sparkles, ShieldCheck, Settings, Globe, X, RefreshCw, AlertCircle, Save, Database, CheckCircle2 } from 'lucide-react';
-import { getDefaultBaseURL } from '@/lib/api';
+import { getDefaultBaseURL, getDynamicApiUrl } from '@/lib/api';
 import axios from 'axios';
 
 export default function LoginPage() {
@@ -98,14 +98,12 @@ export default function LoginPage() {
     // Carrega URL do Servidor inicialmente
     useEffect(() => {
         const localConfig = localStorage.getItem('system_config');
-        let currentUrl = getDefaultBaseURL();
+        // Pega a URL dinâmica resolvida (já com migração de porta se necessário)
+        const currentUrl = getDynamicApiUrl();
 
         if (localConfig) {
             try {
-                const { apiUrl: storedUrl, aiSource: storedAiSource } = JSON.parse(localConfig);
-                if (storedUrl) {
-                    currentUrl = storedUrl;
-                }
+                const { aiSource: storedAiSource } = JSON.parse(localConfig);
                 if (storedAiSource) {
                     setAiSource(storedAiSource);
                 }
@@ -131,7 +129,8 @@ export default function LoginPage() {
         const config = {
             ...currentConfig,
             apiUrl: normalizedUrl,
-            aiSource: aiSource
+            aiSource: aiSource,
+            userConfigured: true // Marca como configuração manual para evitar auto-reversão
         };
         localStorage.setItem('system_config', JSON.stringify(config));
         setShowServerSettings(false);
@@ -377,7 +376,7 @@ export default function LoginPage() {
                                 <div className="p-2.5 bg-accent-theme/10 rounded-xl">
                                     <Settings className="w-6 h-6" />
                                 </div>
-                                <h3 className="font-bold text-lg uppercase tracking-widest text-foreground">Ajustes do Sistema</h3>
+                                <h3 className="text-2xl font-black font-display tracking-tight italic uppercase text-foreground">Ajustes do <span className="text-accent-theme">Sistema</span></h3>
                             </div>
 
                             {/* Tabs Internas */}

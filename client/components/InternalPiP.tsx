@@ -23,7 +23,7 @@ const InternalPiP: React.FC<InternalPiPProps> = ({ onClose }) => {
             <div className="flex items-center justify-between p-3 border-b border-border-theme bg-accent-theme/5 cursor-grab active:cursor-grabbing">
                 <div className="flex items-center gap-2">
                     <GripVertical className="w-4 h-4 text-accent-theme/50" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/70">Widget Modo</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-accent-theme/70">Cronômetro</span>
                 </div>
                 <button
                     onClick={onClose}

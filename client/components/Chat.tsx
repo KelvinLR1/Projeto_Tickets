@@ -14,6 +14,11 @@ interface Message {
     originalContent?: string;
 }
 
+/**
+ * Interface do Chat de IA (Assistente Técnico).
+ * Implementa RAG (Retrieval-Augmented Generation) para responder perguntas
+ * com base na base de conhecimento local e no histórico de tickets.
+ */
 export default function Chat() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
@@ -50,6 +55,10 @@ export default function Chat() {
         setSelectedImage(null);
     };
 
+    /**
+     * Envia a mensagem do usuário, realiza a busca semântica (RAG)
+     * e processa a resposta da IA via streaming.
+     */
     const handleSend = async () => {
         if (!input.trim() && !selectedImage) return;
 
@@ -86,15 +95,16 @@ export default function Chat() {
             const isGreeting = userInput.trim().toLowerCase().length <= 3 ||
                 ['ola', 'olá', 'oi', 'bom dia', 'boa tarde', 'boa noite'].includes(userInput.trim().toLowerCase());
 
-            // OTIMIZAÇÃO: Pula busca no banco de dados para saudações
+            // OTIMIZAÇÃO: Pula busca no banco de dados para saudações curtas
             if (!isGreeting && userInput.trim().length > 3) {
                 try {
+                    // Busca semântica simultânea em manuais e tickets antigos
                     const searchResults = await searchKnowledge(userInput);
                     if (searchResults && searchResults.documents) {
                         const kbDocs = searchResults.documents[0] || [];
                         const ticketDocs = searchResults.documents[1] || [];
 
-                        // Adiciona metadados de contagem
+                        // Formatação do contexto para o Prompt da IA
                         const kbCount = kbDocs.length;
                         const ticketCount = ticketDocs.length;
                         const totalCount = kbCount + ticketCount;
@@ -167,7 +177,8 @@ INSTRUÇÃO: Responda a pergunta diretamente com a solução. Não mencione os d
 
             const targetModel = hasImage ? config.visionModel : config.textModel;
 
-            // Efeito de Typewriter Fluido
+            // Efeito de "Máquina de Escrever" para as respostas da IA
+            // Isso cria uma experiência de usuário mais fluida enquanto os chunks chegam do Ollama
             const typingInterval = setInterval(() => {
                 if (displayedContent.length < responseBuffer.length) {
                     // Pega um pequeno pedaço para parecer que está digitando
@@ -182,7 +193,7 @@ INSTRUÇÃO: Responda a pergunta diretamente com a solução. Não mencione os d
                 } else if (!isStreaming) {
                     clearInterval(typingInterval);
                 }
-            }, 30); // 30ms para um scroll suave
+            }, 30);
 
             await chatWithOllama(targetModel, history, (chunk) => {
                 responseBuffer += chunk;

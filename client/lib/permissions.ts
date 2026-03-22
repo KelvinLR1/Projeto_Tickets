@@ -14,6 +14,10 @@ const ROUTE_TO_MENU: Record<string, MenuId> = {
     '/profiles': 'profiles'
 };
 
+/**
+ * Verifica se o usuário tem permissão para acessar um item de menu específico.
+ * Considera Roles (ROOT/ADMIN) e permissões explícitas no Perfil do usuário.
+ */
 export function canAccessMenu(user: User | null, menuId: MenuId | string): boolean {
     if (!user) return false;
 
@@ -33,6 +37,10 @@ export function canAccessMenu(user: User | null, menuId: MenuId | string): boole
     return menuId === 'dashboard';
 }
 
+/**
+ * Verifica se o usuário pode acessar uma URL (pathname) específica.
+ * Normaliza o caminho e mapeia para a permissão de menu correspondente.
+ */
 export function canAccessPath(user: User | null, pathname: string): boolean {
     if (!user) return false;
 
@@ -71,6 +79,10 @@ export function getFirstAllowedPath(user: User | null): string {
     return '/'; // Fallback absoluto
 }
 
+/**
+ * Verifica permissão para ações granulares (ex: 'create_ticket', 'delete_user').
+ * Utilizado para esconder/desabilitar botões na interface.
+ */
 export function canPerformAction(user: User | null, actionId: string): boolean {
     if (!user) return false;
     if (!user.profile && (user.role === 'ROOT' || user.role === 'ADMIN')) return true;

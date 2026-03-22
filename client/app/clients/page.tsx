@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getClients, createClient, updateClient, deleteClient, importClientsExcel, importClientsDB, previewClientsDB, downloadClientTemplate, Client } from '@/lib/api';
+import { getClients, createClient, updateClient, deleteClient, importClientsExcel, importClientsDB, previewClientsDB, downloadClientTemplate, Client, getCatalogItems, CatalogItem } from '@/lib/api';
 import { useNotification } from '@/components/NotificationProvider';
 import { useAuth } from '@/components/AuthProvider';
-import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, Server, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser, MapPin, Hash, Plus, Package, Briefcase, FileText, Code, Table } from 'lucide-react';
+import { UserPlus, Search, Mail, Phone, Calendar, Trash2, Pencil, X, Save, Loader2, User, Upload, Database, Server, FileSpreadsheet, ChevronDown, CheckCircle2, AlertCircle, Filter, Eraser, MapPin, Hash, Plus, Package, Briefcase, FileText, Code, Table, Check } from 'lucide-react';
 import CustomSelect from '@/components/CustomSelect';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ClientRowSkeleton } from '@/components/Skeleton';
+import { useSearchParams } from 'next/navigation';
 import Pagination from '@/components/Pagination';
 import { getClientsCount } from '@/lib/api';
 import clsx from 'clsx';
@@ -50,11 +51,13 @@ const CONTACT_TYPE_OPTIONS = [
 ];
 
 export default function ClientsPage() {
+    const searchParams = useSearchParams();
     const { user } = useAuth();
     const { showNotification, confirm: askConfirm } = useNotification();
     const [clients, setClients] = useState<Client[]>([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
+    const initialSearch = searchParams.get('name') || '';
+    const [searchTerm, setSearchTerm] = useState(initialSearch);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [actionId, setActionId] = useState<number | null>(null);
@@ -79,8 +82,9 @@ export default function ClientsPage() {
         neighborhood: string;
         state_registration: string;
         tax_regime: string;
-        extra_contacts: { type: 'phone' | 'email', value: string }[];
-        contracted_items: { name: string, description: string }[];
+        responsible_name: string;
+        extra_contacts: { type: 'phone' | 'email', value: string, name: string, observation: string }[];
+        contracted_items: { catalog_item_id?: number, name: string, observation: string }[];
     }>({
         name: '',
         nickname: '',
@@ -96,11 +100,14 @@ export default function ClientsPage() {
         neighborhood: '',
         state_registration: '',
         tax_regime: '',
+        responsible_name: '',
         extra_contacts: [],
         contracted_items: []
     });
     const [isSearchingCNPJ, setIsSearchingCNPJ] = useState(false);
     const [isSearchingCEP, setIsSearchingCEP] = useState(false);
+    const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
+    const [loadingCatalog, setLoadingCatalog] = useState(false);
 
     // Advanced Filter states
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -171,8 +178,21 @@ export default function ClientsPage() {
     useEffect(() => {
         if (user) {
             loadClients();
+            fetchCatalog();
         }
     }, [currentPage, pageSize, user, searchTerm, filters]);
+
+    const fetchCatalog = async () => {
+        setLoadingCatalog(true);
+        try {
+            const data = await getCatalogItems();
+            setCatalogItems(data.filter(item => item.is_active));
+        } catch (error) {
+            console.error('Error fetching catalog:', error);
+        } finally {
+            setLoadingCatalog(false);
+        }
+    };
 
     const loadClients = async () => {
         setLoading(true);
@@ -266,8 +286,18 @@ export default function ClientsPage() {
                 neighborhood: client.neighborhood || '',
                 state_registration: client.state_registration || '',
                 tax_regime: client.tax_regime || '',
-                extra_contacts: client.extra_contacts || [],
-                contracted_items: client.contracted_items || []
+                responsible_name: client.responsible_name || '',
+                extra_contacts: (client.extra_contacts || []).map((c: any) => ({
+                    type: c.type,
+                    value: c.value,
+                    name: c.name || '',
+                    observation: c.observation || ''
+                })),
+                contracted_items: (client.contracted_items || []).map((item: any) => ({
+                    catalog_item_id: item.catalog_item_id || item.id,
+                    name: item.name,
+                    observation: item.observation || item.description || ''
+                }))
             });
         } else {
             setEditingClient(null);
@@ -286,6 +316,7 @@ export default function ClientsPage() {
                 neighborhood: '',
                 state_registration: '',
                 tax_regime: '',
+                responsible_name: '',
                 extra_contacts: [],
                 contracted_items: []
             });
@@ -383,10 +414,9 @@ export default function ClientsPage() {
     const addContact = () => {
         setFormData(prev => ({
             ...prev,
-            extra_contacts: [...prev.extra_contacts, { type: 'phone', value: '' }]
+            extra_contacts: [...prev.extra_contacts, { type: 'phone', value: '', name: '', observation: '' }]
         }));
     };
-
     const removeContact = (index: number) => {
         setFormData(prev => ({
             ...prev,
@@ -394,31 +424,40 @@ export default function ClientsPage() {
         }));
     };
 
-    const updateContact = (index: number, field: 'type' | 'value', val: string) => {
+    const updateContact = (index: number, field: 'type' | 'value' | 'name' | 'observation', val: string) => {
         setFormData(prev => ({
             ...prev,
             extra_contacts: prev.extra_contacts.map((c, i) => i === index ? { ...c, [field]: val } : c)
         }));
     };
 
-    const addItem = () => {
-        setFormData(prev => ({
-            ...prev,
-            contracted_items: [...prev.contracted_items, { name: '', description: '' }]
-        }));
+    const toggleCatalogItem = (item: CatalogItem) => {
+        setFormData(prev => {
+            const exists = prev.contracted_items.find(i => i.catalog_item_id === item.id);
+            if (exists) {
+                return {
+                    ...prev,
+                    contracted_items: prev.contracted_items.filter(i => i.catalog_item_id !== item.id)
+                };
+            } else {
+                return {
+                    ...prev,
+                    contracted_items: [...prev.contracted_items, { 
+                        catalog_item_id: item.id, 
+                        name: item.name, 
+                        observation: '' 
+                    }]
+                };
+            }
+        });
     };
 
-    const removeItem = (index: number) => {
+    const updateItemObservation = (catalogItemId: number, observation: string) => {
         setFormData(prev => ({
             ...prev,
-            contracted_items: prev.contracted_items.filter((_, i) => i !== index)
-        }));
-    };
-
-    const updateItem = (index: number, field: 'name' | 'description', val: string) => {
-        setFormData(prev => ({
-            ...prev,
-            contracted_items: prev.contracted_items.map((it, i) => i === index ? { ...it, [field]: val } : it)
+            contracted_items: prev.contracted_items.map(it => 
+                it.catalog_item_id === catalogItemId ? { ...it, observation } : it
+            )
         }));
     };
 
@@ -842,15 +881,32 @@ export default function ClientsPage() {
             </div>
 
             {/* Modal de Cadastro/Edição */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-                    <div className="glass-card w-full max-w-5xl rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 text-foreground relative group">
-                        <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform pointer-events-none">
-                            <UserPlus className="w-20 h-20 text-accent-theme" />
-                        </div>
+            <AnimatePresence>
+                {isModalOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
+                        {/* Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsModalOpen(false)}
+                            className="absolute inset-0 bg-black/70 backdrop-blur-md"
+                        />
+                        
+                        {/* Modal Container */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="glass-card w-full max-w-5xl max-h-[90vh] flex flex-col rounded-[2.5rem] border border-border-theme shadow-2xl relative z-10 overflow-hidden group"
+                        >
+                            <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform pointer-events-none">
+                                <UserPlus className="w-20 h-20 text-accent-theme" />
+                            </div>
 
-                        <form onSubmit={handleSave} className="relative">
-                            <div className="p-10 border-b border-white/5 flex justify-between items-center bg-background/30">
+                            <form onSubmit={handleSave} className="flex flex-col flex-1 min-h-0 relative w-full overflow-hidden">
+                            <div className="p-10 border-b border-white/5 flex justify-between items-center bg-background/30 shrink-0">
                                 <div>
                                     <h3 className="text-2xl font-black uppercase tracking-tighter italic font-display">
                                         {editingClient ? 'Sincronizar' : 'Novo'} <span className="text-accent-theme">Parceiro</span>
@@ -862,7 +918,7 @@ export default function ClientsPage() {
                                 </button>
                             </div>
 
-                            <div className="p-10 space-y-12 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            <div className="p-10 space-y-12 flex-1 overflow-y-auto custom-scrollbar">
                                 {/* Seção: Identificação */}
                                 <div className="space-y-6">
                                     <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-accent-theme border-b border-border-theme pb-2">
@@ -1052,36 +1108,90 @@ export default function ClientsPage() {
                                                 onChange={(e) => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
                                             />
                                         </div>
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--color-text-muted)] ml-1">Nome do Responsável</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                placeholder="Nome da pessoa de contato"
+                                                value={formData.responsible_name}
+                                                onChange={(e) => setFormData({ ...formData, responsible_name: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
 
                                     <div className="space-y-4">
-                                        {formData.extra_contacts.map((contact, idx) => (
-                                            <div key={idx} className="flex gap-4 items-end animate-in slide-in-from-left-4 duration-300">
-                                                <div className="w-40">
-                                                    <CustomSelect
-                                                        value={contact.type}
-                                                        onChange={(val) => updateContact(idx, 'type', val)}
-                                                        options={CONTACT_TYPE_OPTIONS}
-                                                    />
-                                                </div>
-                                                <div className="flex-1">
-                                                    <input
-                                                        type="text"
-                                                        className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
-                                                        placeholder={contact.type === 'email' ? 'outro@email.com' : '(00) 0000-0000'}
-                                                        value={contact.value}
-                                                        onChange={(e) => updateContact(idx, 'value', contact.type === 'phone' ? formatPhone(e.target.value) : e.target.value)}
-                                                    />
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeContact(idx)}
-                                                    className="p-4 bg-red-500/5 text-red-500 border border-red-500/10 rounded-2xl hover:bg-red-500/10 transition-all"
+                                        <AnimatePresence mode="popLayout" initial={false}>
+                                            {formData.extra_contacts.map((contact, idx) => (
+                                                <motion.div 
+                                                    key={idx} 
+                                                    layout
+                                                    initial={{ opacity: 0, scale: 0.98 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    exit={{ opacity: 0, scale: 0.98 }}
+                                                    className="flex gap-3 items-center min-h-[64px]"
                                                 >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        ))}
+                                                    <motion.div layout className="w-40 shrink-0">
+                                                        <CustomSelect
+                                                            value={contact.type}
+                                                            onChange={(val) => updateContact(idx, 'type', val)}
+                                                            options={CONTACT_TYPE_OPTIONS}
+                                                        />
+                                                    </motion.div>
+                                                    
+                                                    <motion.div 
+                                                        layout
+                                                        className="flex-1 min-w-0"
+                                                        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                                                    >
+                                                        <input
+                                                            type="text"
+                                                            className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                            placeholder={contact.type === 'email' ? 'outro@email.com' : '(00) 0000-0000'}
+                                                            value={contact.value}
+                                                            onChange={(e) => updateContact(idx, 'value', contact.type === 'phone' ? formatPhone(e.target.value) : e.target.value)}
+                                                        />
+                                                    </motion.div>
+
+                                                    <AnimatePresence mode="popLayout">
+                                                        {contact.type === 'phone' && (
+                                                            <motion.div 
+                                                                key={`phone-fields-${idx}`}
+                                                                layout
+                                                                initial={{ opacity: 0, x: 20, width: 0 }}
+                                                                animate={{ opacity: 1, x: 0, width: "auto" }}
+                                                                exit={{ opacity: 0, x: 20, width: 0 }}
+                                                                className="flex gap-3 flex-[2] min-w-0 overflow-hidden"
+                                                            >
+                                                                <input
+                                                                    type="text"
+                                                                    className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                                    placeholder="Nome"
+                                                                    value={contact.name}
+                                                                    onChange={(e) => updateContact(idx, 'name', e.target.value)}
+                                                                />
+                                                                <input
+                                                                    type="text"
+                                                                    className="w-full bg-background/50 border border-border-theme rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-4 focus:ring-accent-theme/10 transition-all font-bold"
+                                                                    placeholder="Obs"
+                                                                    value={contact.observation}
+                                                                    onChange={(e) => updateContact(idx, 'observation', e.target.value)}
+                                                                />
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
+
+                                                    <motion.button
+                                                        layout
+                                                        type="button"
+                                                        onClick={() => removeContact(idx)}
+                                                        className="p-4 bg-red-500/5 text-red-500 border border-red-500/10 rounded-2xl hover:bg-red-500/10 transition-all shrink-0 h-[58px] flex items-center"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </motion.button>
+                                                </motion.div>
+                                            ))}
+                                        </AnimatePresence>
                                     </div>
                                 </div>
 
@@ -1091,52 +1201,84 @@ export default function ClientsPage() {
                                         <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-accent-theme">
                                             <Package className="w-4 h-4" /> Serviços / Produtos Contratados
                                         </h4>
-                                        <button type="button" onClick={addItem} className="flex items-center gap-2 text-[10px] font-black text-accent-theme hover:brightness-125 transition-all uppercase tracking-widest bg-accent-theme/5 px-3 py-1.5 rounded-lg border border-accent-theme/10">
-                                            <Plus className="w-3.5 h-3.5" /> Adicionar Item
-                                        </button>
                                     </div>
 
-                                    <div className="space-y-4">
-                                        {formData.contracted_items.map((item, idx) => (
-                                            <div key={idx} className="bg-white/[0.02] border border-white/5 p-6 rounded-[2rem] space-y-4 animate-in slide-in-from-right-4 duration-300 relative group/item">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeItem(idx)}
-                                                    className="absolute top-4 right-4 p-2 text-red-500/50 hover:text-red-500 transition-colors"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                                <div className="space-y-3">
-                                                    <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Nome do Serviço/Produto</label>
-                                                    <input
-                                                        type="text"
-                                                        className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-sm font-bold focus:outline-none"
-                                                        placeholder="Ex: Consultoria Semanal"
-                                                        value={item.name}
-                                                        onChange={(e) => updateItem(idx, 'name', e.target.value)}
-                                                    />
+                                    {loadingCatalog ? (
+                                        <div className="flex items-center gap-3 py-10 justify-center opacity-30">
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest">Carregando catálogo...</span>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {catalogItems.map((item) => {
+                                                const contracted = formData.contracted_items.find(i => i.catalog_item_id === item.id);
+                                                return (
+                                                    <div 
+                                                        key={item.id} 
+                                                        className={clsx(
+                                                            "p-4 rounded-2xl border transition-all duration-300 group/item",
+                                                            contracted 
+                                                                ? "bg-accent-theme/5 border-accent-theme/20 shadow-sm" 
+                                                                : "bg-white/[0.01] border-white/5 hover:border-white/10 hover:bg-white/[0.02]"
+                                                        )}
+                                                    >
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                                                            {/* Esquerda: Checkbox e Nome */}
+                                                            <div className="flex items-center gap-4 cursor-pointer select-none" onClick={() => toggleCatalogItem(item)}>
+                                                                <div className={clsx(
+                                                                    "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all shrink-0",
+                                                                    contracted 
+                                                                        ? "bg-accent-theme border-accent-theme text-white shadow-lg shadow-accent-theme/20" 
+                                                                        : "border-border-theme bg-background group-hover/item:border-white/20"
+                                                                )}>
+                                                                    {contracted && <Check className="w-4 h-4 stroke-[4]" />}
+                                                                </div>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className={clsx(
+                                                                        "text-[11px] font-black uppercase tracking-widest italic transition-colors",
+                                                                        contracted ? "text-accent-theme" : "text-foreground/70"
+                                                                    )}>{item.name}</p>
+                                                                    {item.description && (
+                                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-medium mt-1 leading-relaxed line-clamp-2">{item.description}</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Direita: Observação */}
+                                                            <div className="min-h-[46px]">
+                                                                <input
+                                                                    type="text"
+                                                                    disabled={!contracted}
+                                                                    className={clsx(
+                                                                        "w-full rounded-xl px-4 text-[11px] font-bold h-[46px] transition-all outline-none",
+                                                                        contracted 
+                                                                            ? "bg-background/40 border border-accent-theme/20 text-foreground focus:ring-2 focus:ring-accent-theme/10" 
+                                                                            : "bg-white/[0.02] border border-white/5 text-white/10 placeholder:text-transparent cursor-not-allowed"
+                                                                    )}
+                                                                    placeholder="Observação para este serviço..."
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    value={contracted?.observation || ''}
+                                                                    onChange={(e) => updateItemObservation(item.id, e.target.value)}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {catalogItems.length === 0 && (
+                                                <div className="col-span-full text-center py-12 bg-background/20 rounded-[2rem] border border-dashed border-border-theme/30">
+                                                    <Package className="w-10 h-10 mx-auto mb-4 opacity-10" />
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Nenhum serviço disponível no catálogo</p>
+                                                    <p className="text-[9px] font-bold text-[var(--color-text-muted)] mt-2 italic">Configure o catálogo na aba Organização em Ajustes</p>
                                                 </div>
-                                                <div className="space-y-3">
-                                                    <label className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Descrição / Observação</label>
-                                                    <textarea
-                                                        className="w-full bg-background/50 border border-border-theme rounded-xl px-4 py-3 text-sm font-bold focus:outline-none h-20 resize-none"
-                                                        placeholder="Detalhes sobre o contrato..."
-                                                        value={item.description}
-                                                        onChange={(e) => updateItem(idx, 'description', e.target.value)}
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                        {formData.contracted_items.length === 0 && (
-                                            <div className="text-center py-10 bg-background/20 rounded-[2rem] border border-dashed border-border-theme/30">
-                                                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">Nenhum serviço registrado</p>
-                                            </div>
-                                        )}
-                                    </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            <div className="p-10 bg-background/30 border-t border-white/5 flex gap-6">
+                            <div className="p-10 bg-background/30 border-t border-white/5 flex gap-6 shrink-0 relative z-20">
                                 <button
                                     type="button"
                                     onClick={() => setIsModalOpen(false)}
@@ -1154,14 +1296,29 @@ export default function ClientsPage() {
                                 </button>
                             </div>
                         </form>
-                    </div>
+                    </motion.div>
                 </div>
             )}
+        </AnimatePresence>
 
             {/* Modal Excel */}
-            {isExcelModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-                    <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 text-foreground relative">
+            <AnimatePresence>
+                {isExcelModalOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => { setIsExcelModalOpen(false); setImportResult(null); }}
+                            className="absolute inset-0 bg-black/70 backdrop-blur-md"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="glass-card w-full max-w-2xl max-h-[90vh] flex flex-col rounded-[2.5rem] border border-border-theme shadow-2xl relative z-10 overflow-hidden"
+                        >
                         <div className="p-10 border-b border-white/5 flex justify-between items-center bg-background/30">
                             <h3 className="text-2xl font-black uppercase tracking-tighter italic font-display">
                                 Importar <span className="text-accent-theme">Excel / CSV</span>
@@ -1267,14 +1424,29 @@ export default function ClientsPage() {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </motion.div>
                 </div>
             )}
+        </AnimatePresence>
 
             {/* Modal DB */}
-            {isDBModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-                    <div className="glass-card w-full max-w-4xl max-h-[100vh] md:max-h-[90vh] flex flex-col rounded-[2.5rem] border border-border-theme shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 text-foreground relative">
+            <AnimatePresence>
+                {isDBModalOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => { setIsDBModalOpen(false); setImportResult(null); }}
+                            className="absolute inset-0 bg-black/70 backdrop-blur-md"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="glass-card w-full max-w-4xl max-h-[90vh] flex flex-col rounded-[2.5rem] border border-border-theme shadow-2xl relative z-10 overflow-hidden"
+                        >
                         <div className="p-10 border-b border-white/5 flex justify-between items-center bg-background/30">
                             <div>
                                 <h3 className="text-2xl font-black uppercase tracking-tighter italic font-display">
@@ -1500,9 +1672,10 @@ export default function ClientsPage() {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </motion.div>
                 </div>
-            )}
+                )}
+            </AnimatePresence>
         </main>
     );
 }

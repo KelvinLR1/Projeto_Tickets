@@ -6,17 +6,25 @@ import clsx from 'clsx';
 import { Category } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
+/**
+ * Componente de Seleção de Categoria com Árvore Hierárquica.
+ */
 interface CategorySelectProps {
-    value: number | string;
-    onChange: (value: number) => void;
-    categories: Category[];
-    placeholder?: string;
-    className?: string;
-    icon?: React.ReactNode;
-    sectorId?: number;
-    disabled?: boolean;
+    value: number | string;           // ID da categoria selecionada
+    onChange: (value: number) => void; // Callback para mudança de valor
+    categories: Category[];           // Lista de categorias (incluindo subcategorias aninhadas)
+    placeholder?: string;             // Texto de instrução
+    className?: string;               // Classes CSS adicionais
+    icon?: React.ReactNode;           // Ícone customizado para o botão principal
+    sectorId?: number;                // Se fornecido, filtra categorias apenas deste setor
+    disabled?: boolean;               // Desabilita o componente
 }
 
+/**
+ * Componente de Seleção de Categoria (Tree Select).
+ * Permite navegar em uma estrutura de árvore, pesquisar e selecionar categorias/subcategorias.
+ * Possui lógica inteligente para abrir para cima se não houver espaço abaixo.
+ */
 export default function CategorySelect({
     value,
     onChange,
@@ -33,7 +41,7 @@ export default function CategorySelect({
     const [openUpwards, setOpenUpwards] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Close on click outside
+    // Fecha o dropdown ao clicar fora do componente
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -44,12 +52,16 @@ export default function CategorySelect({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Detect if should open upwards
+    /**
+     * Detector de espaço na tela.
+     * Calcula se o menu deve abrir para baixo (padrão) ou para cima
+     * caso esteja muito próximo ao final da janela (viewport).
+     */
     useEffect(() => {
         if (isOpen && containerRef.current) {
             const rect = containerRef.current.getBoundingClientRect();
             const spaceBelow = window.innerHeight - rect.bottom;
-            // If less than 400px below (typical max-height of dropdown + search + padding), open upwards
+            // Se houver menos de 400px abaixo, abre para cima
             if (spaceBelow < 400) {
                 setOpenUpwards(true);
             } else {
@@ -58,7 +70,7 @@ export default function CategorySelect({
         }
     }, [isOpen]);
 
-    // Find selected category for display
+    // Memoriza a categoria selecionada para exibição no botão principal
     const selectedCategory = useMemo(() => {
         const find = (cats: Category[]): Category | undefined => {
             for (const cat of cats) {
@@ -72,7 +84,7 @@ export default function CategorySelect({
         return find(categories);
     }, [value, categories]);
 
-    // Expand parent nodes that contain matches when searching
+    // Expande automaticamente os nós que contêm resultados durante a pesquisa
     useEffect(() => {
         if (search.trim()) {
             const newExpanded = new Set<number>();
@@ -96,6 +108,9 @@ export default function CategorySelect({
         }
     }, [search, categories]);
 
+    /**
+     * Alterna o estado de expansão de uma categoria (pasta).
+     */
     const toggleExpand = (id: number, e: React.MouseEvent) => {
         e.stopPropagation();
         const newExpanded = new Set(expandedNodes);
@@ -107,11 +122,12 @@ export default function CategorySelect({
         setExpandedNodes(newExpanded);
     };
 
+    /**
+     * Renderiza recursivamente uma categoria e suas subcategorias.
+     */
     const renderCategory = (cat: Category, level = 0) => {
-        // Only show active categories
+        // Filtra categorias inativas e por setor
         if (!cat.is_active) return null;
-
-        // Filtro por setor
         const matchesSector = !sectorId || !cat.sector_id || cat.sector_id === sectorId;
         if (!matchesSector) return null;
 
@@ -123,7 +139,10 @@ export default function CategorySelect({
         const isSelected = Number(value) === cat.id;
         const matchesSearch = search === '' || cat.name.toLowerCase().includes(search.toLowerCase());
 
-        // Only show if it matches or has matching descendants
+        /**
+         * Verifica recursivamente se algum descendente do nó atual
+         * corresponde ao termo de pesquisa para manter o ramo aberto.
+         */
         const hasMatchingDescendant = (c: Category): boolean => {
             if (!c.subcategories) return false;
             return c.subcategories.some(sub =>
@@ -138,8 +157,7 @@ export default function CategorySelect({
                 <button
                     type="button"
                     onClick={(e) => {
-                        // Option 1 logic: If has active subcategories, it's just a folder.
-                        // If no active subcategories, it's selectable even if it's a parent.
+                        // Se tiver subcategorias, apenas expande/colapsa. Caso contrário, seleciona.
                         if (hasActiveSubs) {
                             toggleExpand(cat.id, e);
                         } else {
@@ -153,17 +171,11 @@ export default function CategorySelect({
                         hasActiveSubs && "cursor-default"
                     )}
                 >
-                    {/* Indentation with visual connector */}
+                    {/* Recuo e ícones de árvore */}
                     <div className="flex items-center" style={{ marginLeft: `${level * 16}px` }}>
                         {hasActiveSubs ? (
-                            <div
-                                className="p-1 hover:bg-white/10 rounded-md transition-colors mr-1"
-                            >
-                                {isExpanded ? (
-                                    <ChevronDown className="w-3.5 h-3.5" />
-                                ) : (
-                                    <ChevronRight className="w-3.5 h-3.5" />
-                                )}
+                            <div className="p-1 hover:bg-white/10 rounded-md transition-colors mr-1">
+                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                             </div>
                         ) : (
                             <div className="w-5.5 mr-1 flex justify-center opacity-30">
@@ -185,6 +197,7 @@ export default function CategorySelect({
                     {!hasActiveSubs && isSelected && <Check className="w-3.5 h-3.5 ml-auto text-accent-theme" />}
                 </button>
 
+                {/* Renderização animada das subcategorias */}
                 <AnimatePresence initial={false}>
                     {hasActiveSubs && (isExpanded || search !== '') && (
                         <motion.div
@@ -204,6 +217,7 @@ export default function CategorySelect({
 
     return (
         <div className={clsx("relative w-full", className, isOpen && "z-[1001]")} ref={containerRef}>
+            {/* Botão de Controle Principal */}
             <button
                 type="button"
                 onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -224,6 +238,7 @@ export default function CategorySelect({
                 <ChevronDown className={clsx("w-4 h-4 text-[var(--color-text-muted)] transition-transform duration-300", isOpen && "rotate-180")} />
             </button>
 
+            {/* Menu Dropdown com Busca e Árvore */}
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
@@ -236,6 +251,7 @@ export default function CategorySelect({
                             openUpwards ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
                         )}
                     >
+                        {/* Campo de Busca */}
                         <div className="p-3 border-b border-border-theme/50 bg-white/5">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -250,8 +266,9 @@ export default function CategorySelect({
                             </div>
                         </div>
 
+                        {/* Área da Árvore de Categorias */}
                         <div className="max-h-[350px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                            {/* Option for "All Categories" */}
+                            {/* Opção para limpar seleção */}
                             <button
                                 type="button"
                                 onClick={() => {

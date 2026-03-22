@@ -27,6 +27,10 @@ def log_debug(message: str) -> None:
 
 
 class TicketFlowService(win32serviceutil.ServiceFramework):
+    """
+    Classe base para os serviços do Windows do TicketFlow.
+    Gerencia a integração com o Service Control Manager (SCM) para rodar o app em segundo plano.
+    """
     _svc_name_ = "TicketFlowService"
     _svc_display_name_ = "TicketFlow Service"
     _svc_description_ = "Serviço do TicketFlow"
@@ -57,8 +61,12 @@ class TicketFlowService(win32serviceutil.ServiceFramework):
         self.main()
 
     def main(self) -> None:
+        """
+        Lógica principal do serviço: decide se inicia o servidor FastAPI (Backend)
+        ou o servidor Next.js standalone (Frontend) com base no nome do executável.
+        """
         base_dir = os.path.dirname(os.path.abspath(sys.executable))
-        log_debug(f"Base Dir: {base_dir}")
+        log_debug(f"Diretório Base: {base_dir}")
 
         exe_name = os.path.basename(sys.executable).lower()
         is_backend = "backend" in exe_name or self._svc_name_ == "TicketFlowBackend"
@@ -68,7 +76,7 @@ class TicketFlowService(win32serviceutil.ServiceFramework):
             log_debug("Iniciando modo Backend embutido...")
             server_dir = os.path.join(base_dir, "server")
             sys.path.insert(0, server_dir)
-            log_debug(f"server_dir adicionado ao sys.path: {server_dir}")
+            log_debug(f"Diretório 'server' adicionado ao path: {server_dir}")
 
             try:
                 import uvicorn  # type: ignore[import]
@@ -136,8 +144,8 @@ class TicketFlowService(win32serviceutil.ServiceFramework):
 
             cwd = client_dir
 
-        # CREATE_NO_WINDOW é 0x08000000; definido aqui para satisfazer o analisador
-        # estático quando subprocess.CREATE_NO_WINDOW não aparece nos stubs.
+        # CREATE_NO_WINDOW (0x08000000) impede a abertura de janelas de console pretas
+        # ao iniciar os processos filhos do Node.js ou Python.
         CREATE_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
         try:

@@ -1,39 +1,53 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from 'react';
-import api, { getDefaultBaseURL } from '@/lib/api';
+import api, { getDynamicApiUrl } from '@/lib/api';
 import { useTheme } from './ThemeProvider';
 
+/**
+ * Interface que define as configurações brutas vindas do banco de dados.
+ */
 interface SystemSettings {
-    system_name: string;
-    logo_url_light: string | null;
-    logo_url_dark: string | null;
-    custom_colors: Record<string, string> | null;
-    favicon_url: string | null;
+    system_name: string;             // Nome do sistema (ex: Projeto Tickets)
+    logo_url_light: string | null;   // Logo para temas claros
+    logo_url_dark: string | null;    // Logo para temas escuros
+    custom_colors: Record<string, string> | null; // Mapeamento de cores para o tema customizado
+    favicon_url: string | null;      // URL do ícone da aba do navegador
 }
 
+/**
+ * Interface que define os dados e funções expostos pelo contexto.
+ */
 interface SystemSettingsContextType {
-    systemName: string;
-    logoUrl: string | null;
-    logoUrlLight: string | null;
-    logoUrlDark: string | null;
-    logoUrlOnAccent: string | null;
-    faviconUrl: string | null;
-    customColors: Record<string, string> | null;
-    refreshSettings: () => Promise<void>;
-    isLoading: boolean;
+    systemName: string;              // Nome atual do sistema
+    logoUrl: string | null;          // URL do logo adequado para o tema atual
+    logoUrlLight: string | null;     // URL absoluta do logo claro
+    logoUrlDark: string | null;      // URL absoluta do logo escuro
+    logoUrlOnAccent: string | null;  // URL do logo para uso sobre a cor de destaque (Navbar/Sidebar)
+    faviconUrl: string | null;       // URL do favicon
+    customColors: Record<string, string> | null; // Cores do tema custom
+    refreshSettings: () => Promise<void>;        // Força a atualização das configurações
+    isLoading: boolean;              // Indica se as configurações estão sendo baixadas
 }
 
+// Criação do contexto
 const SystemSettingsContext = createContext<SystemSettingsContextType | undefined>(undefined);
 
+/**
+ * Hook customizado para acessar as configurações visuais do sistema.
+ */
 export const useSystemSettings = () => {
     const context = useContext(SystemSettingsContext);
     if (!context) {
-        throw new Error('useSystemSettings must be used within a SystemSettingsProvider');
+        throw new Error('useSystemSettings deve ser usado dentro de um SystemSettingsProvider');
     }
     return context;
 };
 
+/**
+ * Provider que gerencia a identidade visual dinâmica do sistema.
+ * Carrega nome, logos, favicon e cores customizadas do backend.
+ */
 export const SystemSettingsProvider = ({ children }: { children: ReactNode }) => {
     const { theme } = useTheme();
     const [settings, setSettings] = useState<SystemSettings>({
@@ -45,40 +59,17 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
     });
     const [isLoading, setIsLoading] = useState(true);
 
+    /**
+     * Busca as configurações do sistema no backend e resolve as URLs de imagem.
+     */
     const refreshSettings = useCallback(async () => {
         try {
             const response = await api.get('/system-settings');
             const data = response.data;
 
-            // Tenta obter a API URL das configurações locais ou do default do axios
-            const getBaseURL = () => {
-                let url = getDefaultBaseURL();
+            const baseURL = getDynamicApiUrl();
 
-                if (typeof window !== 'undefined') {
-                    const localConfig = localStorage.getItem('system_config');
-                    if (localConfig) {
-                        try {
-                            const configData = JSON.parse(localConfig);
-                            if (configData.apiUrl) {
-                                url = configData.apiUrl.replace(/\/$/, "");
-
-                                // INTELLIGENT HOSTNAME: Se url for localhost/127.0.0.1 mas estivermos acessando remotamente
-                                const currentHost = window.location.hostname;
-                                const isRemoteAccess = currentHost !== 'localhost' && currentHost !== '127.0.0.1' && currentHost !== '[::1]';
-                                const isApiLocal = url.includes('localhost') || url.includes('127.0.0.1') || url.includes('[::1]');
-
-                                if (isRemoteAccess && isApiLocal) {
-                                    url = url.replace(/localhost|127\.0\.0\.1|\[::1\]/g, currentHost);
-                                }
-                            }
-                        } catch (e) { }
-                    }
-                }
-                return url;
-            };
-
-            const baseURL = getBaseURL();
-
+            // Resolve caminhos relativos para URLs absolutas
             const resolveUrl = (url: string | null) => {
                 if (url && !url.startsWith('http') && !url.startsWith('data:')) {
                     return `${baseURL}${url.startsWith('/') ? '' : '/'}${url}`;
@@ -96,18 +87,21 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         } catch (error: any) {
             const isNetworkError = !error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK');
             if (!isNetworkError) {
-                console.error('Failed to fetch system settings:', error);
+                console.error('Falha ao buscar configurações do sistema:', error);
             }
         } finally {
             setIsLoading(false);
         }
     }, []);
 
+    // Carrega as configurações ao montar o provedor
     useEffect(() => {
         refreshSettings();
     }, [refreshSettings]);
 
-    // Atualiza o título e favicon da aba do navegador dinamicamente
+    /**
+     * Atualiza o título e o favicon da aba do navegador dinamicamente.
+     */
     useEffect(() => {
         if (typeof window !== 'undefined') {
             if (settings.system_name) document.title = settings.system_name;
@@ -124,7 +118,10 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         }
     }, [settings.system_name, settings.favicon_url]);
 
-    // Aplicar cores customizadas se o tema for 'custom'
+    /**
+     * Monitora mudanças no tema e aplica variáveis CSS customizadas (:root) 
+     * se o tema 'custom' estiver ativo. Permite o White-Labeling dinâmico.
+     */
     useEffect(() => {
         const root = document.documentElement;
         if (theme === 'custom' && settings.custom_colors) {
@@ -146,7 +143,7 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
                 }
             });
         } else {
-            // Limpa propriedades customizadas se sair do tema custom
+            // Remove as propriedades customizadas se o usuário mudar para um tema padrão
             const vars = [
                 '--color-background', '--color-foreground', '--color-card', '--color-card-hover',
                 '--color-primary-theme', '--color-border-theme', '--color-accent-theme', '--color-text-muted'
@@ -155,11 +152,12 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         }
     }, [theme, settings.custom_colors]);
 
-    // Helper para determinar se uma cor é "clara" ou "escura" (Brightness)
+    /**
+     * Helper para calcular o brilho de uma cor hex e decidir se deve usar elementos claros ou escuros sobre ela.
+     */
     const getBrightness = (hex: string): 'light' | 'dark' => {
-        if (!hex || hex.length < 6) return 'dark'; // Fallback
+        if (!hex || hex.length < 6) return 'dark';
 
-        // Remove # se existir
         const color = hex.startsWith('#') ? hex.slice(1) : hex;
         const r = parseInt(color.substring(0, 2), 16);
         const g = parseInt(color.substring(2, 4), 16);
@@ -169,7 +167,7 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         return brightness > 155 ? 'light' : 'dark';
     };
 
-    // Mapeamento de brilho por tema (para temas padrão)
+    // Mapeamento de brilho "hardcoded" para os temas padrão do sistema
     const THEME_ACCENT_BRIGHTNESS: Record<string, 'light' | 'dark'> = {
         'dark': 'light',
         'light': 'light',
@@ -189,6 +187,11 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         'emerald-dark': 'light'
     };
 
+    /**
+     * Lógica para selecionar o Logo apropriado.
+     * Considera se o tema atual é predominantemente escuro ou claro para 
+     * escolher entre 'logo_url_dark' e 'logo_url_light'.
+     */
     const currentLogoUrl = useMemo(() => {
         const isDarkTheme = theme.includes('dark') || ['cyberpunk', 'matrix', 'sunset', 'nordic', 'gold', 'carbon-red', 'obsidian-red', 'midnight-purple', 'emerald-dark'].includes(theme);
 
@@ -198,6 +201,9 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         return settings.logo_url_light || settings.logo_url_dark;
     }, [theme, settings.logo_url_light, settings.logo_url_dark]);
 
+    /**
+     * Logo específico para ser exibido sobre a cor 'accent' (geralmente na Sidebar/Navbar).
+     */
     const logoUrlOnAccent = useMemo(() => {
         let accentBrightness: 'light' | 'dark' = 'light';
 
@@ -207,11 +213,10 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
             accentBrightness = THEME_ACCENT_BRIGHTNESS[theme] || 'light';
         }
 
-        // Se o fundo do acento for CLARO, usamos o logo para temas CLAROS (que é o logo escuro)
+        // Se o fundo for claro, usa o logo escuro (logo_url_light) e vice-versa
         if (accentBrightness === 'light') {
             return settings.logo_url_light || settings.logo_url_dark;
         }
-        // Se o fundo do acento for ESCURO, usamos o logo para temas ESCUROS (que é o logo claro)
         return settings.logo_url_dark || settings.logo_url_light;
     }, [theme, settings.logo_url_light, settings.logo_url_dark, settings.custom_colors]);
 

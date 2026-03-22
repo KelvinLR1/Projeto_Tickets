@@ -9,30 +9,42 @@ import TimerWidget from './TimerWidget';
 import InternalPiP from './InternalPiP';
 import { AnimatePresence } from 'framer-motion';
 
+/**
+ * Interface que define um ticket sendo rastreado pelo cronômetro.
+ */
 interface TrackedTicket {
     id: number;
     title: string;
     clientName: string;
-    total_duration: number;
-    session_duration: number;
+    total_duration: number;   // Tempo total acumulado no banco
+    session_duration: number; // Tempo da sessão atual (se houver timer rodando)
     status: string;
     assigned_user_id?: number | null;
 }
 
+/**
+ * Interface que define os dados e funções expostos pelo contexto do Timer.
+ */
 interface TimerContextType {
-    activeTimers: TimeLog[];
-    trackedTickets: TrackedTicket[];
+    activeTimers: TimeLog[];              // Lista de logs de tempo ativos no backend
+    trackedTickets: TrackedTicket[];      // Dados completos dos tickets no widget
     handleStartTimer: (ticketId: number) => Promise<void>;
     handleStopTimer: (ticketId: number, remove?: boolean) => Promise<void>;
     removeFromWidget: (ticketId: number) => void;
-    isPiPOpen: boolean;
-    isInternalPiPOpen: boolean;
-    openPiP: () => Promise<void>;
+    isPiPOpen: boolean;                   // Indica se a janela PiP externa está aberta
+    isInternalPiPOpen: boolean;           // Indica se o widget interno está aberto
+    openPiP: () => Promise<void>;         // Abre a janela PiP (ou fallback para widget interno)
     closePiP: () => void;
 }
 
+// Criação do contexto
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
 
+/**
+ * Provedor de Contexto do Sistema de Cronômetros (Time Tracking).
+ * Centraliza a lógica de contagem de tempo, persistência via API e 
+ * interface flutuante (Picture-in-Picture).
+ */
 export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user, loading } = useAuth();
     const { showNotification } = useNotification();
@@ -42,6 +54,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [isInternalPiPOpen, setIsInternalPiPOpen] = useState(false);
     const [pipWindow, setPipWindow] = useState<any>(null);
 
+    /**
+     * Busca os cronômetros ativos do usuário no backend.
+     */
     const fetchActiveTimers = useCallback(async () => {
         if (!user || loading) return;
 
@@ -54,16 +69,13 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         try {
-            // Busca apenas timers ativos do usuário
             const timers = await getActiveTimers();
-
             setActiveTimers(timers);
 
-            // Sincroniza trackedTickets com timers ativos e tickets atribuídos
+            // Sincroniza a lista de tickets do widget com os timers ativos
             setTrackedTickets(prev => {
                 const newTracked = [...prev];
 
-                // Função auxiliar para adicionar ticket se não existir
                 const addIfMissing = (ticket: any) => {
                     if (ticket && !newTracked.find(t => t.id === ticket.id)) {
                         newTracked.push({
@@ -78,12 +90,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     }
                 };
 
-                // 1. Adiciona tickets com timers ativos
                 timers.forEach(timer => {
                     if (timer.ticket) {
                         addIfMissing({
                             ...timer.ticket,
-                            id: timer.ticket_id // Garante ID correto
+                            id: timer.ticket_id
                         });
                     }
                 });
@@ -91,25 +102,28 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 return newTracked;
             });
         } catch (error: any) {
-            // Silencia 401 pois o AuthProvider lida com redirecionamento
             if (error.response?.status !== 401) {
                 console.error('Erro ao buscar dados do widget:', error);
             }
         }
     }, [user, loading]);
 
+    // Pooling para manter os cronômetros sincronizados entre dispositivos/abas.
+    // O backend é a fonte da verdade para timers ativos.
     useEffect(() => {
         fetchActiveTimers();
-        const interval = setInterval(fetchActiveTimers, 10000); // Polling a cada 10s para mais precisão
+        const interval = setInterval(fetchActiveTimers, 10000);
         return () => clearInterval(interval);
     }, [fetchActiveTimers]);
 
-
+    /**
+     * Inicia o cronômetro para um determinado ticket.
+     */
     const handleStartTimer = async (ticketId: number) => {
         try {
-            // Busca dados do ticket para garantir que temos as informações mais recentes
             const ticketData = await getTicket(ticketId);
 
+            // Validações de regra de negócio
             if (ticketData.status === 'Finalizado') {
                 showNotification('Não é possível iniciar cronômetro em chamados finalizados.', 'warning');
                 return;
@@ -123,7 +137,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const newTimer = await startTimer(ticketId);
             setActiveTimers(prev => [...prev.filter(t => t.ticket_id !== ticketId), newTimer]);
 
-            // Adiciona ou atualiza em trackedTickets
+            // Atualiza o estado visual do ticket no widget
             setTrackedTickets(prev => {
                 const updated: TrackedTicket = {
                     id: ticketData.id,
@@ -146,20 +160,21 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
+    /**
+     * Para o cronômetro de um ticket.
+     * @param remove Se true, remove o ticket da lista do widget após parar.
+     */
     const handleStopTimer = async (ticketId: number, remove: boolean = false) => {
         try {
-            // Tenta parar o cronômetro no backend. 
-            // Se já estiver parado, o backend retorna 400, mas ignoramos para permitir a finalização/limpeza local.
             try {
                 await stopTimer(ticketId);
             } catch (e) {
                 console.log('Cronômetro já estava parado ou erro ao parar:', e);
             }
 
-            // Busca dados atualizados do ticket para pegar o novo total_duration
             const ticketData = await getTicket(ticketId);
 
-            // Atualiza trackedTickets antes para evitar o reset visual
+            // Calcula a duração total final para evitar saltos visuais antes do refresh global
             setTrackedTickets(prev => prev.map(t => {
                 if (t.id === ticketId) {
                     const activeTimer = activeTimers.find(at => at.ticket_id === ticketId);
@@ -180,7 +195,6 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 return t;
             }));
 
-            // Só agora remove dos timers ativos
             setActiveTimers(prev => prev.filter(t => t.ticket_id !== ticketId));
 
             if (remove) {
@@ -194,31 +208,40 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
+    /**
+     * Para todos os cronômetros ativos do usuário (usado no logout).
+     */
     const stopAllTimers = useCallback(async () => {
         if (activeTimers.length === 0) return;
 
         try {
-            // Cria uma cópia para evitar problemas de concorrência com o estado
             const timersToStop = [...activeTimers];
             for (const timer of timersToStop) {
                 await stopTimer(timer.ticket_id);
             }
             setActiveTimers([]);
             setTrackedTickets([]);
-            console.log('Todos os cronômetros foram parados devido ao encerramento da sessão.');
         } catch (error) {
             console.error('Erro ao parar todos os cronômetros:', error);
         }
     }, [activeTimers]);
 
+    /**
+     * Remove um ticket da lista visual do widget.
+     */
     const removeFromWidget = (ticketId: number) => {
         setTrackedTickets(prev => prev.filter(t => t.id !== ticketId));
-        // Se houver um timer rodando, para ele
         if (activeTimers.find(t => t.ticket_id === ticketId)) {
             handleStopTimer(ticketId, true);
         }
     };
 
+    /**
+     * Abre a janela móvel (Document Picture-in-Picture) com o TimerWidget.
+     * Esta API permite 'desacoplar' uma janela do navegador com conteúdo HTML arbitrário. 
+     * Caso o navegador não suporte a API (ex: Firefox ou versões antigas), 
+     * abre o widget internamente sob a forma de modal flutuante.
+     */
     const openPiP = async () => {
         if (!('documentPictureInPicture' in window)) {
             setIsInternalPiPOpen(true);
@@ -232,7 +255,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 height: 450,
             });
 
-            // Copiar estilos incluindo as variáveis do tema (:root)
+            // Copia os estilos da página principal para a janela PiP
             [...document.styleSheets].forEach((styleSheet) => {
                 try {
                     const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
@@ -249,12 +272,11 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
             });
 
-            // Garantir que as classes de tema e ESTILOS INLINE (variáveis custom) do root sejam copiadas
+            // Sincroniza as variáveis de tema (:root), classes do sistema e cores de fundo
             pip.document.documentElement.className = document.documentElement.className;
             pip.document.body.className = document.body.className;
             pip.document.documentElement.style.cssText = document.documentElement.style.cssText;
 
-            // Sincronizar cores de fundo explicitamente para evitar o branco antes/depois do load
             const bodyStyle = window.getComputedStyle(document.body);
             pip.document.body.style.backgroundColor = bodyStyle.backgroundColor;
             pip.document.documentElement.style.backgroundColor = bodyStyle.backgroundColor;
@@ -275,7 +297,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             container.style.flexDirection = 'column';
             pip.document.body.appendChild(container);
 
-            // Garantir que o body e html ocupem 100% e não tenham scroll/margens extras
+            // Ajustes finos no layout da janela flutuante
             pip.document.body.style.margin = '0';
             pip.document.body.style.padding = '0';
             pip.document.body.style.height = '100vh';
@@ -290,6 +312,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
+    /**
+     * Fecha a janela PiP ou o widget interno.
+     */
     const closePiP = () => {
         if (pipWindow) {
             pipWindow.close();
@@ -297,7 +322,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsInternalPiPOpen(false);
     };
 
-    // Limpeza ao deslogar
+    // Garante que cronômetros sejam parados no logout
     useEffect(() => {
         if (!user && (isPiPOpen || isInternalPiPOpen || activeTimers.length > 0)) {
             closePiP();
@@ -305,7 +330,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     }, [user, isPiPOpen, isInternalPiPOpen, activeTimers.length, closePiP, stopAllTimers]);
 
-    // Limpeza ao fechar aba/navegador
+    // Proteção contra cronômetros "fantasmas" no fechamento da aba
     useEffect(() => {
         const handleBeforeUnload = () => {
             if (activeTimers.length > 0) {
@@ -333,10 +358,14 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             closePiP
         }}>
             {children}
+
+            {/* Renderiza o Widget dentro da janela PiP (se aberta) via Portal React */}
             {isPiPOpen && pipWindow && createPortal(
                 <TimerWidget />,
                 pipWindow.document.getElementById('pip-root') || pipWindow.document.body
             )}
+
+            {/* Renderiza o Widget interno como fallback animado */}
             <AnimatePresence>
                 {isInternalPiPOpen && (
                     <InternalPiP onClose={closePiP} />
@@ -346,6 +375,9 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 };
 
+/**
+ * Hook customizado para gerenciar tempos em qualquer parte do sistema.
+ */
 export const useTimer = () => {
     const context = useContext(TimerContext);
     if (!context) throw new Error('useTimer deve ser usado dentro de um TimerProvider');

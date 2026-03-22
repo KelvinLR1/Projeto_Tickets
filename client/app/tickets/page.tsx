@@ -196,14 +196,20 @@ export default function TicketsPage() {
     const hasActiveFilters = !!(statusFilter || priorityFilter || categoryFilter || assignedUserFilter || clientFilter || unassignedOnly || startDate || endDate || filterScope !== 'my_plus_unassigned');
 
     return (
-        <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
+        <motion.main 
+            initial={{ opacity: 0, y: 15 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -15 }} 
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="min-h-screen p-8 bg-background text-foreground transition-all duration-500"
+        >
             <div className="max-w-7xl mx-auto space-y-10">
 
                 {/* Header Area */}
-                <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-8 pb-10 border-b border-border-theme">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-8 pb-10 border-b border-border-theme">
                     <div className="space-y-2">
                         <h1 className="text-5xl font-black font-display tracking-tight italic uppercase">
-                            Gestão de <span className="text-accent-theme">Chamados</span>
+                        Gestão de <span className="text-accent-theme">Chamados</span>
                         </h1>
                         <p className="text-[var(--color-text-muted)] text-sm font-medium mt-1">
                             Monitore e resolva os tickets solicitados pelos clientes.
@@ -643,6 +649,6 @@ export default function TicketsPage() {
                     )}
                 </div>
             </div>
-        </main>
+        </motion.main>
     );
 }

@@ -4,7 +4,7 @@ import subprocess
 import platform
 import importlib
 
-# Configurações de cores para o terminal
+# Configurações de cores ANSI para formatação de saída no terminal
 class Colors:
     HEADER = '\033[95m'
     BLUE = '\033[94m'
@@ -15,6 +15,7 @@ class Colors:
     BOLD = '\033[1m'
 
 def print_status(message, status="INFO", category=""):
+    """Imprime uma mensagem com ícone e cor baseada no status (OK, ERROR, WARN, INFO)."""
     cat_str = f"[{category}] " if category else ""
     if status == "OK":
         print(f"{Colors.GREEN}[V] {cat_str}{message}{Colors.ENDC}")
@@ -26,6 +27,7 @@ def print_status(message, status="INFO", category=""):
         print(f"{Colors.BLUE}[*] {cat_str}{message}{Colors.ENDC}")
 
 def check_command(command, args):
+    """Executa um comando de sistema e retorna a saída. Retorna None se o comando falhar ou não existir."""
     try:
         # No Windows, shell=True pode ser necessário para comandos como 'node' em alguns ambientes
         result = subprocess.run([command] + args, capture_output=True, text=True, check=True, shell=True)
@@ -34,6 +36,7 @@ def check_command(command, args):
         return None
 
 def check_library(lib_name):
+    """Verifica se uma biblioteca Python está instalada no ambiente atual."""
     try:
         importlib.import_module(lib_name)
         return True
@@ -41,6 +44,7 @@ def check_library(lib_name):
         return False
 
 def get_env_variable(var_name):
+    """Busca o valor de uma variável específica no arquivo .env do servidor."""
     env_path = os.path.join("server", ".env")
     if not os.path.exists(env_path):
         return None
