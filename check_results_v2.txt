@@ -1,0 +1,29 @@
+﻿
+[95m[1m=== TICKETFLOW - CHECK DE AMBIENTE v2.0 ===[0m
+[94mEste script verifica se o projeto estß pronto para rodar ou ser compilado.[0m
+
+[94m[*] Sistema Operacional: Windows 11[0m
+[94m[*] [PYTHON] Executßvel: C:\Users\finan\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe[0m
+[92m[V] [PYTHON] Python: 3.13.12[0m
+[92m[V] [DEP] Biblioteca 'fastapi': Instalada[0m
+[92m[V] [DEP] Biblioteca 'uvicorn': Instalada[0m
+[92m[V] [DEP] Biblioteca 'sqlalchemy': Instalada[0m
+[92m[V] [DEP] Biblioteca 'pg8000': Instalada[0m
+[92m[V] [DEP] Biblioteca 'win32api': Instalada[0m
+[92m[V] [FRONTEND] Node.js: v24.13.0 | npm: 11.6.2[0m
+[92m[V] [FRONTEND] DependÛncias (client/node_modules): OK[0m
+[92m[V] [CONFIG] Arquivo .env encontrado e configurado[0m
+[94m[*] [DB] Motor configurado: PostgreSQL[0m
+   -> Testando conexÒo com localhost...
+[92m[V] [DB] ConexÒo PostgreSQL: BEM-SUCEDIDA[0m
+[92m[V] [BUILD] PyInstaller: 6.12.0[0m
+[92m[V] [IA] Ollama: ollama version is 0.18.2[0m
+------------------------------------------------------------
+
+[92m[1mPROJETO PRONTO PARA RODAR![0m
+[92mTudo certo para gerar o instalador tambÚm.[0m
+
+[94mComandos para iniciar:[0m
+ 1. Backend: uvicorn main:app --reload (na pasta server)
+ 2. Frontend: npm run dev (na pasta client)
+

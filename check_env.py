@@ -3,6 +3,23 @@ import sys
 import subprocess
 import platform
 import importlib
+import importlib.util
+
+# Tenta corrigir caminhos do pywin32 se necessário
+try:
+    import site
+    user_site = site.getusersitepackages()
+    if user_site:
+        paths_to_add = [
+            os.path.join(user_site, "win32"),
+            os.path.join(user_site, "win32", "lib"),
+            os.path.join(user_site, "Pythonwin"),
+        ]
+        for p in paths_to_add:
+            if os.path.exists(p) and p not in sys.path:
+                sys.path.append(p)
+except Exception:
+    pass
 
 # Configurações de cores ANSI para formatação de saída no terminal
 class Colors:
@@ -38,10 +55,23 @@ def check_command(command, args):
 def check_library(lib_name):
     """Verifica se uma biblioteca Python está instalada no ambiente atual."""
     try:
+        # Usa find_spec para evitar importar o módulo e ter efeitos colaterais
+        import importlib.util
+        spec = importlib.util.find_spec(lib_name)
+        if spec is not None:
+            return True, None
+        
+        # Fallback para win32api que às vezes fica em pastas 'win32' ou 'win32\\lib'
+        if lib_name == "win32api":
+            for sub in ["win32", "win32\\lib"]:
+                if importlib.util.find_spec(f"{sub}.{lib_name}"):
+                    return True, None
+                    
+        # Tenta importação direta para pegar o erro
         importlib.import_module(lib_name)
-        return True
-    except ImportError:
-        return False
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 def get_env_variable(var_name):
     """Busca o valor de uma variável específica no arquivo .env do servidor."""
@@ -55,7 +85,7 @@ def get_env_variable(var_name):
     return None
 
 def main():
-    print(f"\n{Colors.HEADER}{Colors.BOLD}=== TICKETFLOW - CHECK DE AMBIENTE COMPLETO ==={Colors.ENDC}")
+    print(f"\n{Colors.HEADER}{Colors.BOLD}=== TICKETFLOW - CHECK DE AMBIENTE v2.0 ==={Colors.ENDC}")
     print(f"{Colors.BLUE}Este script verifica se o projeto está pronto para rodar ou ser compilado.{Colors.ENDC}\n")
     
     essential_ok = True
@@ -68,6 +98,7 @@ def main():
 
     # 2. Python (ESSENCIAL)
     py_version = sys.version_info
+    print_status(f"Executável: {sys.executable}", "INFO", "PYTHON")
     if py_version.major >= 3 and py_version.minor >= 10:
         print_status(f"Python: {sys.version.split()[0]}", "OK", "PYTHON")
     else:
@@ -78,10 +109,13 @@ def main():
     # 3. Bibliotecas Python Críticas (ESSENCIAL)
     critical_libs = ["fastapi", "uvicorn", "sqlalchemy", "pg8000", "win32api"]
     for lib in critical_libs:
-        if check_library(lib):
+        is_ok, error = check_library(lib)
+        if is_ok:
             print_status(f"Biblioteca '{lib}': Instalada", "OK", "DEP")
         else:
             print_status(f"Biblioteca '{lib}': AUSENTE", "ERROR", "DEP")
+            if error:
+                print(f"   -> {Colors.RED}Erro: {error}{Colors.ENDC}")
             essential_ok = False
     
     if not essential_ok:
@@ -143,6 +177,22 @@ def main():
 
     # 6. Ferramentas de Build (PARA O INSTALADOR)
     pyinstaller_v = check_command("pyinstaller", ["--version"])
+    if not pyinstaller_v:
+        # Tenta via modulo python (muito mais robusto que chamar sub-processo via command line)
+        try:
+            import PyInstaller
+            pyinstaller_v = PyInstaller.__version__
+        except ImportError:
+            # Tenta fallback via sys.executable just in case
+            py_cmd = f'"{sys.executable}"' if " " in sys.executable else sys.executable
+            pyinstaller_v = check_command(py_cmd, ["-m", "PyInstaller", "--version"])
+            if pyinstaller_v:
+                parts = pyinstaller_v.split()
+                for part in parts:
+                    if "." in part and part[0].isdigit():
+                        pyinstaller_v = part
+                        break
+            
     if pyinstaller_v:
         print_status(f"PyInstaller: {pyinstaller_v}", "OK", "BUILD")
     else:
