@@ -1,67 +1,267 @@
 /* style.css */
 
 /* ==============================================================================
-   VARIÁVEIS DE DESIGN SYSTEM (TEMA ESCURO OLED / AURA DESIGN)
-   ============================================================================== --> */
+   VARIÁVEIS DE DESIGN SYSTEM (TEMA HARMONIZADO COM O PORTAL)
+   ============================================================================== */
 :root {
   --font-family: 'Outfit', sans-serif;
-  --bg-color: #030508;
-  --panel-bg: rgba(9, 14, 23, 0.65);
-  --card-bg: rgba(22, 28, 45, 0.45);
-  --card-hover: rgba(32, 40, 65, 0.65);
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-focus: rgba(99, 102, 241, 0.4);
+  --color-background: #0f172a;
+  --color-foreground: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-card: rgba(30, 41, 59, 0.7);
+  --color-primary-theme: #8b5cf6;
+  --color-accent-theme: #6366f1;
+  --border-color: rgba(255, 255, 255, 0.06);
   
-  --primary-glow: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
-  --accent-color: #6366f1;
-  --accent-hover: #4f46e5;
-  --text-muted: #94a3b8;
+  --accent-color: var(--color-primary-theme);
+  --accent-gradient: linear-gradient(135deg, var(--color-primary-theme) 0%, var(--color-accent-theme) 100%);
+  --accent-glow: 0 0 15px -3px var(--color-primary-theme);
+}
+
+/* ==============================================================================
+   MAP E SINCRONIZAÇÃO DE TODOS OS TEMAS DO PORTAL TICKETFLOW
+   ============================================================================== */
+.theme-light {
+  --color-background: #f1f5f9;
+  --color-foreground: #0f172a;
+  --color-text-muted: #64748b;
+  --color-card: rgba(255, 255, 255, 0.8);
+  --color-primary-theme: #2563eb;
+  --color-accent-theme: #3b82f6;
+  --border-color: rgba(0, 0, 0, 0.08);
+}
+.theme-cyberpunk {
+  --color-background: #0d0221;
+  --color-foreground: #00ffc8;
+  --color-text-muted: #b000ff;
+  --color-card: rgba(25, 14, 47, 0.7);
+  --color-primary-theme: #ff007f;
+  --color-accent-theme: #e100ff;
+  --border-color: rgba(45, 235, 255, 0.15);
+}
+.theme-matrix {
+  --color-background: #000000;
+  --color-foreground: #00ff41;
+  --color-text-muted: #008f11;
+  --color-card: rgba(5, 5, 5, 0.8);
+  --color-primary-theme: #008f11;
+  --color-accent-theme: #00ff41;
+  --border-color: rgba(0, 255, 65, 0.2);
+}
+.theme-antigravity {
+  --color-background: #ffffff;
+  --color-foreground: #111827;
+  --color-text-muted: #6b7280;
+  --color-card: #f9fafb;
+  --color-primary-theme: #f59e0b;
+  --color-accent-theme: #fbbf24;
+  --border-color: #e5e7eb;
+}
+.theme-sunset {
+  --color-background: #1a0b2e;
+  --color-foreground: #ff9e7d;
+  --color-text-muted: #b388ff;
+  --color-card: rgba(45, 20, 70, 0.6);
+  --color-primary-theme: #8a2be2;
+  --color-accent-theme: #f06292;
+  --border-color: rgba(240, 98, 146, 0.15);
+}
+.theme-nordic {
+  --color-background: #242933;
+  --color-foreground: #eceff4;
+  --color-text-muted: #d8dee9;
+  --color-card: rgba(46, 52, 64, 0.7);
+  --color-primary-theme: #88c0d0;
+  --color-accent-theme: #81a1c1;
+  --border-color: rgba(136, 192, 208, 0.15);
+}
+.theme-gold {
+  --color-background: #050505;
+  --color-foreground: #d4af37;
+  --color-text-muted: #aa8822;
+  --color-card: rgba(20, 20, 20, 0.8);
+  --color-primary-theme: #c5a028;
+  --color-accent-theme: #ffd700;
+  --border-color: rgba(212, 175, 55, 0.2);
+}
+.theme-carbon-red {
+  --color-background: #1c1917;
+  --color-foreground: #f5f5f4;
+  --color-text-muted: #a8a29e;
+  --color-card: rgba(41, 37, 36, 0.7);
+  --color-primary-theme: #ef4444;
+  --color-accent-theme: #f87171;
+  --border-color: rgba(239, 68, 68, 0.15);
+}
+.theme-obsidian-red {
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+  --color-text-muted: #737373;
+  --color-card: rgba(20, 20, 20, 0.8);
+  --color-primary-theme: #991b1b;
+  --color-accent-theme: #dc2626;
+  --border-color: rgba(153, 27, 27, 0.25);
+}
+.theme-office-red {
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-text-muted: #64748b;
+  --color-card: rgba(255, 255, 255, 0.85);
+  --color-primary-theme: #e11d48;
+  --color-accent-theme: #fb7185;
+  --border-color: rgba(225, 29, 72, 0.1);
+}
+.theme-ash-red {
+  --color-background: #e2e8f0;
+  --color-foreground: #1e293b;
+  --color-text-muted: #475569;
+  --color-card: rgba(241, 245, 249, 0.9);
+  --color-primary-theme: #dc2626;
+  --color-accent-theme: #ef4444;
+  --border-color: rgba(220, 38, 38, 0.12);
+}
+.theme-hub {
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-text-muted: #64748b;
+  --color-card: rgba(255, 255, 255, 0.85);
+  --color-primary-theme: #b91c1c;
+  --color-accent-theme: #dc2626;
+  --border-color: rgba(185, 28, 28, 0.1);
+}
+.theme-hub-dark {
+  --color-background: #0d0d0d;
+  --color-foreground: #f3f4f6;
+  --color-text-muted: #9ca3af;
+  --color-card: rgba(24, 24, 27, 0.8);
+  --color-primary-theme: #dc2626;
+  --color-accent-theme: #b91c1c;
+  --border-color: rgba(220, 38, 38, 0.15);
+}
+.theme-midnight-purple {
+  --color-background: #0b061a;
+  --color-foreground: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-card: rgba(20, 15, 40, 0.8);
+  --color-primary-theme: #8b5cf6;
+  --color-accent-theme: #ec4899;
+  --border-color: rgba(139, 92, 246, 0.2);
+}
+.theme-emerald-dark {
+  --color-background: #021a14;
+  --color-foreground: #f0fdf4;
+  --color-text-muted: #94a3b8;
+  --color-card: rgba(5, 30, 25, 0.8);
+  --color-primary-theme: #10b981;
+  --color-accent-theme: #34d399;
+  --border-color: rgba(16, 185, 129, 0.18);
+}
+.theme-custom {
+  --color-background: var(--custom-bg, #0f172a);
+  --color-foreground: var(--custom-fg, #f8fafc);
+  --color-text-muted: var(--custom-muted, #94a3b8);
+  --color-card: var(--custom-card, rgba(30, 41, 59, 0.7));
+  --color-primary-theme: var(--custom-primary, #3b82f6);
+  --color-accent-theme: var(--custom-accent, #60a5fa);
+  --border-color: var(--custom-border, rgba(255, 255, 255, 0.1));
 }
 
 body {
   font-family: var(--font-family);
-  background-color: var(--bg-color);
-  background-image: var(--primary-glow);
-  background-position: top center;
-  background-repeat: no-repeat;
-  background-size: 100% 100vh;
+  background: transparent !important; /* Herda o background do Next.js */
 }
 
 /* ==============================================================================
-   EFEITO GLASSMORPHISM
-   ============================================================================== --> */
+   ESTRUTURA TRANSPARENTE E INTEGRADA DINÂMICA
+   ============================================================================== */
+aside {
+  background: var(--color-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+section {
+  background: color-mix(in srgb, var(--color-background) 96%, transparent) !important;
+}
+
 .glass-effect {
-  background: var(--panel-bg);
+  background: var(--color-card) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-color);
 }
 
 .glass-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  background: color-mix(in srgb, var(--color-foreground) 1.5%, transparent) !important;
+  border: 1px solid var(--border-color) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
 }
 
 .glass-card:hover {
-  background: var(--card-hover);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 20px -10px rgba(99, 102, 241, 0.3);
+  background: color-mix(in srgb, var(--color-foreground) 4%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-foreground) 15%, transparent) !important;
+  transform: translateY(-0.5px);
 }
 
 .glass-card.active {
-  background: rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 0 15px -3px rgba(99, 102, 241, 0.25);
+  background: color-mix(in srgb, var(--color-primary-theme) 8%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme) 40%, transparent) !important;
+  box-shadow: 0 0 15px -5px color-mix(in srgb, var(--color-primary-theme) 20%, transparent) !important;
+}
+
+/* ==============================================================================
+   SOBREPOSIÇÃO DE TEXTOS DO TAILWIND (LIGHT / DARK CORRECTION)
+   ============================================================================== */
+.text-slate-100,
+.text-slate-200,
+.text-slate-300,
+.text-slate-100 *,
+.text-slate-200 *,
+.text-slate-300 *,
+h2, h3 {
+  color: var(--color-foreground) !important;
+}
+
+.text-slate-400,
+.text-slate-500,
+.text-slate-400 *,
+.text-slate-500 * {
+  color: var(--color-text-muted) !important;
+}
+
+/* ==============================================================================
+   CLASSES UTILITÁRIAS DE TEMA DINÂMICO (ACCENTS)
+   ============================================================================== */
+.badge-accent-theme {
+  background: color-mix(in srgb, var(--color-primary-theme) 12%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 22%, transparent) !important;
+}
+
+.btn-accent-theme {
+  background: var(--accent-gradient) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 4px 15px -3px color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+}
+
+.btn-accent-theme:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 6px 20px -3px color-mix(in srgb, var(--color-primary-theme) 45%, transparent) !important;
+}
+
+.avatar-accent-theme {
+  background: var(--accent-gradient) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
 }
 
 /* ==============================================================================
    CUSTOM SCROLLBAR (PREMIUM)
-   ============================================================================== --> */
+   ============================================================================== */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -69,71 +269,81 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 99px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-color);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.04) transparent;
 }
 
 /* ==============================================================================
-   BALÕES DE MENSAGEM (CHAT BUBBLES)
-   ============================================================================== --> */
+   BALÕES DE MENSAGEM (CHAT BUBBLES COERENTES COM TICKETFLOW)
+   ============================================================================== */
 .msg-bubble {
-  max-width: 70%;
-  padding: 12px 16px;
-  border-radius: 18px;
-  font-size: 14px;
-  line-height: 1.5;
+  max-width: 60%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+  line-height: 1.45;
   position: relative;
   word-wrap: break-word;
-  animation: slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.25);
+  animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .msg-client {
   align-self: flex-start;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  color: #f1f5f9;
+  background: color-mix(in srgb, var(--color-foreground) 4%, transparent) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-foreground) !important;
   border-bottom-left-radius: 4px;
 }
 
 .msg-attendant {
   align-self: flex-end;
-  background: linear-gradient(135deg, #4f46e5 0%, #312e81 100%);
+  background: var(--accent-gradient);
   color: #ffffff;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 4px 12px -2px rgba(79, 70, 229, 0.3);
+  box-shadow: var(--accent-glow);
 }
 
 .msg-system {
   align-self: center;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 500;
-  padding: 6px 14px;
-  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-primary-theme) 6%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 15%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 99px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  max-width: 90%;
+  letter-spacing: 0.06em;
+  max-width: 80%;
   text-align: center;
+}
+
+/* Timestamps da Mensagem */
+.msg-time {
+  font-size: 9px;
+  color: var(--color-text-muted) !important;
+  margin-top: 4px;
+  text-align: right;
+  display: block;
 }
 
 /* ==============================================================================
    ANIMAÇÕES E TRANSIÇÕES
-   ============================================================================== --> */
+   ============================================================================== */
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -142,7 +352,7 @@ body {
 }
 
 .fade-in {
-  animation: fadeIn 0.4s ease-out forwards;
+  animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 @keyframes fadeIn {
@@ -150,12 +360,80 @@ body {
   to { opacity: 1; }
 }
 
-/* Custom shadow effects */
-.glow-effect {
-  box-shadow: 0 0 25px 0px rgba(99, 102, 241, 0.15);
+/* Modais Glassmorphism */
+.glass-modal {
+  background: var(--color-card) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-color);
 }
 
-/* Transição de foco dos inputs */
+/* Sobrescrita de Modais e Overlays */
+#qr-modal,
+#new-chat-modal,
+#attendant-modal {
+  background: color-mix(in srgb, var(--color-background) 85%, transparent) !important;
+  backdrop-filter: blur(16px);
+}
+
+#qr-modal > div,
+#new-chat-modal > div,
+#attendant-modal > div {
+  background: var(--color-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--color-foreground) !important;
+}
+
+/* Sobrescrita dos campos de input do sistema */
+input[type="text"] {
+  background: color-mix(in srgb, var(--color-background) 80%, transparent) !important;
+  border-color: var(--border-color) !important;
+  color: var(--color-foreground) !important;
+}
+
+/* Foco dinâmico de inputs */
+#chat-input:focus,
 input:focus {
-  box-shadow: 0 0 12px 0px rgba(99, 102, 241, 0.2);
+  border-color: color-mix(in srgb, var(--color-primary-theme) 50%, transparent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-theme) 15%, transparent) !important;
+}
+
+/* Estado Vazio */
+#empty-chat-state {
+  background: color-mix(in srgb, var(--color-background) 50%, transparent) !important;
+}
+
+/* Barra de Abas e Barra Inferior do Aside */
+aside > div:first-child {
+  background: color-mix(in srgb, var(--color-background) 30%, transparent) !important;
+  border-color: var(--border-color) !important;
+}
+
+aside > div:last-child {
+  background: color-mix(in srgb, var(--color-background) 45%, transparent) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Cabeçalho do Chat Ativo */
+#active-chat-area > div:first-child {
+  background: color-mix(in srgb, var(--color-background) 20%, transparent) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Barra de Digitação */
+#active-chat-area > div:last-child {
+  background: color-mix(in srgb, var(--color-background) 30%, transparent) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Fallback de Avatar Inativo */
+.avatar-inactive-theme {
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent) !important;
+  color: var(--color-text-muted) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+/* Cor de nome ativo em cartões */
+.glass-card.active p {
+  color: var(--color-primary-theme) !important;
 }

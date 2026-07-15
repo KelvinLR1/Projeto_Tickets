@@ -331,6 +331,9 @@ class SystemSettings(Base):
     logo_url_dark = Column(String, nullable=True)
     custom_colors = Column(JSON, nullable=True)    # Esquemas de cores personalizados
     favicon_url = Column(String, nullable=True)
+    whatsapp_warn_new_number = Column(Boolean, default=True, nullable=False)
+    whatsapp_limit_active_chats = Column(Boolean, default=True, nullable=False)
+    whatsapp_limit_count = Column(Integer, default=10, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Atualização de relacionamento tardio para evitar dependência circular

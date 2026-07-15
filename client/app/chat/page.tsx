@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 export default function ChatPage() {
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
-            <div className="max-w-6xl mx-auto space-y-10">
+            <div className="w-full space-y-10">
                 {/* Header Area */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
                     <div className="space-y-2">

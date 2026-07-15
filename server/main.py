@@ -74,7 +74,7 @@ def _run_migrations():
         except Exception as e:
             # Caso o erro seja de tabela existente (banco já criado via create_all no passado)
             # Nós marcamos o banco como atualizado (stamp head) para sincronizar o Alembic
-            if "already exists" in str(e).lower():
+            if any(msg in str(e).lower() for msg in ["already exists", "já existe", "ja existe"]):
                 print("ℹ️ Banco de dados já possui tabelas mas não está versionado. Sincronizando com Alembic...")
                 command.stamp(alembic_cfg, "head")
                 print("✅ Sincronização concluída. O banco agora está sob controle do Alembic.")

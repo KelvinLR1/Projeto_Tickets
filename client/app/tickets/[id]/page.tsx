@@ -710,7 +710,7 @@ export default function TicketDetailsPage() {
             transition={{ duration: 0.3, ease: 'easeOut' }}
             className="min-h-screen p-8 bg-background text-foreground transition-all duration-500"
         >
-            <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="w-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
                 {/* Top Navigation */}
                 <div className="flex items-center justify-between">

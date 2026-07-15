@@ -1,4 +1,7 @@
-// app.js
+// Detecta e aplica tema enviado via Query Parameter pelo Next.js
+const urlParams = new URLSearchParams(window.location.search);
+const currentTheme = urlParams.get('theme') || 'dark';
+document.documentElement.className = `theme-${currentTheme}`;
 
 // Conexão Socket.io (conecta-se automaticamente ao host que serve o arquivo)
 const socket = io();
@@ -15,6 +18,10 @@ const qrModal = document.getElementById('qr-modal');
 const qrImage = document.getElementById('qr-image');
 const qrSpinner = document.getElementById('qr-loading-spinner');
 const qrStatusText = document.getElementById('qr-status-text');
+
+const newChatModal = document.getElementById('new-chat-modal');
+const inputNewChatName = document.getElementById('input-new-chat-name');
+const inputNewChatPhone = document.getElementById('input-new-chat-phone');
 
 const attendantModal = document.getElementById('attendant-modal');
 const headerOpName = document.getElementById('header-operator-name');
@@ -62,10 +69,10 @@ function initOperator() {
     currentOperator.id = savedId;
     currentOperator.name = savedName;
     
-    // Atualiza cabeçalho
-    headerOpName.textContent = savedName;
-    headerOpId.textContent = `id: ${savedId}`;
-    headerOpAvatar.textContent = savedName.substring(0, 2).toUpperCase();
+    // Atualiza cabeçalho se elementos existirem
+    if (headerOpName) headerOpName.textContent = savedName;
+    if (headerOpId) headerOpId.textContent = `id: ${savedId}`;
+    if (headerOpAvatar) headerOpAvatar.textContent = savedName.substring(0, 2).toUpperCase();
     
     // Registra no Socket
     socket.emit('register_attendant', { atendente_id: savedId, nome: savedName });
@@ -100,6 +107,117 @@ function logoutOperator() {
     window.location.reload();
   }
 }
+
+// ==============================================================================
+// 🗂️ CONTROLE DE ABAS DA SIDEBAR
+// ==============================================================================
+let currentSidebarTab = 'active';
+
+const tabActiveBtn = document.getElementById('tab-active');
+const tabQueueBtn = document.getElementById('tab-queue');
+const tabBotBtn = document.getElementById('tab-bot');
+
+const activeChatsContainer = document.getElementById('active-chats-container');
+const queueChatsContainer = document.getElementById('queue-list-container');
+const botChatsContainer = document.getElementById('bot-chats-container');
+
+function switchSidebarTab(tab) {
+  currentSidebarTab = tab;
+  
+  // Reset buttons styles
+  [tabActiveBtn, tabQueueBtn, tabBotBtn].forEach(btn => {
+    btn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1";
+  });
+
+  // Reset containers visibility
+  [activeChatsContainer, queueChatsContainer, botChatsContainer].forEach(container => {
+    container.classList.add('hidden');
+  });
+
+  // Apply active styles
+  if (tab === 'active') {
+    tabActiveBtn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-white transition-all flex items-center justify-center gap-1 bg-white/5 border border-white/10 shadow-sm";
+    activeChatsContainer.classList.remove('hidden');
+  } else if (tab === 'queue') {
+    tabQueueBtn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-white transition-all flex items-center justify-center gap-1 bg-white/5 border border-white/10 shadow-sm";
+    queueChatsContainer.classList.remove('hidden');
+  } else if (tab === 'bot') {
+    tabBotBtn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-white transition-all flex items-center justify-center gap-1 bg-white/5 border border-white/10 shadow-sm";
+    botChatsContainer.classList.remove('hidden');
+  }
+}
+
+// ==============================================================================
+// 💬 CONTROLE DE NOVO CHAT (INICIAR CONVERSA ATIVA)
+// ==============================================================================
+
+function openNewChatModal() {
+  newChatModal.classList.remove('hidden');
+  inputNewChatName.value = '';
+  inputNewChatPhone.value = '';
+  inputNewChatName.focus();
+}
+
+function closeNewChatModal() {
+  newChatModal.classList.add('hidden');
+}
+
+function bypassQR() {
+  qrModal.classList.add('hidden');
+}
+
+async function handleNewChatSubmit(e) {
+  e.preventDefault();
+  const name = inputNewChatName.value.trim();
+  const phone = inputNewChatPhone.value.trim();
+
+  if (!name || !phone || !currentOperator.id) return;
+
+  // Formatar JID
+  let formattedJid = phone;
+  if (!formattedJid.includes('@')) {
+    formattedJid = `${formattedJid}@c.us`;
+  }
+
+  try {
+    // 1. Obter configurações de segurança no backend FastAPI para decidir se exibe aviso
+    let warnNewNumber = true;
+    try {
+      const res = await fetch('http://localhost:8080/system-settings');
+      if (res.ok) {
+        const settings = await res.json();
+        warnNewNumber = settings.whatsapp_warn_new_number !== undefined ? settings.whatsapp_warn_new_number : true;
+      }
+    } catch (err) {
+      console.error('Erro ao ler configurações de aviso do backend:', err);
+    }
+
+    // 2. Se aviso de segurança estiver ativo, exibir confirmação
+    if (warnNewNumber) {
+      const confirmed = confirm(
+        `⚠️ AVISO DE SEGURANÇA:\n\nIniciar conversas ativas com números que não falaram com a empresa antes aumenta o risco de banimento do número.\n\nDeseja mesmo iniciar este chat com ${name} (${phone})?`
+      );
+      if (!confirmed) return;
+    }
+
+    // 3. Fechar modal e enviar evento via socket
+    closeNewChatModal();
+    socket.emit('start_chat', {
+      cliente_jid: formattedJid,
+      cliente_nome: name,
+      atendente_id: currentOperator.id
+    });
+
+  } catch (err) {
+    console.error('Erro no envio de novo chat:', err);
+    alert(`Erro ao iniciar conversa: ${err.message}`);
+  }
+}
+
+// Sucesso ao iniciar novo chat (abre a conversa automaticamente na tela)
+socket.on('start_chat_success', ({ cliente_jid, cliente_nome }) => {
+  selectChat(cliente_jid, cliente_nome);
+});
 
 // ==============================================================================
 // 🔌 GESTÃO DOS EVENTOS WEBSOCKET DO WHATSAPP
@@ -156,23 +274,26 @@ socket.on('queue_list', (rows) => {
 
 function renderQueueList() {
   if (queueChats.length === 0) {
-    queueContainer.innerHTML = `<div class="text-center py-8 text-xs text-slate-500 font-medium">Nenhum cliente na fila</div>`;
+    queueContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Nenhum cliente na fila</div>`;
     return;
   }
 
   queueContainer.innerHTML = queueChats.map(chat => `
-    <div class="glass-card rounded-xl p-3.5 flex flex-col gap-2 relative fade-in border border-white/5 bg-[#121625]/20">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-full bg-yellow-500/10 border border-yellow-500/25 flex items-center justify-center font-bold text-xs text-yellow-500 uppercase">
-          ${chat.cliente_nome.substring(0, 2)}
+    <div class="glass-card rounded-2xl p-4 flex flex-col gap-3 relative fade-in border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-300">
+      <div class="flex items-center gap-3">
+        <div class="w-11.5 h-11.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-base text-amber-400 uppercase shrink-0 overflow-hidden">
+          ${chat.cliente_avatar 
+            ? `<img src="${chat.cliente_avatar}" alt="${chat.cliente_nome}" class="w-full h-full object-cover" onerror="this.outerHTML='${chat.cliente_nome.substring(0, 2).toUpperCase()}'"/>` 
+            : chat.cliente_nome.substring(0, 2).toUpperCase()
+          }
         </div>
-        <div class="leading-none text-left flex-1 min-w-0">
-          <p class="text-xs font-bold text-slate-200 truncate" title="${chat.cliente_nome}">${chat.cliente_nome}</p>
-          <span class="text-[10px] text-slate-500 font-mono mt-0.5 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+        <div class="leading-tight text-left flex-1 min-w-0">
+          <p class="text-xs font-semibold text-slate-100 truncate" title="${chat.cliente_nome}">${chat.cliente_nome}</p>
+          <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
         </div>
       </div>
       
-      <button onclick="takeChat('${chat.cliente_jid}')" class="w-full h-8 rounded-lg bg-yellow-600/10 hover:bg-yellow-600 hover:text-white border border-yellow-500/30 text-yellow-500 text-xs font-bold transition-all duration-300">
+      <button onclick="takeChat('${chat.cliente_jid}')" class="w-full h-9 rounded-xl bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/20 hover:border-transparent text-amber-400 text-xs font-bold transition-all duration-200 active:scale-[0.98]">
         Atender Cliente
       </button>
     </div>
@@ -194,22 +315,28 @@ socket.on('active_chats_list', (rows) => {
 
 function renderActiveChats() {
   if (activeChats.length === 0) {
-    activeContainer.innerHTML = `<div class="text-center py-8 text-xs text-slate-500 font-medium">Você não possui atendimentos ativos</div>`;
+    activeContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Você não possui atendimentos ativos</div>`;
     return;
   }
 
   activeContainer.innerHTML = activeChats.map(chat => {
     const isSelected = selectedChatJid === chat.cliente_jid;
     return `
-      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-xl p-3.5 flex items-center gap-3 cursor-pointer transition-all duration-300 border ${isSelected ? 'active border-indigo-500/50 bg-indigo-500/5' : 'border-white/5 bg-[#121625]/20'}">
-        <div class="w-9 h-9 rounded-full ${isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'} flex items-center justify-center font-bold text-xs uppercase">
-          ${chat.cliente_nome.substring(0, 2)}
+      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
+        <div class="w-12 h-12 rounded-2xl ${isSelected ? 'avatar-accent-theme text-white' : 'avatar-inactive-theme'} flex items-center justify-center font-bold text-sm uppercase transition-all shrink-0 overflow-hidden">
+          ${chat.cliente_avatar 
+            ? `<img src="${chat.cliente_avatar}" alt="${chat.cliente_nome}" class="w-full h-full object-cover" onerror="this.outerHTML='${chat.cliente_nome.substring(0, 2).toUpperCase()}'"/>` 
+            : chat.cliente_nome.substring(0, 2).toUpperCase()
+          }
         </div>
-        <div class="leading-none text-left flex-1 min-w-0">
-          <p class="text-xs font-bold text-slate-200 truncate">${chat.cliente_nome}</p>
-          <span class="text-[9px] text-slate-500 font-mono mt-0.5 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+        <div class="leading-tight text-left flex-1 min-w-0">
+          <p class="text-xs font-semibold text-slate-200 truncate">${chat.cliente_nome}</p>
+          <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
         </div>
-        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+        <div class="relative flex h-2 w-2 shrink-0">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </div>
       </div>
     `;
   }).join('');
@@ -228,7 +355,18 @@ function selectChat(jid, name) {
   
   chatClientName.textContent = name;
   chatClientJid.textContent = jid.split('@')[0];
-  chatClientAvatar.textContent = name.substring(0, 2).toUpperCase();
+
+  // Carrega e exibe avatar no cabeçalho
+  const chatObj = activeChats.find(c => c.cliente_jid === jid) || queueChats.find(c => c.cliente_jid === jid);
+  const avatar = chatObj ? chatObj.cliente_avatar : null;
+  
+  if (avatar) {
+    chatClientAvatar.innerHTML = `<img src="${avatar}" alt="${name}" class="w-full h-full object-cover" onerror="this.innerHTML='${name.substring(0, 2).toUpperCase()}'"/>`;
+    chatClientAvatar.className = "w-12 h-12 rounded-2xl border border-white/10 flex items-center justify-center shrink-0 overflow-hidden";
+  } else {
+    chatClientAvatar.innerHTML = name.substring(0, 2).toUpperCase();
+    chatClientAvatar.className = "w-12 h-12 rounded-2xl avatar-accent-theme flex items-center justify-center font-bold text-sm uppercase text-white shadow-lg shrink-0";
+  }
 
   // Solicita histórico de mensagens
   socket.emit('select_chat', { cliente_jid: jid, atendente_id: currentOperator.id });
@@ -272,8 +410,13 @@ function appendMessageHTML(msg) {
     bubbleClass = isClient ? 'msg-bubble msg-client' : 'msg-bubble msg-attendant';
   }
 
-  const date = new Date(msg.timestamp);
-  const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Parse robusto de data para o SQLite
+  let dateStr = msg.timestamp;
+  if (dateStr && dateStr.includes(' ') && !dateStr.includes('T')) {
+    dateStr = dateStr.replace(' ', 'T');
+  }
+  const date = new Date(dateStr);
+  const formattedTime = isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const msgDiv = document.createElement('div');
   msgDiv.className = `flex flex-col w-full ${isSystem ? 'items-center' : (isClient ? 'items-start' : 'items-end')}`;
@@ -283,8 +426,8 @@ function appendMessageHTML(msg) {
   } else {
     msgDiv.innerHTML = `
       <div class="${bubbleClass}">
-        <p class="whitespace-pre-wrap">${msg.texto}</p>
-        <span class="text-[8px] opacity-50 block text-right mt-1.5 font-mono">${formattedTime}</span>
+        <p class="whitespace-pre-wrap leading-relaxed">${msg.texto}</p>
+        <span class="msg-time">${formattedTime}</span>
       </div>
     `;
   }

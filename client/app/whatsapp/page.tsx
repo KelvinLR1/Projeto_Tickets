@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { MessageSquare, RefreshCw, Plus, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
+import { useTheme } from '@/components/ThemeProvider';
 
 type WhatsAppChannel = {
     id: string;
@@ -13,17 +14,19 @@ type WhatsAppChannel = {
     sector_id?: number | null;
 };
 
-function buildIframeUrl(channel: WhatsAppChannel, user: any): string {
+function buildIframeUrl(channel: WhatsAppChannel, user: any, sessionToken: number, theme: string): string {
     const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
     const base = `http://${hostname}:${channel.port}`;
     if (!user) return base;
     const encodedId = encodeURIComponent(user.username);
     const encodedName = encodeURIComponent(user.full_name || user.username);
-    return `${base}?operator_id=${encodedId}&operator_name=${encodedName}`;
+    return `${base}?operator_id=${encodedId}&operator_name=${encodedName}&_t=${sessionToken}&theme=${theme}`;
 }
 
 export default function WhatsAppPage() {
     const { user } = useAuth();
+    const { theme } = useTheme();
+    const sessionToken = useMemo(() => new Date().getTime(), []);
     const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -56,6 +59,29 @@ export default function WhatsAppPage() {
     };
 
     const activeChannel = channels.find(c => c.id === activeChannelId) ?? channels[0] ?? null;
+
+    const [channelStatus, setChannelStatus] = useState<{ status: string; qr: string | null } | null>(null);
+
+    const fetchStatus = useCallback(async () => {
+        if (!activeChannel) return;
+        try {
+            const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+            const wsUrl = `http://${hostname}:${activeChannel.port}`;
+            const response = await fetch(`/api/whatsapp/status?url=${encodeURIComponent(wsUrl)}`, { cache: 'no-store' });
+            if (response.ok) {
+                const data = await response.json();
+                setChannelStatus(data);
+            }
+        } catch {
+            setChannelStatus(null);
+        }
+    }, [activeChannel]);
+
+    useEffect(() => {
+        fetchStatus();
+        const interval = setInterval(fetchStatus, 4000);
+        return () => clearInterval(interval);
+    }, [fetchStatus]);
 
     if (loading) {
         return (
@@ -94,29 +120,59 @@ export default function WhatsAppPage() {
     return (
         <main className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border-theme shrink-0">
+            <div className="flex items-center justify-between px-6 py-3 border-b border-border-theme shrink-0 bg-background/30 backdrop-blur-md">
                 <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/10">
+                    <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-r from-[var(--color-primary-theme)] to-[var(--color-accent-theme)] flex items-center justify-center shadow-lg shadow-[var(--color-primary-theme)]/15 shrink-0">
                         <MessageSquare className="w-4 h-4 text-white" />
                     </div>
-                    <div>
-                        <h1 className="text-base font-bold tracking-tight">Atendimento WhatsApp</h1>
-                        <p className="text-[10px] text-[var(--color-text-muted)] font-medium">
+                    <div className="leading-tight">
+                        <h1 className="text-sm font-bold tracking-tight text-foreground">Atendimento</h1>
+                        <p className="text-[10px] text-[var(--color-text-muted)] font-medium mt-0.5">
                             Painel Multi-Canal — {channels.length} canal(is) configurado(s)
                         </p>
                     </div>
                 </div>
 
-                {activeChannel && (
-                    <button
-                        onClick={() => handleReload(activeChannel.id)}
-                        className="p-2.5 rounded-xl border border-border-theme bg-card hover:bg-card-hover text-[var(--color-text-muted)] hover:text-foreground transition-all flex items-center gap-2 text-xs font-bold active:scale-95"
-                        title="Recarregar Painel"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        Recarregar
-                    </button>
-                )}
+                <div className="flex items-center gap-3">
+                    {user && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card border border-border-theme text-[10px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                            Atendente: {user.full_name || user.username}
+                        </div>
+                    )}
+                    {channelStatus && (
+                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider ${
+                            channelStatus.status === 'pronto' || channelStatus.status === 'autenticado'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : channelStatus.status === 'aguardando_qr'
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.1)]'
+                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                        }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                                channelStatus.status === 'pronto' || channelStatus.status === 'autenticado'
+                                    ? 'bg-emerald-400'
+                                    : channelStatus.status === 'aguardando_qr'
+                                        ? 'bg-amber-400'
+                                        : 'bg-red-400'
+                            }`} />
+                            {channelStatus.status === 'pronto' || channelStatus.status === 'autenticado'
+                                ? 'Conectado'
+                                : channelStatus.status === 'aguardando_qr'
+                                    ? 'QR Code Pendente'
+                                    : 'Desconectado'}
+                        </div>
+                    )}
+                    {activeChannel && (
+                        <button
+                            onClick={() => handleReload(activeChannel.id)}
+                            className="px-4 py-2 rounded-xl border border-border-theme bg-card hover:bg-card-hover text-[var(--color-text-muted)] hover:text-foreground transition-all flex items-center gap-2 text-[11px] font-bold active:scale-95"
+                            title="Recarregar Painel"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Recarregar
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Channel Tabs */}
@@ -145,7 +201,7 @@ export default function WhatsAppPage() {
             {/* Iframe Area — render all iframes, show only active one */}
             <div className="flex-1 relative overflow-hidden">
                 {channels.map(channel => {
-                    const iframeUrl = buildIframeUrl(channel, user);
+                    const iframeUrl = buildIframeUrl(channel, user, sessionToken, theme);
                     const isActive = channel.id === (activeChannelId ?? channels[0]?.id);
                     return (
                         <div

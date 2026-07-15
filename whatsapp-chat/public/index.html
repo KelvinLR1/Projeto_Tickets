@@ -10,137 +10,120 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   
-  <!-- Tailwind CSS CDN para agilizar a estrutura responsiva -->
+  <!-- Tailwind CSS CDN para estrutura responsiva -->
   <script src="https://cdn.tailwindcss.com"></script>
   
   <!-- Estilos Customizados Premium -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=1.2">
 </head>
 <body class="bg-black text-slate-100 min-h-screen flex flex-col font-sans overflow-hidden">
 
   <!-- ==============================================================================
-       HEADER / BARRA SUPERIOR
-       ============================================================================== -->
-  <header class="h-16 glass-effect border-b border-white/10 px-6 flex items-center justify-between z-10 shrink-0">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center font-bold text-white text-lg tracking-wider">T</div>
-      <div>
-        <h1 class="text-base font-bold tracking-tight">TicketFlow</h1>
-        <p class="text-[10px] text-slate-400 font-medium tracking-wider uppercase">WhatsApp Multi-Agent</p>
-      </div>
-    </div>
-    
-    <!-- Status do Servidor/WhatsApp -->
-    <div class="flex items-center gap-3">
-      <div class="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-white/5" id="connection-status-badge">
-        <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" id="status-dot"></span>
-        <span class="text-xs font-semibold text-slate-300" id="status-text">Desconectado</span>
-      </div>
-      
-      <!-- Informações do Operador -->
-      <div class="hidden sm:flex items-center gap-2 pl-3 border-l border-white/10" id="header-operator-info">
-        <div class="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-xs font-bold text-indigo-300 uppercase" id="operator-avatar">OP</div>
-        <div class="text-left leading-none">
-          <p class="text-xs font-bold" id="header-operator-name">Carregando...</p>
-          <span class="text-[9px] text-slate-500 font-mono" id="header-operator-id">id: -</span>
-        </div>
-        <button onclick="logoutOperator()" class="text-slate-500 hover:text-red-400 transition-colors p-1" title="Trocar Atendente">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-out"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <!-- ==============================================================================
        MAIN LAYOUT
        ============================================================================== -->
-  <main class="flex flex-1 overflow-hidden relative">
+  <main class="flex flex-1 overflow-hidden relative h-screen">
     
     <!-- ==============================================================================
-         SIDEBAR (FILA E CHATS ATIVOS)
+         SIDEBAR (STATUS, FILA E CHATS ATIVOS)
          ============================================================================== -->
     <aside class="w-80 border-r border-white/10 bg-[#07090e]/60 flex flex-col shrink-0">
       
-      <!-- Fila de Espera (Queues) -->
-      <div class="flex-1 flex flex-col min-h-0 border-b border-white/5">
-        <div class="p-4 flex items-center justify-between bg-slate-900/30 border-b border-white/5">
-          <div class="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-yellow-500"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <span class="text-xs font-bold tracking-wider uppercase text-slate-400">Fila de Espera</span>
-          </div>
-          <span class="bg-yellow-500/10 text-yellow-400 text-xs px-2.5 py-0.5 rounded-full border border-yellow-500/20 font-bold" id="queue-count">0</span>
-        </div>
-        
-        <!-- Lista de Clientes na Fila -->
-        <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar" id="queue-list-container">
-          <!-- Será populado dinamicamente -->
-          <div class="text-center py-8 text-xs text-slate-500 font-medium">Nenhum cliente na fila</div>
-        </div>
+      <!-- Abas Horizontais (Tabs) -->
+      <div class="flex items-center border-b border-white/5 bg-slate-950/20 shrink-0 p-1.5 gap-1">
+        <button id="tab-active" onclick="switchSidebarTab('active')" class="flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1 bg-white/5 border border-white/10">
+          Ativos
+          <span class="badge-accent-theme text-[8px] px-1.5 py-0.5 rounded-full font-bold shrink-0 animate-fade-in" id="active-chats-count">0</span>
+        </button>
+        <button id="tab-queue" onclick="switchSidebarTab('queue')" class="flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1">
+          Fila
+          <span class="badge-accent-theme text-[8px] px-1.5 py-0.5 rounded-full font-bold shrink-0 animate-fade-in" id="queue-count">0</span>
+        </button>
+        <button id="tab-bot" onclick="switchSidebarTab('bot')" class="flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1">
+          Bot
+          <span class="badge-accent-theme text-[8px] px-1.5 py-0.5 rounded-full font-bold shrink-0">0</span>
+        </button>
       </div>
 
-      <!-- Conversas Ativas (Active Chats) -->
-      <div class="flex-1 flex flex-col min-h-0 bg-[#040609]/40">
-        <div class="p-4 flex items-center justify-between bg-slate-900/30 border-b border-white/5">
-          <div class="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-emerald-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <span class="text-xs font-bold tracking-wider uppercase text-slate-400">Meus Atendimentos</span>
-          </div>
-          <span class="bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-bold" id="active-chats-count">0</span>
-        </div>
+      <!-- Containers das Listas -->
+      <div class="flex-1 flex flex-col min-h-0 relative">
         
-        <!-- Lista de Chats em Atendimento -->
-        <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar" id="active-chats-container">
-          <!-- Será populado dinamicamente -->
-          <div class="text-center py-8 text-xs text-slate-500 font-medium">Você não possui atendimentos ativos</div>
+        <!-- Lista de Chats em Atendimento (Ativos) -->
+        <div class="absolute inset-0 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar" id="active-chats-container">
+          <div class="text-center py-10 text-xs text-slate-500 font-medium">Você não possui atendimentos ativos</div>
         </div>
+
+        <!-- Lista de Clientes na Fila (Fila de Espera) -->
+        <div class="absolute inset-0 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar hidden" id="queue-list-container">
+          <div class="text-center py-10 text-xs text-slate-500 font-medium">Nenhum cliente na fila</div>
+        </div>
+
+        <!-- Lista de Chats do Bot (Placeholder) -->
+        <div class="absolute inset-0 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar hidden" id="bot-chats-container">
+          <div class="flex flex-col items-center justify-center py-16 text-center">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-3.5 shadow-md shadow-blue-500/5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-blue-400 animate-bounce"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M12 8V4H8"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+            </div>
+            <p class="text-xs font-semibold text-slate-300">Automatização de Bot</p>
+            <p class="text-[10px] text-slate-500 mt-1.5 max-w-[170px] mx-auto leading-normal">O funcionamento dos fluxos de Bot será implementado em breve.</p>
+          </div>
+        </div>
+
       </div>
-      
+
+      <!-- Barra de Ação Inferior (Novo Atendimento) -->
+      <div class="p-4 border-t border-white/5 bg-slate-950/40 shrink-0">
+        <button onclick="openNewChatModal()" class="w-full h-11 rounded-2xl text-[11px] font-black uppercase tracking-[0.08em] transition-all duration-300 flex items-center justify-center gap-2 active:scale-[0.97] hover:scale-[1.01] hover:-translate-y-0.5 btn-accent-theme">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="shrink-0"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+          Novo Atendimento
+        </button>
+      </div>
+
     </aside>
 
     <!-- ==============================================================================
          CHAT VIEWPORT
          ============================================================================== -->
-    <section class="flex-1 flex flex-col bg-[#05070a]/90 relative">
+    <section class="flex-1 flex flex-col relative">
       
       <!-- Estado Vazio (Sem chat selecionado) -->
       <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/40 p-6 z-0" id="empty-chat-state">
-        <div class="w-16 h-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-indigo-400"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <div class="w-14 h-14 rounded-2xl badge-accent-theme flex items-center justify-center mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--color-primary-theme)"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
-        <h3 class="text-lg font-bold">Nenhum atendimento selecionado</h3>
-        <p class="text-xs text-slate-500 max-w-xs text-center mt-1">Selecione uma conversa ativa ao lado ou puxe um novo cliente na Fila de Espera para começar a responder.</p>
+        <h3 class="text-base font-bold text-slate-200">Nenhum atendimento selecionado</h3>
+        <p class="text-xs text-slate-500 max-w-[280px] text-center mt-1.5 leading-normal">Selecione uma conversa ativa ao lado ou puxe um novo cliente na Fila de Espera para iniciar o atendimento.</p>
       </div>
 
       <!-- Área de Chat Ativo (Escondida por padrão) -->
       <div class="flex flex-col flex-1 min-h-0 opacity-0 transition-opacity duration-300 z-10 hidden" id="active-chat-area">
         
         <!-- Chat Header -->
-        <div class="h-16 border-b border-white/10 px-6 flex items-center justify-between bg-slate-950/20 shrink-0">
+        <div class="h-16 border-b border-white/10 px-6 flex items-center justify-between bg-slate-950/30 shrink-0">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center font-bold text-xs uppercase" id="chat-client-avatar">CL</div>
-            <div class="leading-none text-left">
-              <h2 class="text-sm font-bold" id="chat-client-name">Nome do Cliente</h2>
-              <span class="text-[10px] text-slate-500 font-mono mt-0.5 block" id="chat-client-jid">5551999999999@c.us</span>
+            <div class="w-12 h-12 rounded-2xl avatar-accent-theme flex items-center justify-center font-bold text-sm uppercase text-white shadow-lg" id="chat-client-avatar">CL</div>
+            <div class="leading-tight text-left">
+              <h2 class="text-sm font-bold text-slate-100" id="chat-client-name">Nome do Cliente</h2>
+              <span class="text-[9px] text-slate-500 font-mono mt-0.5 block" id="chat-client-jid">5551999999999@c.us</span>
             </div>
           </div>
           
           <!-- Botão Finalizar Atendimento -->
-          <button onclick="finishCurrentChat()" class="px-4 py-1.5 rounded-lg border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 text-red-400 hover:text-red-300 text-xs font-semibold tracking-wide transition-all duration-300">
+          <button onclick="finishCurrentChat()" class="px-3.5 py-1.5 rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500 hover:text-white hover:border-transparent text-red-400 text-xs font-bold tracking-wide transition-all duration-200 active:scale-95">
             Finalizar Atendimento
           </button>
         </div>
 
         <!-- Histórico de Mensagens -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-4 flex flex-col custom-scrollbar" id="chat-messages-container">
+        <div class="flex-1 overflow-y-auto p-6 space-y-4 flex flex-col custom-scrollbar bg-slate-950/10" id="chat-messages-container">
           <!-- Preenchido via app.js -->
         </div>
 
         <!-- Input Bar -->
-        <div class="p-4 border-t border-white/10 bg-slate-950/30 shrink-0">
-          <form onsubmit="sendMessage(event)" class="flex items-center gap-3 max-w-5xl mx-auto relative">
-            <input type="text" id="chat-input" placeholder="Digite sua resposta..." autocomplete="off" class="flex-1 h-11 px-5 pr-12 rounded-xl bg-slate-900/80 border border-white/10 focus:border-indigo-500/60 focus:outline-none text-sm placeholder-slate-500 text-slate-200 transition-all duration-300">
-            <button type="submit" class="absolute right-2.5 w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition-colors duration-300">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lucide lucide-send"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <div class="p-4 border-t border-white/5 bg-slate-950/20 shrink-0">
+          <form onsubmit="sendMessage(event)" class="flex items-center gap-3 max-w-4xl mx-auto relative">
+            <input type="text" id="chat-input" placeholder="Digite sua resposta..." autocomplete="off" class="flex-1 h-11 px-5 pr-14 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-white/15 focus:bg-white/[0.04] focus:outline-none text-xs placeholder-slate-500 text-slate-200 transition-all duration-200">
+            <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl btn-accent-theme flex items-center justify-center transition-all active:scale-95 shadow-md">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lucide lucide-send"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
           </form>
         </div>
@@ -154,45 +137,85 @@
        ============================================================================== -->
 
   <!-- Modal do QR Code (Bloqueia tela se WhatsApp não estiver autenticado) -->
-  <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-40 hidden transition-all duration-500" id="qr-modal">
-    <div class="max-w-md w-full mx-4 p-8 glass-effect rounded-3xl border border-white/10 text-center flex flex-col items-center">
-      <div class="w-12 h-12 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-6">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-indigo-400"><rect width="18" height="18" x="3" y="3" rx="2"/><rect width="6" height="6" x="7" y="7"/><rect width="6" height="6" x="7" y="11" transform="rotate(90 10 14)"/><rect width="6" height="6" x="11" y="7" transform="rotate(90 14 10)"/><path d="M17 14h-3v3h3z"/><path d="M14 17h-3v3h3z"/><path d="M17 17h3v3h-3z"/></svg>
+  <div class="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-40 hidden transition-all duration-500" id="qr-modal">
+    <div class="max-w-md w-full mx-4 p-8 bg-slate-950/70 rounded-3xl border border-white/10 text-center flex flex-col items-center shadow-2xl">
+      <div class="w-12 h-12 rounded-2xl badge-accent-theme flex items-center justify-center mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--color-primary-theme)"><rect width="18" height="18" x="3" y="3" rx="2"/><rect width="6" height="6" x="7" y="7"/><rect width="6" height="6" x="7" y="11" transform="rotate(90 10 14)"/><rect width="6" height="6" x="11" y="7" transform="rotate(90 14 10)"/><path d="M17 14h-3v3h3z"/><path d="M14 17h-3v3h3z"/><path d="M17 17h3v3h-3z"/></svg>
       </div>
-      <h2 class="text-xl font-bold tracking-tight mb-2">Conectar ao WhatsApp</h2>
+      <h2 class="text-lg font-bold tracking-tight mb-2 text-slate-100">Conectar ao WhatsApp</h2>
       <p class="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">O servidor precisa ser autenticado. Escaneie o QR Code abaixo com seu celular para iniciar o sistema multiatendente.</p>
       
       <!-- Container do QR Code -->
-      <div class="relative bg-white p-4 rounded-2xl w-60 h-60 flex items-center justify-center shadow-2xl shadow-indigo-600/15 border border-white/10" id="qr-code-wrapper">
-        <div class="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" id="qr-loading-spinner"></div>
+      <div class="relative bg-white p-4 rounded-2xl w-56 h-56 flex items-center justify-center shadow-2xl border border-white/10" id="qr-code-wrapper">
+        <div class="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-primary-theme)] border-t-transparent" id="qr-loading-spinner"></div>
         <img id="qr-image" src="" alt="WhatsApp QR Code" class="w-full h-full object-contain hidden" />
       </div>
       
       <p class="text-[10px] text-slate-500 tracking-wider font-semibold uppercase mt-6" id="qr-status-text">Aguardando geração do QR Code...</p>
+      
+      <button onclick="bypassQR()" class="mt-6 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-slate-300 rounded-xl text-xs font-bold transition-all active:scale-95">
+        Modo Simulação (Visualizar Tela)
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal de Novo Chat (Iniciar Nova Conversa) -->
+  <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-40 hidden transition-all duration-300" id="new-chat-modal">
+    <div class="max-w-md w-full mx-4 p-8 bg-slate-900/60 rounded-3xl border border-white/10 shadow-2xl">
+      <div class="text-center mb-6">
+        <div class="w-12 h-12 rounded-2xl badge-accent-theme flex items-center justify-center mx-auto mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color: var(--color-primary-theme)"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <h2 class="text-lg font-bold tracking-tight text-slate-100">Nova Conversa</h2>
+        <p class="text-xs text-slate-400 mt-1">Abra um atendimento com um novo contato do WhatsApp.</p>
+      </div>
+
+      <form onsubmit="handleNewChatSubmit(event)" class="space-y-4">
+        <div>
+          <label for="input-new-chat-name" class="block text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2">Nome do Cliente</label>
+          <input type="text" id="input-new-chat-name" required placeholder="Ex: Maria Souza" class="w-full h-11 px-4 rounded-xl bg-slate-950/60 border border-white/10 focus:outline-none text-xs text-slate-200 placeholder-slate-600 transition-all duration-300">
+        </div>
+        <div>
+          <label for="input-new-chat-phone" class="block text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2">Telefone com DDD</label>
+          <input type="text" id="input-new-chat-phone" required placeholder="Ex: 5551999999999" class="w-full h-11 px-4 rounded-xl bg-slate-950/60 border border-white/10 focus:outline-none text-xs text-slate-200 placeholder-slate-600 transition-all duration-300">
+          <p class="text-[9px] text-slate-500 mt-2 font-sans leading-normal">
+            Insira o código do país (55 para Brasil), DDD e o número completo. Sem espaços ou traços.
+          </p>
+        </div>
+        
+        <div class="flex items-center gap-3 mt-6">
+          <button type="button" onclick="closeNewChatModal()" class="flex-1 h-11 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95">
+            Cancelar
+          </button>
+          <button type="submit" class="flex-[2] h-11 btn-accent-theme rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95">
+            Iniciar Chat
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
   <!-- Modal de Identificação do Atendente (Primeiro Acesso) -->
   <div class="fixed inset-0 bg-slate-950/90 backdrop-blur-lg flex items-center justify-center z-50 hidden transition-all duration-300" id="attendant-modal">
-    <div class="max-w-md w-full mx-4 p-8 glass-effect rounded-3xl border border-white/10 shadow-2xl">
+    <div class="max-w-md w-full mx-4 p-8 bg-slate-900/60 rounded-3xl border border-white/10 shadow-2xl">
       <div class="text-center mb-6">
-        <div class="w-12 h-12 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-indigo-400"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <div class="w-12 h-12 rounded-2xl badge-accent-theme flex items-center justify-center mx-auto mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--color-primary-theme)"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </div>
-        <h2 class="text-xl font-bold tracking-tight">Identifique-se</h2>
+        <h2 class="text-lg font-bold tracking-tight text-slate-100">Identifique-se</h2>
         <p class="text-xs text-slate-400 mt-1">Insira suas credenciais para que o sistema registre suas interações nas conversas.</p>
       </div>
 
       <form onsubmit="saveOperator(event)" class="space-y-4">
         <div>
-          <label for="input-operator-name" class="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Nome Completo</label>
-          <input type="text" id="input-operator-name" required placeholder="Ex: João Silva" class="w-full h-11 px-4 rounded-xl bg-slate-900/80 border border-white/10 focus:border-indigo-500/60 focus:outline-none text-sm text-slate-200 placeholder-slate-600 transition-all duration-300">
+          <label for="input-operator-name" class="block text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2">Nome Completo</label>
+          <input type="text" id="input-operator-name" required placeholder="Ex: João Silva" class="w-full h-11 px-4 rounded-xl bg-slate-950/60 border border-white/10 focus:outline-none text-xs text-slate-200 placeholder-slate-600 transition-all duration-300">
         </div>
         <div>
-          <label for="input-operator-id" class="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">ID do Atendente (Usuário)</label>
-          <input type="text" id="input-operator-id" required placeholder="Ex: pc_joao, user_joao" class="w-full h-11 px-4 rounded-xl bg-slate-900/80 border border-white/10 focus:border-indigo-500/60 focus:outline-none text-sm text-slate-200 placeholder-slate-600 transition-all duration-300">
+          <label for="input-operator-id" class="block text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-2">ID do Atendente (Usuário)</label>
+          <input type="text" id="input-operator-id" required placeholder="Ex: pc_joao, user_joao" class="w-full h-11 px-4 rounded-xl bg-slate-950/60 border border-white/10 focus:outline-none text-xs text-slate-200 placeholder-slate-600 transition-all duration-300">
         </div>
-        <button type="submit" class="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold tracking-wide transition-colors duration-300 mt-6 shadow-lg shadow-indigo-600/20">
+        <button type="submit" class="w-full h-11 btn-accent-theme rounded-xl text-xs font-bold tracking-wider uppercase transition-all mt-6 active:scale-95">
           Entrar no Painel
         </button>
       </form>
@@ -203,6 +226,6 @@
   <script src="/socket.io/socket.io.js"></script>
   
   <!-- Lógica Javascript -->
-  <script src="app.js"></script>
+  <script src="app.js?v=1.2"></script>
 </body>
 </html>

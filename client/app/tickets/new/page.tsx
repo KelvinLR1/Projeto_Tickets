@@ -314,7 +314,7 @@ Note: Be concise in the title and detailed in the description.`;
             transition={{ duration: 0.3, ease: 'easeOut' }}
             className="min-h-screen p-8 bg-background text-foreground transition-all duration-500"
         >
-            <div className="max-w-7xl mx-auto space-y-12">
+            <div className="w-full space-y-12">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
                     <div className="space-y-2">

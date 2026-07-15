@@ -228,7 +228,10 @@ export default function SettingsPage() {
         logo_url_light: '',
         logo_url_dark: '',
         custom_colors: {} as Record<string, string>,
-        favicon_url: ''
+        favicon_url: '',
+        whatsapp_warn_new_number: true,
+        whatsapp_limit_active_chats: true,
+        whatsapp_limit_count: 10
     });
     const [logoFileLight, setLogoFileLight] = useState<File | null>(null);
     const [logoFileDark, setLogoFileDark] = useState<File | null>(null);
@@ -600,6 +603,26 @@ export default function SettingsPage() {
             showNotification('Erro ao remover favicon', 'error');
         } finally {
             setIsSavingSystem(false);
+        }
+    };
+
+    const [isSavingWhatsappSafety, setIsSavingWhatsappSafety] = useState(false);
+
+    const handleSaveWhatsappSafetySettings = async () => {
+        setIsSavingWhatsappSafety(true);
+        try {
+            await api.patch('/system-settings', {
+                whatsapp_warn_new_number: systemSettings.whatsapp_warn_new_number,
+                whatsapp_limit_active_chats: systemSettings.whatsapp_limit_active_chats,
+                whatsapp_limit_count: systemSettings.whatsapp_limit_count
+            });
+            showNotification('Configurações de segurança salvas com sucesso!', 'success');
+            refreshSettings();
+        } catch (error) {
+            console.error("Error saving WhatsApp safety settings:", error);
+            showNotification('Erro ao salvar configurações de segurança do WhatsApp', 'error');
+        } finally {
+            setIsSavingWhatsappSafety(false);
         }
     };
 
@@ -1704,6 +1727,128 @@ export default function SettingsPage() {
                                                 Após adicionar ou remover canais, reinicie o projeto para que os novos servidores sejam iniciados.
                                             </p>
                                         )}
+                                    </div>
+
+                                    {/* Configurações de Segurança */}
+                                    <hr className="border-white/5 my-6" />
+                                    <div className="space-y-6">
+                                        <div className="flex items-center gap-3 text-accent-theme">
+                                            <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                                <Shield className="w-5 h-5 text-accent-theme" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-bold text-foreground">Segurança e Proteção Anti-Ban</h3>
+                                                <p className="text-[10px] text-[var(--color-text-muted)] font-medium">Controles para mitigar o risco de bloqueio da linha</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {/* Toggle 1: Warn on new number */}
+                                            <div className="flex items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                        Aviso ao iniciar nova conversa ativa
+                                                    </label>
+                                                    <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                        Exibe um alerta de segurança na tela antes de abrir conversas com contatos novos.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={async () => {
+                                                        const newVal = !systemSettings.whatsapp_warn_new_number;
+                                                        if (!newVal) {
+                                                            const confirmed = await askConfirm({
+                                                                title: '⚠️ Aviso de Segurança',
+                                                                message: 'Desativar o aviso visual aumenta a chance de disparos acidentais a contatos não autorizados. Deseja mesmo desativar?',
+                                                                confirmText: 'Sim, Desativar',
+                                                                cancelText: 'Cancelar',
+                                                                type: 'danger'
+                                                            });
+                                                            if (!confirmed) return;
+                                                        }
+                                                        setSystemSettings({ ...systemSettings, whatsapp_warn_new_number: newVal });
+                                                    }}
+                                                    className={clsx(
+                                                        "w-10 h-6 rounded-full p-1 transition-colors relative shrink-0",
+                                                        systemSettings.whatsapp_warn_new_number ? "bg-accent-theme" : "bg-white/10"
+                                                    )}
+                                                >
+                                                    <span className={clsx(
+                                                        "w-4 h-4 rounded-full bg-white block transition-all shadow",
+                                                        systemSettings.whatsapp_warn_new_number ? "translate-x-4" : "translate-x-0"
+                                                    )} />
+                                                </button>
+                                            </div>
+
+                                            {/* Toggle 2: Limit active chats */}
+                                            <div className="flex items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-foreground">
+                                                        Limitar novas conversas ativas por hora
+                                                    </label>
+                                                    <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                        Impede disparos rápidos bloqueando o início de novos chats ativos acima de um limite definido.
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={async () => {
+                                                        const newVal = !systemSettings.whatsapp_limit_active_chats;
+                                                        if (!newVal) {
+                                                            const confirmed = await askConfirm({
+                                                                title: '⚠️ Aviso de Segurança',
+                                                                message: 'Desativar o limite de conversas por hora remove a proteção de envio em lote, elevando gravemente o risco de bloqueio da linha. Deseja prosseguir?',
+                                                                confirmText: 'Sim, Desativar',
+                                                                cancelText: 'Cancelar',
+                                                                type: 'danger'
+                                                            });
+                                                            if (!confirmed) return;
+                                                        }
+                                                        setSystemSettings({ ...systemSettings, whatsapp_limit_active_chats: newVal });
+                                                    }}
+                                                    className={clsx(
+                                                        "w-10 h-6 rounded-full p-1 transition-colors relative shrink-0",
+                                                        systemSettings.whatsapp_limit_active_chats ? "bg-accent-theme" : "bg-white/10"
+                                                    )}
+                                                >
+                                                    <span className={clsx(
+                                                        "w-4 h-4 rounded-full bg-white block transition-all shadow",
+                                                        systemSettings.whatsapp_limit_active_chats ? "translate-x-4" : "translate-x-0"
+                                                    )} />
+                                                </button>
+                                            </div>
+
+                                            {/* Limit Input */}
+                                            {systemSettings.whatsapp_limit_active_chats && (
+                                                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs font-bold text-foreground">
+                                                            Limite de novos chats iniciados por hora
+                                                        </label>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                            Quantidade máxima de novas conversas ativas por hora, por atendente.
+                                                        </p>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        value={systemSettings.whatsapp_limit_count || 10}
+                                                        onChange={e => setSystemSettings({ ...systemSettings, whatsapp_limit_count: Math.max(1, Number(e.target.value)) })}
+                                                        className="w-24 bg-background/50 border border-white/10 rounded-xl px-3 py-2 text-center text-sm font-mono text-foreground focus:ring-1 focus:ring-accent-theme/30 outline-none"
+                                                        min={1}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="pt-2">
+                                            <button
+                                                onClick={handleSaveWhatsappSafetySettings}
+                                                disabled={isSavingWhatsappSafety}
+                                                className="premium-gradient text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
+                                            >
+                                                {isSavingWhatsappSafety ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                Salvar Configurações de Segurança
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Modal: Adicionar/Editar Canal */}

@@ -39,7 +39,7 @@ export default function Navbar() {
 
     return (
         <nav className="sticky top-0 z-50 w-full border-b border-border-theme bg-background/50 backdrop-blur-md">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="w-full px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between h-16 items-center">
 
                     {/* Logo / Identidade Visual */}

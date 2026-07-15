@@ -5,10 +5,19 @@ echo * Iniciando todos os servicos do TicketFlow...
 echo ====================================================
 
 :: 1. Verificar/Instalar dependencias do Frontend (Next.js)
-if exist "client\node_modules" goto check_python
+if exist "client\node_modules" goto check_whatsapp
 echo * Dependencias do Frontend nao encontradas.
 echo * Executando npm install na pasta client...
 cd client
+call npm install
+cd ..
+
+:check_whatsapp
+:: 1b. Verificar/Instalar dependencias do WhatsApp (Node.js)
+if exist "whatsapp-chat\node_modules" goto check_python
+echo * Dependencias do WhatsApp nao encontradas.
+echo * Executando npm install na pasta whatsapp-chat...
+cd whatsapp-chat
 call npm install
 cd ..
 

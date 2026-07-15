@@ -1369,6 +1369,9 @@ def get_system_settings(db: Session):
             "logo_url_dark": None,
             "custom_colors": None,
             "favicon_url": None,
+            "whatsapp_warn_new_number": True,
+            "whatsapp_limit_active_chats": True,
+            "whatsapp_limit_count": 10,
             "updated_at": datetime.utcnow()
         }
 
@@ -1388,6 +1391,9 @@ def update_system_settings(db: Session, update: schemas.SystemSettingsUpdate):
     if update.logo_url_dark is not None: settings.logo_url_dark = update.logo_url_dark
     if update.custom_colors is not None: settings.custom_colors = update.custom_colors
     if update.favicon_url is not None: settings.favicon_url = update.favicon_url
+    if update.whatsapp_warn_new_number is not None: settings.whatsapp_warn_new_number = update.whatsapp_warn_new_number
+    if update.whatsapp_limit_active_chats is not None: settings.whatsapp_limit_active_chats = update.whatsapp_limit_active_chats
+    if update.whatsapp_limit_count is not None: settings.whatsapp_limit_count = update.whatsapp_limit_count
     
     db.commit()
     db.refresh(settings)

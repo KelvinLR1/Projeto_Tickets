@@ -203,7 +203,7 @@ export default function TicketsPage() {
             transition={{ duration: 0.3, ease: 'easeOut' }}
             className="min-h-screen p-8 bg-background text-foreground transition-all duration-500"
         >
-            <div className="max-w-7xl mx-auto space-y-10">
+            <div className="w-full space-y-10">
 
                 {/* Header Area */}
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-8 pb-10 border-b border-border-theme">

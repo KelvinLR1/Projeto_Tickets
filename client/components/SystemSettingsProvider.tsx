@@ -13,6 +13,9 @@ interface SystemSettings {
     logo_url_dark: string | null;    // Logo para temas escuros
     custom_colors: Record<string, string> | null; // Mapeamento de cores para o tema customizado
     favicon_url: string | null;      // URL do ícone da aba do navegador
+    whatsapp_warn_new_number: boolean;
+    whatsapp_limit_active_chats: boolean;
+    whatsapp_limit_count: number;
 }
 
 /**
@@ -26,6 +29,9 @@ interface SystemSettingsContextType {
     logoUrlOnAccent: string | null;  // URL do logo para uso sobre a cor de destaque (Navbar/Sidebar)
     faviconUrl: string | null;       // URL do favicon
     customColors: Record<string, string> | null; // Cores do tema custom
+    whatsappWarnNewNumber: boolean;
+    whatsappLimitActiveChats: boolean;
+    whatsappLimitCount: number;
     refreshSettings: () => Promise<void>;        // Força a atualização das configurações
     isLoading: boolean;              // Indica se as configurações estão sendo baixadas
 }
@@ -55,7 +61,10 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
         logo_url_light: null,
         logo_url_dark: null,
         custom_colors: null,
-        favicon_url: null
+        favicon_url: null,
+        whatsapp_warn_new_number: true,
+        whatsapp_limit_active_chats: true,
+        whatsapp_limit_count: 10
     });
     const [isLoading, setIsLoading] = useState(true);
 
@@ -82,7 +91,10 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
                 logo_url_light: resolveUrl(data.logo_url_light) || resolveUrl(data.logo_url) || null,
                 logo_url_dark: resolveUrl(data.logo_url_dark) || resolveUrl(data.logo_url) || null,
                 custom_colors: data.custom_colors || null,
-                favicon_url: resolveUrl(data.favicon_url) || null
+                favicon_url: resolveUrl(data.favicon_url) || null,
+                whatsapp_warn_new_number: data.whatsapp_warn_new_number !== undefined ? data.whatsapp_warn_new_number : true,
+                whatsapp_limit_active_chats: data.whatsapp_limit_active_chats !== undefined ? data.whatsapp_limit_active_chats : true,
+                whatsapp_limit_count: data.whatsapp_limit_count !== undefined ? data.whatsapp_limit_count : 10
             });
         } catch (error: any) {
             const isNetworkError = !error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK');
@@ -229,6 +241,9 @@ export const SystemSettingsProvider = ({ children }: { children: ReactNode }) =>
             logoUrlOnAccent: logoUrlOnAccent,
             faviconUrl: settings.favicon_url,
             customColors: settings.custom_colors,
+            whatsappWarnNewNumber: settings.whatsapp_warn_new_number,
+            whatsappLimitActiveChats: settings.whatsapp_limit_active_chats,
+            whatsappLimitCount: settings.whatsapp_limit_count,
             refreshSettings,
             isLoading
         }}>

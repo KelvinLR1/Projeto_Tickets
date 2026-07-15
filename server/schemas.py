@@ -464,6 +464,9 @@ class SystemSettingsBase(BaseModel):
     logo_url_dark: Optional[str] = None
     custom_colors: Optional[dict] = None
     favicon_url: Optional[str] = None
+    whatsapp_warn_new_number: bool = True
+    whatsapp_limit_active_chats: bool = True
+    whatsapp_limit_count: int = 10
 
 class SystemSettingsUpdate(BaseModel):
     """Schema para alteração das configurações visuais."""
@@ -472,6 +475,9 @@ class SystemSettingsUpdate(BaseModel):
     logo_url_dark: Optional[str] = None
     custom_colors: Optional[dict] = None
     favicon_url: Optional[str] = None
+    whatsapp_warn_new_number: Optional[bool] = None
+    whatsapp_limit_active_chats: Optional[bool] = None
+    whatsapp_limit_count: Optional[int] = None
 
 class SystemSettings(SystemSettingsBase):
     """Schema completo das configurações do sistema."""

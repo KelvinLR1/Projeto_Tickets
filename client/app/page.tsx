@@ -10,7 +10,7 @@ import { MessageSquarePlus, ListFilter, LayoutDashboard, BookOpen, Search, Monit
 export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className="w-full space-y-8">
         {/* Cabeçalho da Página com Título de Impacto */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 border-b border-border-theme pb-10">
           <div className="space-y-2">

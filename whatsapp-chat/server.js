@@ -89,11 +89,22 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       cliente_jid TEXT UNIQUE,
       cliente_nome TEXT,
+      cliente_avatar TEXT,
       atendente_id TEXT,
       status TEXT, -- 'fila', 'em_atendimento', 'finalizado'
+      started_at TEXT,
       FOREIGN KEY(atendente_id) REFERENCES tabela_atendentes(id)
     )
-  `);
+  `, (err) => {
+    if (!err) {
+      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN started_at TEXT", (alterErr) => {
+        // Ignora erro se a coluna já existir
+      });
+      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN cliente_avatar TEXT", (alterErr) => {
+        // Ignora erro se a coluna já existir
+      });
+    }
+  });
 
   // 3. Tabela de Mensagens (Histórico)
   db.run(`
@@ -118,6 +129,10 @@ const wwebClient = new Client({
   authStrategy: new LocalAuth({
     dataPath: authDataPath
   }),
+  webVersionCache: {
+    type: 'remote',
+    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html'
+  },
   puppeteer: {
     headless: true,
     args: [
@@ -190,6 +205,12 @@ wwebClient.on('message', async (msg) => {
   try {
     const contact = await msg.getContact();
     const clienteNome = contact.pushname || contact.name || clienteJid.split('@')[0];
+    let profilePicUrl = null;
+    try {
+      profilePicUrl = await contact.getProfilePicUrl();
+    } catch (picErr) {
+      console.warn(`Não foi possível obter avatar para ${clienteJid}:`, picErr.message);
+    }
 
     console.log(`📩 Mensagem recebida de ${clienteNome} (${clienteJid}): "${texto}"`);
 
@@ -206,6 +227,10 @@ wwebClient.on('message', async (msg) => {
         if (row) {
           const atendenteId = row.atendente_id;
           
+          if (profilePicUrl && row.cliente_avatar !== profilePicUrl) {
+            db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
+          }
+
           // Salvar mensagem no histórico
           db.run(
             `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
@@ -235,6 +260,9 @@ wwebClient.on('message', async (msg) => {
               if (queueErr) return console.error('Erro ao verificar fila:', queueErr.message);
 
               if (queueRow) {
+                if (profilePicUrl && queueRow.cliente_avatar !== profilePicUrl) {
+                  db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
+                }
                 // Já está na fila, apenas adiciona a mensagem ao banco de dados e avisa todos
                 db.run(
                   `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
@@ -256,14 +284,14 @@ wwebClient.on('message', async (msg) => {
               } else {
                 // Não está na fila nem em atendimento, cria um novo registro
                 db.run(
-                  `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, status) VALUES (?, ?, 'fila')`,
-                  [clienteJid, clienteNome],
+                  `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, cliente_avatar, status) VALUES (?, ?, ?, 'fila')`,
+                  [clienteJid, clienteNome, profilePicUrl],
                   (insertAtendimentoErr) => {
                     if (insertAtendimentoErr) {
                       // Trata conflito caso o cliente estivesse 'finalizado' e enviou nova mensagem
                       db.run(
-                        `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, cliente_nome = ? WHERE cliente_jid = ?`,
-                        [clienteNome, clienteJid]
+                        `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, cliente_nome = ?, cliente_avatar = ? WHERE cliente_jid = ?`,
+                        [clienteNome, profilePicUrl, clienteJid]
                       );
                     }
 
@@ -331,6 +359,137 @@ io.on('connection', (socket) => {
   // 2. Solicitar Dados Iniciais Manualmente
   socket.on('get_initial_data', (atendente_id) => {
     sendInitialData(socket, atendente_id);
+  });
+
+  // 3b. FLUXO D: INICIAR NOVO CHAT ATIVO (Operador -> WhatsApp)
+  socket.on('start_chat', async ({ cliente_jid, cliente_nome, atendente_id }) => {
+    if (!cliente_jid || !cliente_nome || !atendente_id) return;
+
+    // Garante que o JID tenha @c.us
+    let formattedJid = cliente_jid.trim();
+    if (!formattedJid.includes('@')) {
+      formattedJid = `${formattedJid}@c.us`;
+    }
+
+    console.log(`🚀 Tentativa de iniciar chat de [${atendente_id}] com [${formattedJid}]`);
+
+    try {
+      // 1. Buscar configurações de segurança no backend FastAPI
+      let warnNewNumber = true;
+      let limitActiveChats = true;
+      let limitCount = 10;
+
+      try {
+        const response = await fetch('http://localhost:8080/system-settings');
+        if (response.ok) {
+          const settings = await response.json();
+          warnNewNumber = settings.whatsapp_warn_new_number !== undefined ? settings.whatsapp_warn_new_number : true;
+          limitActiveChats = settings.whatsapp_limit_active_chats !== undefined ? settings.whatsapp_limit_active_chats : true;
+          limitCount = settings.whatsapp_limit_count !== undefined ? settings.whatsapp_limit_count : 10;
+        }
+      } catch (e) {
+        console.error('⚠️ Falha ao obter configurações de segurança do backend FastAPI:', e.message);
+      }
+
+      // 2. Se limite de envio estiver ativo, validar quantidade de disparos na última hora
+      if (limitActiveChats) {
+        const checkLimit = () => {
+          return new Promise((resolve, reject) => {
+            db.get(
+              `SELECT COUNT(*) as count FROM tabela_atendimentos 
+               WHERE atendente_id = ? 
+               AND status = 'em_atendimento'
+               AND started_at >= datetime('now', '-1 hour')`,
+              [atendente_id],
+              (err, row) => {
+                if (err) reject(err);
+                else resolve(row ? row.count : 0);
+              }
+            );
+          });
+        };
+
+        const activeChatsCount = await checkLimit();
+        if (activeChatsCount >= limitCount) {
+          console.warn(`🛑 Limite de segurança excedido para atendente ${atendente_id}: ${activeChatsCount}/${limitCount}`);
+          socket.emit('error_message', `Limite de segurança excedido! Você só pode iniciar ${limitCount} novas conversas por hora.`);
+          return;
+        }
+      }
+
+      // 3. Verificar se o chat já existe no banco de dados local
+      const checkExistingChat = () => {
+        return new Promise((resolve, reject) => {
+          db.get(
+            `SELECT * FROM tabela_atendimentos WHERE cliente_jid = ?`,
+            [formattedJid],
+            (err, row) => {
+              if (err) reject(err);
+              else resolve(row);
+            }
+          );
+        });
+      };
+
+      const existingChat = await checkExistingChat();
+      const startedAt = new Date().toISOString();
+
+      let profilePicUrl = null;
+      if (whatsappStatus === 'pronto') {
+        try {
+          const contact = await wwebClient.getContactById(formattedJid);
+          profilePicUrl = await contact.getProfilePicUrl();
+        } catch (contactErr) {
+          console.warn(`Não foi possível obter avatar no start_chat para ${formattedJid}:`, contactErr.message);
+        }
+      }
+
+      if (existingChat) {
+        // Se já existe e está finalizado, reabre
+        if (existingChat.status !== 'em_atendimento') {
+          db.run(
+            `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, started_at = ?, cliente_avatar = ? WHERE cliente_jid = ?`,
+            [atendente_id, startedAt, profilePicUrl || existingChat.cliente_avatar, formattedJid]
+          );
+          // Adiciona mensagem de sistema no histórico
+          db.run(
+            `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento reaberto pelo atendente.')`,
+            [formattedJid]
+          );
+        } else if (existingChat.atendente_id !== atendente_id) {
+          // Se pertence a outro atendente, transfere
+          db.run(
+            `UPDATE tabela_atendimentos SET atendente_id = ?, cliente_avatar = ? WHERE cliente_jid = ?`,
+            [atendente_id, profilePicUrl || existingChat.cliente_avatar, formattedJid]
+          );
+          db.run(
+            `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', ?)`,
+            [formattedJid, `Atendimento transferido para o atendente.`]
+          );
+        }
+      } else {
+        // Se é um chat totalmente novo, insere
+        db.run(
+          `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, cliente_avatar, atendente_id, status, started_at) VALUES (?, ?, ?, ?, 'em_atendimento', ?)`,
+          [formattedJid, cliente_nome, profilePicUrl, atendente_id, startedAt]
+        );
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento iniciado pelo atendente.')`,
+          [formattedJid]
+        );
+      }
+
+      // 4. Retornar dados atualizados de fila e conversas ativas
+      broadcastQueue();
+      sendActiveChats(atendente_id);
+
+      // Notifica o cliente do sucesso para ele abrir a conversa
+      socket.emit('start_chat_success', { cliente_jid: formattedJid, cliente_nome });
+
+    } catch (err) {
+      console.error('❌ Erro ao iniciar novo chat:', err);
+      socket.emit('error_message', `Erro ao iniciar chat: ${err.message}`);
+    }
   });
 
   // 3. FLUXO B: ENVIO DE MENSAGEM (Atendente -> Servidor -> WhatsApp)
