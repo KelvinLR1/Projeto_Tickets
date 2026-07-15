@@ -16,8 +16,12 @@ export async function POST(req: Request) {
             headers: { 'Content-Type': 'application/json' },
         });
     } catch (error: any) {
-        console.error('Proxy POST Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error.code === 'ECONNREFUSED') {
+            console.log('[Ollama Proxy] Ollama offline ou nao instalado localmente (127.0.0.1:11434).');
+        } else {
+            console.error('Proxy POST Error:', error);
+        }
+        return NextResponse.json({ error: 'Ollama offline or not installed' }, { status: 503 });
     }
 }
 
@@ -28,7 +32,11 @@ export async function GET() {
         const data = await response.json();
         return NextResponse.json(data);
     } catch (error: any) {
-        console.error('Proxy GET Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error.code === 'ECONNREFUSED' || error.cause?.code === 'ECONNREFUSED') {
+            console.log('[Ollama Proxy] Ollama offline ou nao instalado localmente (127.0.0.1:11434).');
+        } else {
+            console.error('Proxy GET Error:', error);
+        }
+        return NextResponse.json({ error: 'Ollama offline or not installed' }, { status: 503 });
     }
 }

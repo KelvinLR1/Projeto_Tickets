@@ -99,11 +99,14 @@ export const chatWithOllama = async (
 export const getOllamaModels = async () => {
     try {
         const response = await fetch(getOllamaUrl());
-        if (!response.ok) throw new Error('Failed to fetch models');
+        if (!response.ok) {
+            console.log('[Ollama] Servico indisponivel ou nao instalado localmente (Ollama offline).');
+            return [];
+        }
         const data = await response.json();
         return data.models || [];
     } catch (error) {
-        console.error('Error listing models:', error);
+        console.log('[Ollama] Nao foi possivel obter modelos (Ollama provavelmente offline).');
         return [];
     }
 };

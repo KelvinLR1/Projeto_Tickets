@@ -113,7 +113,7 @@ def seed_db():
 
         # Garante a existência do perfil de "Técnico"
         if not db.query(models.Profile).filter(models.Profile.name == "Técnico").first():
-            tech_profile = models.Profile(name="Técnico", description="Atendimento e gestão de chamados", permissions={"menus": ["dashboard", "tickets", "clients", "knowledge"], "actions": ["create_ticket", "edit_ticket"]})
+            tech_profile = models.Profile(name="Técnico", description="Atendimento e gestão de chamados", permissions={"menus": ["dashboard", "tickets", "clients", "knowledge", "whatsapp"], "actions": ["create_ticket", "edit_ticket"]})
             db.add(tech_profile)
             db.commit()
 

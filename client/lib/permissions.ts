@@ -1,6 +1,6 @@
 import { User } from './api';
 
-export type MenuId = 'dashboard' | 'reports' | 'tickets' | 'clients' | 'knowledge' | 'chat' | 'settings' | 'profiles';
+export type MenuId = 'dashboard' | 'reports' | 'tickets' | 'clients' | 'knowledge' | 'chat' | 'settings' | 'profiles' | 'whatsapp';
 
 const ROUTE_TO_MENU: Record<string, MenuId> = {
     '/': 'dashboard',
@@ -11,7 +11,8 @@ const ROUTE_TO_MENU: Record<string, MenuId> = {
     '/knowledge': 'knowledge',
     '/chat': 'chat',
     '/settings': 'settings',
-    '/profiles': 'profiles'
+    '/profiles': 'profiles',
+    '/whatsapp': 'whatsapp'
 };
 
 /**

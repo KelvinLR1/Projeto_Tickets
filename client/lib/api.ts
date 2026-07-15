@@ -10,16 +10,10 @@ export const getDefaultBaseURL = () => {
   if (typeof window !== 'undefined') {
     // Porta dinâmica injetada via config.js gerada pelo controller.py
     const customPort = (window as any).TICKETFLOW_BACKEND_PORT || 8080;
-
-    // Se for localhost ou terminal do VSCode/Codespaces, usa 127.0.0.1
-    // Caso contrário, assume que a API está no mesmo IP do frontend (rede local)
     const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
-      return `http://127.0.0.1:${customPort}`;
-    }
     return `http://${hostname}:${customPort}`;
   }
-  return 'http://127.0.0.1:8080';
+  return 'http://localhost:8080';
 };
 
 /**
@@ -38,8 +32,26 @@ export const getDynamicApiUrl = () => {
 
         if (apiUrl) {
           const userConfigured = configData.userConfigured === true;
+          const currentHost = window.location.hostname;
+
+          // Sincronização de Host Local: Se o navegador está acessando localmente (localhost, 127.0.0.1, ou ::1),
+          // forçamos a API a usar o mesmo host. Isso evita bloqueios de CORS, problemas de VPN (como no Opera GX)
+          // e interceptações de antivírus (como no Kaspersky).
+          const isCurrentHostLocal = currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '[::1]';
+          if (isCurrentHostLocal) {
+            try {
+              const urlObj = new URL(apiUrl);
+              if (urlObj.hostname !== currentHost) {
+                console.log(`[API] Sincronizando host local de ${urlObj.hostname} para ${currentHost}`);
+                urlObj.hostname = currentHost;
+                apiUrl = urlObj.toString().replace(/\/$/, "");
+              }
+            } catch (e) {
+              apiUrl = apiUrl.replace(/^(https?:\/\/)[^\/:]+/, `$1${currentHost}`);
+            }
+          }
           
-          // SE FOR CONFIGURADO MANUALMENTE, respeitamos 100% e não fazemos automações.
+          // SE FOR CONFIGURADO MANUALMENTE, respeitamos a url salva (com as portas e IPs personalizados).
           if (userConfigured) {
             return apiUrl.replace(/\/$/, "");
           }
@@ -71,7 +83,6 @@ export const getDynamicApiUrl = () => {
 
           // INTELLIGENT HOSTNAME: Se apiUrl for localhost/127.0.0.1 mas estivermos acessando remotamente,
           // substituímos pelo hostname atual para que o frontend consiga falar com o backend remoto.
-          const currentHost = window.location.hostname;
           const isRemoteAccess = currentHost !== 'localhost' && currentHost !== '127.0.0.1' && currentHost !== '[::1]';
           const isApiLocal = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1') || apiUrl.includes('[::1]');
 
@@ -162,19 +173,9 @@ api.interceptors.response.use(
 
       if (isNetworkError && isLoginPath) {
         // Silêncio na tela de login para erros de rede, pois a própria tela já avisa
-        console.error('[Network Error on Login]', {
-          baseURL: error.config?.baseURL,
-          url: error.config?.url,
-          message: error.message
-        });
+        console.error(`[Network Error on Login] baseURL: ${error.config?.baseURL || '(unknown)'} | url: ${error.config?.url || '(unknown)'} | message: ${error.message || '(unknown)'}`);
       } else {
-        console.error('[API Error]', {
-          url: error.config?.url || '(unknown)',
-          baseURL: error.config?.baseURL || '(unknown)',
-          status: error.response?.status || 'NETWORK_ERROR',
-          message: error.message || String(error),
-          location: typeof window !== 'undefined' ? window.location.href : 'SSR'
-        });
+        console.error(`[API Error] url: ${error.config?.url || '(unknown)'} | baseURL: ${error.config?.baseURL || '(unknown)'} | status: ${error.response?.status || 'NETWORK_ERROR'} | message: ${error.message || '(unknown)'}`);
       }
 
       // Se for erro de rede e estivermos em localhost mas a API não, sugere reset

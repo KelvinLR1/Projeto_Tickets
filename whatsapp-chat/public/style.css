@@ -1,0 +1,161 @@
+/* style.css */
+
+/* ==============================================================================
+   VARIÁVEIS DE DESIGN SYSTEM (TEMA ESCURO OLED / AURA DESIGN)
+   ============================================================================== --> */
+:root {
+  --font-family: 'Outfit', sans-serif;
+  --bg-color: #030508;
+  --panel-bg: rgba(9, 14, 23, 0.65);
+  --card-bg: rgba(22, 28, 45, 0.45);
+  --card-hover: rgba(32, 40, 65, 0.65);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-focus: rgba(99, 102, 241, 0.4);
+  
+  --primary-glow: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+  --accent-color: #6366f1;
+  --accent-hover: #4f46e5;
+  --text-muted: #94a3b8;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  background-image: var(--primary-glow);
+  background-position: top center;
+  background-repeat: no-repeat;
+  background-size: 100% 100vh;
+}
+
+/* ==============================================================================
+   EFEITO GLASSMORPHISM
+   ============================================================================== --> */
+.glass-effect {
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+}
+
+.glass-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.glass-card:hover {
+  background: var(--card-hover);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -10px rgba(99, 102, 241, 0.3);
+}
+
+.glass-card.active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 15px -3px rgba(99, 102, 241, 0.25);
+}
+
+/* ==============================================================================
+   CUSTOM SCROLLBAR (PREMIUM)
+   ============================================================================== --> */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-color);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+/* ==============================================================================
+   BALÕES DE MENSAGEM (CHAT BUBBLES)
+   ============================================================================== --> */
+.msg-bubble {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  position: relative;
+  word-wrap: break-word;
+  animation: slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.msg-client {
+  align-self: flex-start;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #f1f5f9;
+  border-bottom-left-radius: 4px;
+}
+
+.msg-attendant {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #4f46e5 0%, #312e81 100%);
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 4px 12px -2px rgba(79, 70, 229, 0.3);
+}
+
+.msg-system {
+  align-self: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  max-width: 90%;
+  text-align: center;
+}
+
+/* ==============================================================================
+   ANIMAÇÕES E TRANSIÇÕES
+   ============================================================================== --> */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Custom shadow effects */
+.glow-effect {
+  box-shadow: 0 0 25px 0px rgba(99, 102, 241, 0.15);
+}
+
+/* Transição de foco dos inputs */
+input:focus {
+  box-shadow: 0 0 12px 0px rgba(99, 102, 241, 0.2);
+}

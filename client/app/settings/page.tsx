@@ -6,7 +6,7 @@ import {
     Plus, Edit2, Trash2, Shield, User as UserIcon, Mail, ShieldCheck,
     Settings as SettingsIcon, Key, UserSquare2, Users, ArrowLeft, ArrowRight,
     Link2, Tag, PlusCircle, HardDrive, FolderPlus, Download, Upload, AlertTriangle,
-    XCircle, Eye, EyeOff, Check, Layers
+    XCircle, Eye, EyeOff, Check, Layers, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getOllamaModels } from '@/lib/ollama';
@@ -39,6 +39,7 @@ const MODEL_TIPS: Record<string, { label: string, color: string, speed: string, 
 const SETTINGS_TABS = [
     { id: 'general', label: 'Conectividade', icon: Globe, color: 'text-blue-400' },
     { id: 'ai', label: 'Motores IA', icon: Cpu, color: 'text-purple-400' },
+    { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'text-violet-400' },
     { id: 'org', label: 'Organização', icon: Tag, color: 'text-emerald-400' },
     { id: 'users', label: 'Usuários', icon: Users, color: 'text-amber-400', roles: ['ADMIN', 'ROOT'] },
     { id: 'appearance', label: 'Aparência', icon: Palette, color: 'text-pink-400' },
@@ -106,6 +107,7 @@ export default function SettingsPage() {
     const [config, setConfig] = useState({
         apiUrl: 'http://127.0.0.1:8080',
         ollamaUrl: 'http://localhost:11434',
+        whatsappUrl: 'http://localhost:5000',
         aiSource: 'centralized' as 'centralized' | 'local',
         textModel: 'phi3',
         visionModel: 'moondream',
@@ -117,6 +119,21 @@ export default function SettingsPage() {
     const [saved, setSaved] = useState(false);
     const [testingConnection, setTestingConnection] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'success' | 'error' | null>(null);
+
+    // Estados WhatsApp Multi-Canal
+    type WhatsAppChannel = { id: string; name: string; port: number; color: string; description?: string; sector_id?: number | null; };
+    const [whatsappChannels, setWhatsappChannels] = useState<WhatsAppChannel[]>([]);
+    const [loadingChannels, setLoadingChannels] = useState(false);
+    const [channelStatuses, setChannelStatuses] = useState<Record<string, { status: string; qr: string | null } | null>>({});
+    const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
+    const [editingChannel, setEditingChannel] = useState<WhatsAppChannel | null>(null);
+    const [channelForm, setChannelForm] = useState<Partial<WhatsAppChannel>>({});
+    const [savingChannel, setSavingChannel] = useState(false);
+    // Legacy single-channel states (mantidos para compatibilidade com código de teste de conexão)
+    const [whatsappStatus, setWhatsappStatus] = useState<{ status: string; qr: string | null } | null>(null);
+    const [loadingWhatsappStatus, setLoadingWhatsappStatus] = useState(false);
+    const [testingWhatsapp, setTestingWhatsapp] = useState(false);
+    const [whatsappConnectionStatus, setWhatsappConnectionStatus] = useState<'success' | 'error' | null>(null);
     // Usamos refs para evitar problemas com closures nos cleanups do useEffect
     const savedRef = React.useRef(false);
     const originalThemeRef = React.useRef<any>(null);
@@ -1102,6 +1119,180 @@ export default function SettingsPage() {
         }
     };
 
+    const fetchWhatsappStatus = async (wsUrlInput?: string) => {
+        setLoadingWhatsappStatus(true);
+        try {
+            // Usa proxy server-side do Next.js para evitar bloqueios de CORS/loopback do browser
+            const wsUrl = encodeURIComponent(wsUrlInput || config.whatsappUrl || 'http://127.0.0.1:5000');
+            const response = await fetch(`/api/whatsapp/status?url=${wsUrl}`, { cache: 'no-store' });
+            if (response.ok) {
+                const data = await response.json();
+                setWhatsappStatus(data);
+            } else {
+                setWhatsappStatus(null);
+            }
+        } catch (error) {
+            setWhatsappStatus(null);
+        } finally {
+            setLoadingWhatsappStatus(false);
+        }
+    };
+
+    const handleTestWhatsappConnection = async () => {
+        setTestingWhatsapp(true);
+        setWhatsappConnectionStatus(null);
+        try {
+            const wsUrl = encodeURIComponent(config.whatsappUrl || 'http://127.0.0.1:5000');
+            const response = await fetch(`/api/whatsapp/status?url=${wsUrl}`, { cache: 'no-store' });
+            if (response.ok) {
+                setWhatsappConnectionStatus('success');
+                const data = await response.json();
+                setWhatsappStatus(data);
+                showNotification('Conexão com o servidor WhatsApp estabelecida!', 'success');
+            } else {
+                throw new Error('Servidor WhatsApp respondeu com erro');
+            }
+        } catch (error) {
+            setWhatsappConnectionStatus('error');
+            showNotification('Não foi possível conectar ao servidor WhatsApp.', 'error');
+        } finally {
+            setTestingWhatsapp(false);
+        }
+    };
+
+    const handleDisconnectWhatsapp = async () => {
+        const confirmed = await askConfirm({
+            title: 'Desconectar WhatsApp',
+            message: 'Tem certeza que deseja desconectar o celular do WhatsApp? Isso encerrará a sessão atual e exigirá uma nova leitura de QR Code.',
+            type: 'danger'
+        });
+
+        if (confirmed) {
+            try {
+                const wsUrl = encodeURIComponent(config.whatsappUrl || 'http://127.0.0.1:5000');
+                const response = await fetch(`/api/whatsapp/disconnect?url=${wsUrl}`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    showNotification('Sessão do WhatsApp encerrada com sucesso!', 'success');
+                    fetchWhatsappStatus();
+                } else {
+                    showNotification('Falha ao encerrar sessão do WhatsApp.', 'error');
+                }
+            } catch (error) {
+                showNotification('Não foi possível se comunicar com o servidor do WhatsApp.', 'error');
+            }
+        }
+    };
+
+    const fetchChannels = async () => {
+        setLoadingChannels(true);
+        try {
+            const res = await fetch('/api/whatsapp/channels');
+            if (res.ok) setWhatsappChannels(await res.json());
+        } catch { /* noop */ } finally {
+            setLoadingChannels(false);
+        }
+    };
+
+    const fetchAllChannelStatuses = async (channels: any[]) => {
+        const results: Record<string, any> = {};
+        await Promise.all(channels.map(async (c) => {
+            try {
+                const wsUrl = encodeURIComponent(`http://127.0.0.1:${c.port}`);
+                const res = await fetch(`/api/whatsapp/status?url=${wsUrl}`, { cache: 'no-store' });
+                results[c.id] = res.ok ? await res.json() : null;
+            } catch { results[c.id] = null; }
+        }));
+        setChannelStatuses(results);
+    };
+
+    useEffect(() => {
+        if (activeTab === 'whatsapp') {
+            fetchChannels().then(() => {
+                // statuses are fetched after channels load via the next effect
+            });
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'whatsapp' && whatsappChannels.length > 0) {
+            fetchAllChannelStatuses(whatsappChannels);
+            const interval = setInterval(() => fetchAllChannelStatuses(whatsappChannels), 5000);
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, whatsappChannels]);
+
+    const saveChannels = async (channels: any[]) => {
+        setSavingChannel(true);
+        try {
+            const res = await fetch('/api/whatsapp/channels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(channels)
+            });
+            if (res.ok) {
+                setWhatsappChannels(channels);
+                showNotification('Canais salvos! Reinicie o projeto para aplicar.', 'success');
+            }
+        } catch { showNotification('Erro ao salvar canais.', 'error'); }
+        finally { setSavingChannel(false); }
+    };
+
+    const openChannelModal = (channel?: any) => {
+        if (channel) {
+            setEditingChannel(channel);
+            setChannelForm({ ...channel });
+        } else {
+            setEditingChannel(null);
+            const nextPort = whatsappChannels.length > 0
+                ? Math.max(...whatsappChannels.map(c => c.port)) + 1
+                : 5000;
+            setChannelForm({ name: '', port: nextPort, color: '#8b5cf6', description: '', sector_id: null });
+        }
+        setIsChannelModalOpen(true);
+    };
+
+    const handleSaveChannel = async () => {
+        if (!channelForm.name || !channelForm.port) {
+            showNotification('Nome e Porta são obrigatórios.', 'error');
+            return;
+        }
+        const id = editingChannel?.id || channelForm.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        const updated = editingChannel
+            ? whatsappChannels.map(c => c.id === editingChannel.id ? { ...c, ...channelForm, id } : c)
+            : [...whatsappChannels, { ...channelForm, id } as any];
+        await saveChannels(updated);
+        setIsChannelModalOpen(false);
+    };
+
+    const handleDeleteChannel = async (channelId: string) => {
+        const confirmed = await askConfirm({
+            title: 'Excluir Canal',
+            message: 'Tem certeza que deseja excluir este canal WhatsApp? Esta ação não pode ser desfeita.',
+            type: 'danger'
+        });
+        if (confirmed) {
+            await saveChannels(whatsappChannels.filter(c => c.id !== channelId));
+        }
+    };
+
+    const handleDisconnectChannel = async (channel: any) => {
+        const confirmed = await askConfirm({
+            title: 'Desconectar WhatsApp',
+            message: `Deseja desconectar a sessão do canal "${channel.name}"? O QR Code precisará ser lido novamente.`,
+            type: 'danger'
+        });
+        if (confirmed) {
+            try {
+                const wsUrl = encodeURIComponent(`http://127.0.0.1:${channel.port}`);
+                await fetch(`/api/whatsapp/disconnect?url=${wsUrl}`, { method: 'POST' });
+                showNotification('Sessão encerrada!', 'success');
+                fetchAllChannelStatuses(whatsappChannels);
+            } catch { showNotification('Erro ao desconectar.', 'error'); }
+        }
+    };
+
     const handleReset = async () => {
         const confirmed = await askConfirm({
             title: 'Restaurar Padrões',
@@ -1113,6 +1304,7 @@ export default function SettingsPage() {
             const defaults = {
                 apiUrl: getDefaultBaseURL(),
                 ollamaUrl: 'http://localhost:11434',
+                whatsappUrl: 'http://localhost:5000',
                 aiSource: 'centralized' as 'centralized' | 'local',
                 textModel: 'phi3',
                 visionModel: 'moondream',
@@ -1325,10 +1517,10 @@ export default function SettingsPage() {
                                                             <p className="text-xs font-mono text-foreground truncate">{dbInfo.details || '\u2014'}</p>
                                                             <p className="text-[9px] text-[var(--color-text-muted)] italic mt-0.5">
                                                                 {dbInfo.type === 'sqlite'
-                                                                    ? 'Arquivo local. Ideal para instala\u00e7\u00f5es simples.'
+                                                                    ? 'Arquivo local. Ideal para instalações simples.'
                                                                     : dbInfo.type === 'postgresql'
                                                                         ? 'Banco de dados remoto (PostgreSQL).'
-                                                                        : 'Conex\u00e3o personalizada.'}
+                                                                        : 'Conexão personalizada.'}
                                                             </p>
                                                         </div>
                                                     </>
@@ -1343,10 +1535,393 @@ export default function SettingsPage() {
                                                 <AlertTriangle className="w-3 h-3 text-yellow-500 shrink-0" />
                                                 Para alterar o banco de dados, execute o{' '}
                                                 <code className="font-mono bg-white/5 px-1 rounded">config_db.exe</code>
-                                                {' '}na pasta de instala\u00e7\u00e3o.
+                                                {' '}na pasta de instalação.
                                             </p>
                                         </div>
                                     </div>
+                                </motion.div>
+                            )}
+
+                            {/* Aba: WhatsApp */}
+                            {activeTab === 'whatsapp' && (
+                                <motion.div
+                                    key="whatsapp"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="glass-card p-8 rounded-3xl space-y-8 relative group transition-all z-10"
+                                >
+                                    <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+                                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                            <MessageSquare className="w-20 h-20" />
+                                        </div>
+                                    </div>
+
+                                    {/* Header */}
+                                    <div className="flex items-center justify-between relative z-10">
+                                        <div className="flex items-center gap-3 text-accent-theme">
+                                            <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                                <MessageSquare className="w-6 h-6" />
+                                            </div>
+                                            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                                Canais <span className="text-accent-theme">WhatsApp</span>
+                                            </h2>
+                                        </div>
+                                        <button
+                                            onClick={() => openChannelModal()}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            Novo Canal
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {loadingChannels ? (
+                                            <div className="flex items-center gap-2 text-[var(--color-text-muted)] p-6 bg-white/5 rounded-2xl">
+                                                <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />
+                                                <span className="text-xs">Carregando canais...</span>
+                                            </div>
+                                        ) : whatsappChannels.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center p-12 bg-white/3 rounded-2xl border border-dashed border-white/10 space-y-4 text-center">
+                                                <div className="w-14 h-14 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+                                                    <MessageSquare className="w-7 h-7 text-violet-400" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-foreground">Nenhum canal configurado</p>
+                                                    <p className="text-xs text-[var(--color-text-muted)] mt-1">Clique em "Novo Canal" para adicionar seu primeiro número de WhatsApp.</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => openChannelModal()}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                    Adicionar Primeiro Canal
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {whatsappChannels.map(channel => {
+                                                    const st = channelStatuses[channel.id];
+                                                    const isReady = st?.status === 'pronto' || st?.status === 'autenticado';
+                                                    const isWaiting = st?.status === 'aguardando_qr';
+                                                    const isOffline = st === null || st === undefined;
+                                                    const linkedSector = sectors.find(s => s.id === channel.sector_id);
+
+                                                    return (
+                                                        <div key={channel.id} className="p-5 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-all space-y-4">
+                                                            {/* Card Header */}
+                                                            <div className="flex items-center gap-3">
+                                                                <div
+                                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-base shrink-0"
+                                                                    style={{ backgroundColor: channel.color || '#8b5cf6' }}
+                                                                >
+                                                                    {channel.name.charAt(0).toUpperCase()}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <p className="text-sm font-bold text-foreground truncate">{channel.name}</p>
+                                                                        <span className={clsx(
+                                                                            "flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0",
+                                                                            isReady ? "bg-green-500/15 text-green-400" :
+                                                                            isWaiting ? "bg-amber-500/15 text-amber-400" :
+                                                                            "bg-white/10 text-[var(--color-text-muted)]"
+                                                                        )}>
+                                                                            <span className={clsx(
+                                                                                "w-1.5 h-1.5 rounded-full",
+                                                                                isReady ? "bg-green-400 animate-pulse" :
+                                                                                isWaiting ? "bg-amber-400 animate-pulse" : "bg-slate-500"
+                                                                            )} />
+                                                                            {isReady ? 'Conectado' : isWaiting ? 'Aguardando QR' : isOffline ? 'Offline' : 'Desconectado'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono">Porta {channel.port}</p>
+                                                                        {linkedSector && (
+                                                                            <>
+                                                                                <span className="text-[var(--color-text-muted)] text-[10px]">·</span>
+                                                                                <p className="text-[10px] text-[var(--color-text-muted)]">Setor: {linkedSector.name}</p>
+                                                                            </>
+                                                                        )}
+                                                                        {channel.description && (
+                                                                            <>
+                                                                                <span className="text-[var(--color-text-muted)] text-[10px]">·</span>
+                                                                                <p className="text-[10px] text-[var(--color-text-muted)] truncate">{channel.description}</p>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 shrink-0">
+                                                                    {isReady && (
+                                                                        <button
+                                                                            onClick={() => handleDisconnectChannel(channel)}
+                                                                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                                                                        >
+                                                                            Desconectar
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => openChannelModal(channel)}
+                                                                        className="p-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-[var(--color-text-muted)] hover:text-foreground rounded-lg transition-all"
+                                                                        title="Editar canal"
+                                                                    >
+                                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteChannel(channel.id)}
+                                                                        className="p-2 bg-white/5 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 text-[var(--color-text-muted)] hover:text-red-400 rounded-lg transition-all"
+                                                                        title="Excluir canal"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* QR Code Display */}
+                                                            {isWaiting && st?.qr && (
+                                                                <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-amber-500/5 border border-amber-500/15 rounded-xl">
+                                                                    <div className="p-2 bg-white rounded-xl shadow-lg shrink-0">
+                                                                        <img src={st.qr} alt="QR Code" className="w-36 h-36 block" />
+                                                                    </div>
+                                                                    <div className="space-y-1 text-center sm:text-left">
+                                                                        <p className="text-xs font-bold text-amber-400">Aguardando Scan do QR Code</p>
+                                                                        <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
+                                                                            Abra o WhatsApp no celular do número <strong>{channel.name}</strong>,<br />
+                                                                            vá em <strong>Aparelhos Conectados</strong> e aponte a câmera para o QR ao lado.
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {whatsappChannels.length > 0 && (
+                                            <p className="text-[9px] text-[var(--color-text-muted)] italic flex items-center gap-1 px-1">
+                                                <AlertTriangle className="w-3 h-3 text-yellow-500 shrink-0" />
+                                                Após adicionar ou remover canais, reinicie o projeto para que os novos servidores sejam iniciados.
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Modal: Adicionar/Editar Canal */}
+                                    <AnimatePresence>
+                                        {isChannelModalOpen && (
+                                            <motion.div
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                exit={{ opacity: 0 }}
+                                                transition={{ duration: 0.2 }}
+                                                className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4"
+                                                onClick={(e) => { if (e.target === e.currentTarget) setIsChannelModalOpen(false); }}
+                                            >
+                                                <motion.div
+                                                    initial={{ opacity: 0, scale: 0.93, y: 20 }}
+                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                    exit={{ opacity: 0, scale: 0.93, y: 20 }}
+                                                    transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                                                    className="relative w-full max-w-md overflow-hidden rounded-3xl shadow-2xl border border-white/10"
+                                                    style={{ background: 'var(--color-card)' }}
+                                                >
+                                                    {/* Gradient Header */}
+                                                    <div
+                                                        className="relative px-8 pt-8 pb-6 overflow-hidden"
+                                                        style={{ background: `linear-gradient(135deg, ${channelForm.color || '#8b5cf6'}22 0%, transparent 60%)` }}
+                                                    >
+                                                        {/* Background glow */}
+                                                        <div
+                                                            className="absolute -top-6 -right-6 w-32 h-32 rounded-full opacity-20 blur-2xl pointer-events-none"
+                                                            style={{ backgroundColor: channelForm.color || '#8b5cf6' }}
+                                                        />
+
+                                                        <div className="flex items-start justify-between relative z-10">
+                                                            <div className="flex items-center gap-4">
+                                                                {/* Live Avatar Preview */}
+                                                                <div
+                                                                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-lg transition-all duration-300 shrink-0 select-none"
+                                                                    style={{
+                                                                        backgroundColor: channelForm.color || '#8b5cf6',
+                                                                        boxShadow: `0 8px 24px ${channelForm.color || '#8b5cf6'}50`
+                                                                    }}
+                                                                >
+                                                                    {channelForm.name?.charAt(0).toUpperCase() || <MessageSquare className="w-6 h-6" />}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1">
+                                                                        {editingChannel ? 'Editando canal' : 'Novo canal'}
+                                                                    </p>
+                                                                    <h3 className="text-xl font-black italic uppercase tracking-tight text-foreground leading-none">
+                                                                        {channelForm.name || <span className="text-[var(--color-text-muted)] font-normal not-italic normal-case tracking-normal text-sm">Digite o nome abaixo</span>}
+                                                                    </h3>
+                                                                    {channelForm.port && (
+                                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono mt-1">porta {channelForm.port}</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setIsChannelModalOpen(false)}
+                                                                className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all -mt-1 -mr-1"
+                                                            >
+                                                                <XCircle className="w-5 h-5" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Separator */}
+                                                    <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+                                                    {/* Form Body */}
+                                                    <div className="px-8 py-6 space-y-5">
+
+                                                        {/* Nome */}
+                                                        <div>
+                                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                                                <Tag className="w-3 h-3" />
+                                                                Nome do Canal
+                                                                <span className="text-accent-theme">*</span>
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                autoFocus
+                                                                placeholder="Ex: Suporte, Comercial, Administrativo"
+                                                                value={channelForm.name || ''}
+                                                                onChange={e => setChannelForm(p => ({ ...p, name: e.target.value }))}
+                                                                className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
+                                                            />
+                                                        </div>
+
+                                                        {/* Porta + Cor */}
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div>
+                                                                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                                                    <Link2 className="w-3 h-3" />
+                                                                    Porta
+                                                                    <span className="text-accent-theme">*</span>
+                                                                </label>
+                                                                <input
+                                                                    type="number"
+                                                                    placeholder="5000"
+                                                                    value={channelForm.port || ''}
+                                                                    onChange={e => setChannelForm(p => ({ ...p, port: Number(e.target.value) }))}
+                                                                    className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm font-mono placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
+                                                                />
+                                                                <p className="text-[9px] text-[var(--color-text-muted)]/60 mt-1.5 font-mono">Deve ser única por canal</p>
+                                                            </div>
+                                                            <div>
+                                                                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                                                    <Palette className="w-3 h-3" />
+                                                                    Cor do Canal
+                                                                </label>
+                                                                {/* Color Swatches */}
+                                                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                    {['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4','#f97316'].map(color => (
+                                                                        <button
+                                                                            key={color}
+                                                                            type="button"
+                                                                            onClick={() => setChannelForm(p => ({ ...p, color }))}
+                                                                            className="w-6 h-6 rounded-lg transition-all hover:scale-110 active:scale-95"
+                                                                            style={{
+                                                                                backgroundColor: color,
+                                                                                outline: channelForm.color === color ? `2px solid white` : '2px solid transparent',
+                                                                                outlineOffset: '2px',
+                                                                                boxShadow: channelForm.color === color ? `0 0 8px ${color}90` : 'none'
+                                                                            }}
+                                                                            title={color}
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <input
+                                                                        type="color"
+                                                                        value={channelForm.color || '#8b5cf6'}
+                                                                        onChange={e => setChannelForm(p => ({ ...p, color: e.target.value }))}
+                                                                        className="w-8 h-8 rounded-lg border border-white/10 bg-transparent cursor-pointer shrink-0 overflow-hidden"
+                                                                        title="Cor personalizada"
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        value={channelForm.color || '#8b5cf6'}
+                                                                        onChange={e => setChannelForm(p => ({ ...p, color: e.target.value }))}
+                                                                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground text-[10px] font-mono focus:ring-1 focus:ring-accent-theme/30 outline-none"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Setor Vinculado */}
+                                                        <div>
+                                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                                                <Layers className="w-3 h-3" />
+                                                                Setor Vinculado
+                                                            </label>
+                                                            <div className="relative">
+                                                                <select
+                                                                    value={channelForm.sector_id ?? ''}
+                                                                    onChange={e => setChannelForm(p => ({ ...p, sector_id: e.target.value ? Number(e.target.value) : null }))}
+                                                                    className="w-full appearance-none bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all pr-10"
+                                                                >
+                                                                    <option value="">— Nenhum setor vinculado —</option>
+                                                                    {sectors.map(s => (
+                                                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)] pointer-events-none" />
+                                                            </div>
+                                                            <p className="text-[9px] text-[var(--color-text-muted)]/60 mt-1.5">Tickets criados via este canal entrarão neste setor</p>
+                                                        </div>
+
+                                                        {/* Descrição */}
+                                                        <div>
+                                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                                                <Edit2 className="w-3 h-3" />
+                                                                Descrição
+                                                                <span className="text-[var(--color-text-muted)]/50 font-normal normal-case tracking-normal">(opcional)</span>
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Ex: Atendimento ao cliente, Vendas..."
+                                                                value={channelForm.description || ''}
+                                                                onChange={e => setChannelForm(p => ({ ...p, description: e.target.value }))}
+                                                                className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Footer Buttons */}
+                                                    <div className="px-8 pb-8 flex items-center gap-3">
+                                                        <button
+                                                            onClick={() => setIsChannelModalOpen(false)}
+                                                            className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl text-xs font-black uppercase tracking-widest text-[var(--color-text-muted)] hover:text-foreground transition-all"
+                                                        >
+                                                            Cancelar
+                                                        </button>
+                                                        <button
+                                                            onClick={handleSaveChannel}
+                                                            disabled={savingChannel || !channelForm.name || !channelForm.port}
+                                                            className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+                                                            style={{
+                                                                background: channelForm.color
+                                                                    ? `linear-gradient(135deg, ${channelForm.color}, ${channelForm.color}bb)`
+                                                                    : 'var(--color-accent)',
+                                                                boxShadow: (!savingChannel && channelForm.name && channelForm.port)
+                                                                    ? `0 4px 20px ${channelForm.color || '#8b5cf6'}50`
+                                                                    : 'none'
+                                                            }}
+                                                        >
+                                                            {savingChannel
+                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                : <Check className="w-3.5 h-3.5" />
+                                                            }
+                                                            {editingChannel ? 'Salvar Alterações' : 'Criar Canal'}
+                                                        </button>
+                                                    </div>
+                                                </motion.div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+
                                 </motion.div>
                             )}
 

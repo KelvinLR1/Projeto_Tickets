@@ -61,9 +61,13 @@ def get_engine_and_session():
     if not db_url:
         print("\n" + "!"*60)
         print(" ATENÇÃO: DATABASE_URL não configurada no arquivo .env!")
-        print(" O sistema tentará usar SQLite em memória (DADOS SERÃO PERDIDOS)!")
+        print(" O sistema utilizará o banco de dados SQLite local (ticketflow.db).")
         print("!"*60 + "\n")
-        db_url = "sqlite:///:memory:"
+        # Define o caminho relativo à pasta pai da pasta do script (server/) para alinhar com o Alembic
+        db_path = os.path.abspath(os.path.join(_base_dir, "..", "ticketflow.db"))
+        db_path = db_path.replace("\\", "/")
+        db_url = f"sqlite:///{db_path}"
+        os.environ["DATABASE_URL"] = db_url
 
     connect_args = {}
     if db_url.startswith("sqlite"):

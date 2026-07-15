@@ -22,7 +22,8 @@ import {
     User,
     LogOut,
     Clock,
-    Bell
+    Bell,
+    MessageSquare
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -54,6 +55,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         { id: 'clients', name: 'Clientes', href: '/clients', icon: Users },
         { id: 'knowledge', name: 'CONHECIMENTO', href: '/knowledge', icon: BookOpen },
         { id: 'chat', name: 'Soluções IA', href: '/chat', icon: Sparkles },
+        { id: 'whatsapp', name: 'WhatsApp', href: '/whatsapp', icon: MessageSquare },
         { id: 'settings', name: 'Ajustes', href: '/settings', icon: Settings },
     ].filter(item => canAccessMenu(user, item.id));
 
