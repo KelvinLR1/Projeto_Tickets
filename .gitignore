@@ -41,3 +41,9 @@ python_portable/
 installer_output/
 *.exe
 database_notice.txt
+
+# WhatsApp session cache
+whatsapp-chat/.wwebjs_auth/
+whatsapp-chat/.wwebjs_cache/
+*.db-shm
+*.db-wal

@@ -6,6 +6,7 @@ import { BookOpen, Plus, Loader2, ArrowLeft, Save, X, Edit2, Trash2, Search, Fil
 import CustomSelect from '@/components/CustomSelect';
 import Link from 'next/link';
 import clsx from 'clsx';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function KnowledgePage() {
     const [docs, setDocs] = useState<KnowledgeDocument[]>([]);
@@ -146,7 +147,7 @@ export default function KnowledgePage() {
                             <button
                                 onClick={() => setShowFilters(!showFilters)}
                                 className={clsx(
-                                    "flex items-center gap-3 px-8 py-6 rounded-[2rem] border transition-all font-black text-[10px] uppercase tracking-widest",
+                                    "flex items-center justify-center gap-3 w-48 py-6 rounded-[2rem] border transition-all font-black text-[10px] uppercase tracking-widest shrink-0",
                                     showFilters ? "bg-accent-theme text-white border-accent-theme" : "bg-card/50 border-border-theme text-[var(--color-text-muted)] hover:bg-card hover:text-foreground"
                                 )}
                             >
@@ -155,54 +156,64 @@ export default function KnowledgePage() {
                             </button>
                         </div>
 
-                        {showFilters && (
-                            <div className="glass-card p-8 rounded-[2.5rem] border border-border-theme grid grid-cols-1 md:grid-cols-3 gap-8 animate-in slide-in-from-top-4 duration-300">
-                                <div className="space-y-6">
-                                    <CustomSelect
-                                        label="Categoria"
-                                        value={filterCategory}
-                                        onChange={setFilterCategory}
-                                        icon={<TagIcon className="w-3 h-3" />}
-                                        options={[
-                                            { value: 'Todos', label: 'Todas as Categorias', icon: <Layout className="w-4 h-4" /> },
-                                            { value: 'Manual', label: 'Manuais Técnicos', icon: <Book className="w-4 h-4" /> },
-                                            { value: 'FAQ', label: 'FAQs / Perguntas', icon: <FileText className="w-4 h-4" /> },
-                                            { value: 'Tutorial', label: 'Tutorial Passo-a-Passo', icon: <Layout className="w-4 h-4" /> },
-                                            { value: 'Hardware', label: 'Hardware / Equipamentos', icon: <Cpu className="w-4 h-4" /> },
-                                            { value: 'Software', label: 'Software / Sistemas', icon: <Layout className="w-4 h-4" /> },
-                                        ]}
-                                    />
-                                </div>
+                        <AnimatePresence>
+                            {showFilters && (
+                                <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.3, ease: 'easeInOut' }}
+                                    className="overflow-hidden"
+                                >
+                                    <div className="glass-card p-8 rounded-[2.5rem] border border-border-theme grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
+                                        <div className="space-y-6">
+                                            <CustomSelect
+                                                label="Categoria"
+                                                value={filterCategory}
+                                                onChange={setFilterCategory}
+                                                icon={<TagIcon className="w-3 h-3" />}
+                                                options={[
+                                                    { value: 'Todos', label: 'Todas as Categorias', icon: <Layout className="w-4 h-4" /> },
+                                                    { value: 'Manual', label: 'Manuais Técnicos', icon: <Book className="w-4 h-4" /> },
+                                                    { value: 'FAQ', label: 'FAQs / Perguntas', icon: <FileText className="w-4 h-4" /> },
+                                                    { value: 'Tutorial', label: 'Tutorial Passo-a-Passo', icon: <Layout className="w-4 h-4" /> },
+                                                    { value: 'Hardware', label: 'Hardware / Equipamentos', icon: <Cpu className="w-4 h-4" /> },
+                                                    { value: 'Software', label: 'Software / Sistemas', icon: <Layout className="w-4 h-4" /> },
+                                                ]}
+                                            />
+                                        </div>
 
-                                <div className="space-y-6">
-                                    <CustomSelect
-                                        label="Período"
-                                        value={filterDate}
-                                        onChange={setFilterDate}
-                                        icon={<Calendar className="w-3 h-3" />}
-                                        options={[
-                                            { value: 'Todos', label: 'Todo o Tempo' },
-                                            { value: 'Hoje', label: 'Hoje' },
-                                            { value: 'Semana', label: 'Últimos 7 dias' },
-                                            { value: 'Mes', label: 'Últimos 30 dias' },
-                                        ]}
-                                    />
-                                </div>
+                                        <div className="space-y-6">
+                                            <CustomSelect
+                                                label="Período"
+                                                value={filterDate}
+                                                onChange={setFilterDate}
+                                                icon={<Calendar className="w-3 h-3" />}
+                                                options={[
+                                                    { value: 'Todos', label: 'Todo o Tempo' },
+                                                    { value: 'Hoje', label: 'Hoje' },
+                                                    { value: 'Semana', label: 'Últimos 7 dias' },
+                                                    { value: 'Mes', label: 'Últimos 30 dias' },
+                                                ]}
+                                            />
+                                        </div>
 
-                                <div className="flex items-end pb-1">
-                                    <button
-                                        onClick={() => {
-                                            setSearchTerm('');
-                                            setFilterCategory('Todos');
-                                            setFilterDate('Todos');
-                                        }}
-                                        className="w-full flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest text-red-500 hover:text-red-400 p-4 transition-colors"
-                                    >
-                                        Limpar Filtros
-                                    </button>
-                                </div>
-                            </div>
-                        )}
+                                        <div className="flex items-end pb-1">
+                                            <button
+                                                onClick={() => {
+                                                    setSearchTerm('');
+                                                    setFilterCategory('Todos');
+                                                    setFilterDate('Todos');
+                                                }}
+                                                className="w-full flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest text-red-500 hover:text-red-400 p-4 transition-colors"
+                                            >
+                                                Limpar Filtros
+                                            </button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 )}
 

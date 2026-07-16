@@ -12,6 +12,7 @@ let selectedChatJid = null;
 let selectedChatName = '';
 let activeChats = [];
 let queueChats = [];
+let botChats = [];
 
 // Elementos da DOM
 const qrModal = document.getElementById('qr-modal');
@@ -312,6 +313,53 @@ socket.on('active_chats_list', (rows) => {
   activeCountBadge.textContent = rows.length;
   renderActiveChats();
 });
+
+// Recebe Lista de Conversas do Bot
+socket.on('bot_chats_list', (rows) => {
+  botChats = rows;
+  const botCountBadge = document.getElementById('bot-chats-count') || document.querySelector('#tab-bot span');
+  if (botCountBadge) {
+    botCountBadge.textContent = rows.length;
+  }
+  renderBotChats();
+});
+
+function renderBotChats() {
+  if (!botChatsContainer) return;
+  if (botChats.length === 0) {
+    botChatsContainer.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-16 text-center">
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-3.5 shadow-md shadow-blue-500/5">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-blue-400"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M12 8V4H8"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        </div>
+        <p class="text-xs font-semibold text-slate-300">Nenhum cliente no Bot</p>
+        <p class="text-[10px] text-slate-500 mt-1.5 max-w-[170px] mx-auto leading-normal">Os clientes interagindo com o Chatbot aparecerão aqui.</p>
+      </div>
+    `;
+    return;
+  }
+
+  botChatsContainer.innerHTML = botChats.map(chat => {
+    const isSelected = selectedChatJid === chat.cliente_jid;
+    return `
+      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
+        <div class="w-12 h-12 rounded-2xl ${isSelected ? 'avatar-accent-theme text-white' : 'avatar-inactive-theme'} flex items-center justify-center font-bold text-sm uppercase transition-all shrink-0 overflow-hidden">
+          ${chat.cliente_avatar 
+            ? `<img src="${chat.cliente_avatar}" alt="${chat.cliente_nome}" class="w-full h-full object-cover" onerror="this.outerHTML='${chat.cliente_nome.substring(0, 2).toUpperCase()}'"/>` 
+            : chat.cliente_nome.substring(0, 2).toUpperCase()
+          }
+        </div>
+        <div class="leading-tight text-left flex-1 min-w-0">
+          <p class="text-xs font-semibold text-slate-200 truncate">${chat.cliente_nome}</p>
+          <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+        </div>
+        <div class="relative flex h-2 w-2 shrink-0">
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 
 function renderActiveChats() {
   if (activeChats.length === 0) {

@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 const qrcode = require('qrcode');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 
@@ -97,12 +98,10 @@ db.serialize(() => {
     )
   `, (err) => {
     if (!err) {
-      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN started_at TEXT", (alterErr) => {
-        // Ignora erro se a coluna já existir
-      });
-      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN cliente_avatar TEXT", (alterErr) => {
-        // Ignora erro se a coluna já existir
-      });
+      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN started_at TEXT", (alterErr) => {});
+      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN cliente_avatar TEXT", (alterErr) => {});
+      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN bot_node_id TEXT", (alterErr) => {});
+      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN sector_id INTEGER", (alterErr) => {});
     }
   });
 
@@ -213,107 +212,7 @@ wwebClient.on('message', async (msg) => {
     }
 
     console.log(`📩 Mensagem recebida de ${clienteNome} (${clienteJid}): "${texto}"`);
-
-    // 1. Verificar se o cliente já possui um atendimento ativo
-    db.get(
-      `SELECT * FROM tabela_atendimentos WHERE cliente_jid = ? AND status = 'em_atendimento'`,
-      [clienteJid],
-      (err, row) => {
-        if (err) {
-          console.error('❌ Erro ao consultar atendimento:', err.message);
-          return;
-        }
-
-        if (row) {
-          const atendenteId = row.atendente_id;
-          
-          if (profilePicUrl && row.cliente_avatar !== profilePicUrl) {
-            db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
-          }
-
-          // Salvar mensagem no histórico
-          db.run(
-            `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-            [clienteJid, 'cliente', texto],
-            function (insertErr) {
-              if (insertErr) return console.error('Erro ao salvar mensagem:', insertErr.message);
-              
-              // Enviar via socket APENAS para a sala do atendente responsável
-              const novaMsg = {
-                id: this.lastID,
-                cliente_jid: clienteJid,
-                remetente: 'cliente',
-                texto: texto,
-                timestamp: new Date().toISOString()
-              };
-              io.to(atendenteId).emit('new_message', novaMsg);
-              console.log(`📨 Encaminhado direto para o atendente: ${atendenteId}`);
-            }
-          );
-
-        } else {
-          // Se não há atendimento ativo, verifica se já está na fila
-          db.get(
-            `SELECT * FROM tabela_atendimentos WHERE cliente_jid = ? AND status = 'fila'`,
-            [clienteJid],
-            (queueErr, queueRow) => {
-              if (queueErr) return console.error('Erro ao verificar fila:', queueErr.message);
-
-              if (queueRow) {
-                if (profilePicUrl && queueRow.cliente_avatar !== profilePicUrl) {
-                  db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
-                }
-                // Já está na fila, apenas adiciona a mensagem ao banco de dados e avisa todos
-                db.run(
-                  `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-                  [clienteJid, 'cliente', texto],
-                  function (insertErr) {
-                    if (insertErr) return console.error(insertErr.message);
-                    
-                    const novaMsg = {
-                      id: this.lastID,
-                      cliente_jid: clienteJid,
-                      remetente: 'cliente',
-                      texto: texto,
-                      timestamp: new Date().toISOString()
-                    };
-                    // Atualiza o histórico de quem estiver visualizando a fila
-                    io.emit('queue_message', novaMsg);
-                  }
-                );
-              } else {
-                // Não está na fila nem em atendimento, cria um novo registro
-                db.run(
-                  `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, cliente_avatar, status) VALUES (?, ?, ?, 'fila')`,
-                  [clienteJid, clienteNome, profilePicUrl],
-                  (insertAtendimentoErr) => {
-                    if (insertAtendimentoErr) {
-                      // Trata conflito caso o cliente estivesse 'finalizado' e enviou nova mensagem
-                      db.run(
-                        `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, cliente_nome = ?, cliente_avatar = ? WHERE cliente_jid = ?`,
-                        [clienteNome, profilePicUrl, clienteJid]
-                      );
-                    }
-
-                    // Salva a mensagem inicial
-                    db.run(
-                      `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-                      [clienteJid, 'cliente', texto],
-                      () => {
-                        console.log(`📥 Novo cliente na fila: ${clienteNome} (${clienteJid})`);
-                        // Avisa todos os atendentes conectados que a fila atualizou
-                        broadcastQueue();
-                      }
-                    );
-                  }
-                );
-              }
-            }
-          );
-        }
-      }
-    );
-
+    await processIncomingMessage(clienteJid, texto, clienteNome, profilePicUrl);
   } catch (error) {
     console.error('❌ Erro no processamento de mensagem recebida:', error);
   }
@@ -497,11 +396,66 @@ io.on('connection', (socket) => {
     if (!cliente_jid || !texto || !atendente_id) return;
 
     console.log(`📤 Enviando mensagem de [${atendente_id}] para [${cliente_jid}]: "${texto}"`);
+    checkManualTakeover(cliente_jid, atendente_id);
 
     try {
-      // Envia via WhatsApp Web
+      // Envia via WhatsApp Web se conectado, ou simula resposta em offline/teste
       if (whatsappStatus !== 'pronto') {
-        socket.emit('error_message', 'WhatsApp não está pronto. Conecte o celular primeiro.');
+        console.log('⚠️ WhatsApp desconectado. Salvando mensagem no modo Simulação...');
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+          [cliente_jid, atendente_id, texto],
+          function (err) {
+            if (err) {
+              console.error('Erro ao salvar mensagem simulada:', err.message);
+              return;
+            }
+
+            const novaMsg = {
+              id: this.lastID,
+              cliente_jid: cliente_jid,
+              remetente: atendente_id,
+              texto: texto,
+              timestamp: new Date().toISOString()
+            };
+
+            // Envia de volta para o atendente para atualizar a tela dele
+            io.to(atendente_id).emit('new_message', novaMsg);
+
+            // Simular resposta automática após 1.5 segundos
+            setTimeout(() => {
+              const mockReplies = [
+                "Certo, compreendido! [Simulação]",
+                "Tudo bem, obrigado pelo retorno! [Simulação]",
+                "Ok, vou verificar e te aviso por aqui. [Simulação]",
+                "Perfeito! Se precisar de algo mais, me avise. [Simulação]",
+                "Entendido. Obrigado pelas instruções! [Simulação]"
+              ];
+              const replyText = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+
+              db.run(
+                `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'cliente', ?)`,
+                [cliente_jid, replyText],
+                function (replyErr) {
+                  if (replyErr) {
+                    console.error('Erro ao salvar resposta simulada:', replyErr.message);
+                    return;
+                  }
+
+                  const clientMsg = {
+                    id: this.lastID,
+                    cliente_jid: cliente_jid,
+                    remetente: 'cliente',
+                    texto: replyText,
+                    timestamp: new Date().toISOString()
+                  };
+
+                  io.to(atendente_id).emit('new_message', clientMsg);
+                }
+              );
+            }, 1500);
+          }
+        );
         return;
       }
 
@@ -519,7 +473,7 @@ io.on('connection', (socket) => {
 
           const novaMsg = {
             id: this.lastID,
-            cliente_jid: clienteJid = cliente_jid,
+            cliente_jid: cliente_jid,
             remetente: atendente_id,
             texto: texto,
             timestamp: new Date().toISOString()
@@ -544,13 +498,14 @@ io.on('connection', (socket) => {
 
     // Atualiza o banco de dados
     db.run(
-      `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ? WHERE cliente_jid = ?`,
+      `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
       [atendente_id, cliente_jid],
       (err) => {
         if (err) {
           console.error('Erro ao assumir atendimento:', err.message);
           return;
         }
+        broadcastBotList();
 
         // Resgata o histórico de mensagens
         db.all(
@@ -567,6 +522,7 @@ io.on('connection', (socket) => {
 
             // Atualiza as listas globais
             broadcastQueue();
+            broadcastBotList();
             sendActiveChats(atendente_id);
           }
         );
@@ -624,8 +580,366 @@ io.on('connection', (socket) => {
 });
 
 // ==============================================================================
-// 📢 FUNÇÕES DE EMISSÃO AUXILIARES
+// 📢 FUNÇÕES DE EMISSÃO AUXILIARES E MOTOR DO CHATBOT
 // ==============================================================================
+
+// Lê as configurações do canal atual baseado na PORTA do processo
+function getChannelConfig() {
+  try {
+    const channelsPath = path.join(__dirname, '..', 'whatsapp-channels.json');
+    if (fs.existsSync(channelsPath)) {
+      const data = JSON.parse(fs.readFileSync(channelsPath, 'utf-8'));
+      return data.find(c => c.port == PORT) || null;
+    }
+  } catch (err) {
+    console.error('Erro ao ler whatsapp-channels.json:', err);
+  }
+  return null;
+}
+
+// Desativa o chatbot se o atendente intervir mandando mensagem manualmente
+function checkManualTakeover(clienteJid, atendenteId) {
+  db.get(`SELECT status FROM tabela_atendimentos WHERE cliente_jid = ?`, [clienteJid], (err, row) => {
+    if (row && row.status === 'bot') {
+      console.log(`🔌 Intervenção humana detectada para [${clienteJid}]. Desativando Chatbot...`);
+      db.run(
+        `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
+        [atendenteId, clienteJid],
+        () => {
+          db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento assumido pelo atendente. Bot desativado.')`, [clienteJid]);
+          broadcastBotList();
+          sendActiveChats(atendenteId);
+        }
+      );
+    }
+  });
+}
+
+// Envia mensagem do bot (e também grava no banco e avisa no socket)
+async function sendBotMessage(clienteJid, texto) {
+  console.log(`🤖 [BOT -> ${clienteJid}]: "${texto}"`);
+  
+  if (whatsappStatus === 'pronto') {
+    try {
+      await wwebClient.sendMessage(clienteJid, texto);
+    } catch (err) {
+      console.error('Erro ao enviar mensagem do bot via WhatsApp:', err.message);
+    }
+  }
+
+  return new Promise((resolve) => {
+    db.run(
+      `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'bot', ?)`,
+      [clienteJid, texto],
+      function (err) {
+        if (err) console.error('Erro ao salvar mensagem do bot:', err.message);
+        
+        const msg = {
+          id: this.lastID,
+          cliente_jid: clienteJid,
+          remetente: 'bot',
+          texto: texto,
+          timestamp: new Date().toISOString()
+        };
+        // Notifica painéis em tempo real
+        io.emit('queue_message', msg);
+        resolve();
+      }
+    );
+  });
+}
+
+// Envia a estrutura de Pergunta/Menu
+async function sendQuestionNode(clienteJid, node) {
+  const options = node.data.options || [];
+  let texto = `*${node.data.text}*\n\n`;
+  options.forEach((opt, idx) => {
+    texto += `${idx + 1}️⃣  *${opt}*\n`;
+  });
+  texto += `\n_Digite o número da opção desejada._`;
+  await sendBotMessage(clienteJid, texto);
+}
+
+// Direciona o cliente para a Fila de Espera padrão
+function moveToQueue(row) {
+  db.run(
+    `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, bot_node_id = NULL WHERE cliente_jid = ?`,
+    [row.cliente_jid],
+    () => {
+      sendBotMessage(row.cliente_jid, "Estou transferindo você para a nossa fila de atendimento geral. Aguarde um instante.");
+      db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento encaminhado para a fila geral.')`, [row.cliente_jid]);
+      broadcastQueue();
+      broadcastBotList();
+    }
+  );
+}
+
+// Processador unificado para mensagens recebidas (Chatbot vs Humanos)
+async function processIncomingMessage(clienteJid, texto, clienteNome, profilePicUrl) {
+  db.get(
+    `SELECT * FROM tabela_atendimentos WHERE cliente_jid = ?`,
+    [clienteJid],
+    (err, row) => {
+      if (err) {
+        console.error('❌ Erro ao consultar atendimento:', err.message);
+        return;
+      }
+
+      if (row && row.status === 'em_atendimento') {
+        const atendenteId = row.atendente_id;
+        
+        if (profilePicUrl && row.cliente_avatar !== profilePicUrl) {
+          db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
+        }
+
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+          [clienteJid, 'cliente', texto],
+          function (insertErr) {
+            if (insertErr) return console.error('Erro ao salvar mensagem:', insertErr.message);
+            
+            const novaMsg = {
+              id: this.lastID,
+              cliente_jid: clienteJid,
+              remetente: 'cliente',
+              texto: texto,
+              timestamp: new Date().toISOString()
+            };
+            io.to(atendenteId).emit('new_message', novaMsg);
+          }
+        );
+      } else if (row && row.status === 'fila') {
+        if (profilePicUrl && row.cliente_avatar !== profilePicUrl) {
+          db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
+        }
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+          [clienteJid, 'cliente', texto],
+          function (insertErr) {
+            if (insertErr) return console.error(insertErr.message);
+            
+            const novaMsg = {
+              id: this.lastID,
+              cliente_jid: clienteJid,
+              remetente: 'cliente',
+              texto: texto,
+              timestamp: new Date().toISOString()
+            };
+            io.emit('queue_message', novaMsg);
+          }
+        );
+      } else {
+        // Fluxo de Chatbot!
+        const channel = getChannelConfig();
+        
+        // Se o canal não tiver bot_flow configurado ou vazio, vai direto pra fila
+        if (!channel || !channel.bot_flow || !channel.bot_flow.nodes || channel.bot_flow.nodes.length === 0) {
+          console.log(`[BOT] Canal sem fluxo de chatbot configurado. Direcionando para a fila.`);
+          db.run(
+            `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, cliente_avatar, status) VALUES (?, ?, ?, 'fila')`,
+            [clienteJid, clienteNome, profilePicUrl],
+            (insertAtendimentoErr) => {
+              if (insertAtendimentoErr) {
+                db.run(
+                  `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, cliente_nome = ?, cliente_avatar = ? WHERE cliente_jid = ?`,
+                  [clienteNome, profilePicUrl, clienteJid]
+                );
+              }
+
+              db.run(
+                `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+                [clienteJid, 'cliente', texto],
+                () => {
+                  broadcastQueue();
+                }
+              );
+            }
+          );
+          return;
+        }
+
+        // Se tem fluxo ativo
+        if (!row) {
+          db.run(
+            `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, cliente_avatar, status) VALUES (?, ?, ?, 'bot')`,
+            [clienteJid, clienteNome, profilePicUrl],
+            (insertErr) => {
+              db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'cliente', ?)`, [clienteJid, texto], () => {
+                broadcastBotList();
+                runBotStep({ cliente_jid: clienteJid, status: 'bot' }, texto);
+              });
+            }
+          );
+        } else {
+          db.run(
+            `UPDATE tabela_atendimentos SET status = 'bot', atendente_id = NULL, cliente_nome = ?, cliente_avatar = ?, bot_node_id = ? WHERE cliente_jid = ?`,
+            [clienteNome, profilePicUrl, row.status === 'bot' ? row.bot_node_id : null, clienteJid],
+            () => {
+              db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'cliente', ?)`, [clienteJid, texto], () => {
+                broadcastBotList();
+                runBotStep({ ...row, status: 'bot', cliente_name: clienteNome, bot_node_id: row.status === 'bot' ? row.bot_node_id : null }, texto);
+              });
+            }
+          );
+        }
+      }
+    }
+  );
+}
+
+// Avança um passo no chatbot baseado na mensagem recebida
+async function runBotStep(row, texto) {
+  const channel = getChannelConfig();
+  if (!channel || !channel.bot_flow) {
+    moveToQueue(row);
+    return;
+  }
+
+  const { nodes, edges } = channel.bot_flow;
+  let currentNodeId = row.bot_node_id;
+  let currentNode = nodes.find(n => n.id === currentNodeId);
+
+  // Se o cliente não tem nó ativo, busca o nó posterior ao 'start'
+  if (!currentNode) {
+    const startNode = nodes.find(n => n.type === 'start');
+    if (!startNode) {
+      moveToQueue(row);
+      return;
+    }
+    const nextEdge = edges.find(e => e.source === startNode.id);
+    if (!nextEdge) {
+      moveToQueue(row);
+      return;
+    }
+    currentNode = nodes.find(n => n.id === nextEdge.target);
+    if (!currentNode) {
+      moveToQueue(row);
+      return;
+    }
+  }
+
+  // Se o nó atual é uma pergunta (menu), avalia a opção enviada
+  if (currentNode.type === 'question') {
+    const options = currentNode.data.options || [];
+    const choice = texto.trim();
+    let selectedOption = null;
+
+    const choiceIdx = parseInt(choice) - 1;
+    if (choiceIdx >= 0 && choiceIdx < options.length) {
+      selectedOption = options[choiceIdx];
+    } else {
+      selectedOption = options.find(o => o.toLowerCase() === choice.toLowerCase());
+    }
+
+    if (selectedOption) {
+      const edge = edges.find(e => e.source === currentNode.id && e.sourceHandle === selectedOption);
+      if (edge) {
+        const nextNode = nodes.find(n => n.id === edge.target);
+        if (nextNode) {
+          executeNode(row, nextNode);
+          return;
+        }
+      }
+    }
+
+    // Se opção for inválida, avisa e repete a pergunta
+    await sendBotMessage(row.cliente_jid, "Desculpe, opção inválida. Por favor, responda com o número correspondente.");
+    await sendQuestionNode(row.cliente_jid, currentNode);
+    return;
+  }
+
+  // Outros nós, executa e avança
+  executeNode(row, currentNode, texto);
+}
+
+// Execução recursiva de nós imediatos (ex: mensagem -> pergunta)
+async function executeNode(row, node) {
+  const channel = getChannelConfig();
+  if (!channel || !channel.bot_flow) return;
+  const { nodes, edges } = channel.bot_flow;
+
+  if (node.type === 'message') {
+    await sendBotMessage(row.cliente_jid, node.data.text);
+    
+    // Avança para o próximo
+    const edge = edges.find(e => e.source === node.id);
+    if (edge) {
+      const nextNode = nodes.find(n => n.id === edge.target);
+      if (nextNode) {
+        db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [nextNode.id, row.cliente_jid]);
+        executeNode(row, nextNode);
+        return;
+      }
+    }
+    moveToQueue(row);
+  } 
+  
+  else if (node.type === 'question') {
+    await sendQuestionNode(row.cliente_jid, node);
+    db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [node.id, row.cliente_jid]);
+  } 
+  
+  else if (node.type === 'condition') {
+    const now = new Date();
+    // Pega fuso de Brasília
+    const localTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Sao_Paulo"}));
+    const currentDay = localTime.getDay(); // 0 = Dom, 1 = Seg
+    const currentHour = localTime.getHours().toString().padStart(2, '0');
+    const currentMin = localTime.getMinutes().toString().padStart(2, '0');
+    const currentTimeStr = `${currentHour}:${currentMin}`;
+
+    const workDays = node.data.workDays || [1, 2, 3, 4, 5];
+    const startTime = node.data.startTime || '08:00';
+    const endTime = node.data.endTime || '18:00';
+
+    const inDays = workDays.includes(currentDay);
+    const inTime = currentTimeStr >= startTime && currentTimeStr <= endTime;
+    const isMatched = inDays && inTime;
+
+    const handle = isMatched ? 'yes' : 'no';
+
+    const edge = edges.find(e => e.source === node.id && e.sourceHandle === handle);
+    if (edge) {
+      const nextNode = nodes.find(n => n.id === edge.target);
+      if (nextNode) {
+        executeNode(row, nextNode);
+        return;
+      }
+    }
+    moveToQueue(row);
+  } 
+  
+  else if (node.type === 'sector') {
+    const sectorId = node.data.sectorId;
+    console.log(`[BOT] Direcionando cliente para o setor: ${sectorId}`);
+    
+    db.run(
+      `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, sector_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
+      [sectorId, row.cliente_jid],
+      () => {
+        sendBotMessage(row.cliente_jid, "Estou transferindo seu contato para o setor escolhido. Aguarde para falar com um atendente.");
+        db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento direcionado pelo Bot para setor específico.')`, [row.cliente_jid]);
+        broadcastQueue();
+        broadcastBotList();
+      }
+    );
+  }
+}
+
+// Transmite a lista de chats no Bot para os operadores
+function broadcastBotList() {
+  db.all(
+    `SELECT * FROM tabela_atendimentos WHERE status = 'bot' ORDER BY id ASC`,
+    [],
+    (err, rows) => {
+      if (err) {
+        console.error('Erro ao ler lista do bot:', err.message);
+        return;
+      }
+      io.emit('bot_chats_list', rows);
+    }
+  );
+}
 
 // Envia dados iniciais consolidados para um atendente recém registrado
 function sendInitialData(socket, atendenteId) {
@@ -644,6 +958,15 @@ function sendInitialData(socket, atendenteId) {
     [atendenteId],
     (err, activeRows) => {
       if (!err) socket.emit('active_chats_list', activeRows);
+    }
+  );
+
+  // Lista de Bots
+  db.all(
+    `SELECT * FROM tabela_atendimentos WHERE status = 'bot' ORDER BY id ASC`,
+    [],
+    (err, botRows) => {
+      if (!err) socket.emit('bot_chats_list', botRows);
     }
   );
 }

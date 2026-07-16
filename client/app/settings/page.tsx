@@ -6,9 +6,10 @@ import {
     Plus, Edit2, Trash2, Shield, User as UserIcon, Mail, ShieldCheck,
     Settings as SettingsIcon, Key, UserSquare2, Users, ArrowLeft, ArrowRight,
     Link2, Tag, PlusCircle, HardDrive, FolderPlus, Download, Upload, AlertTriangle,
-    XCircle, Eye, EyeOff, Check, Layers, MessageSquare
+    XCircle, Eye, EyeOff, Check, Layers, MessageSquare, Bot
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
 import { getOllamaModels } from '@/lib/ollama';
 import { useTheme } from '@/components/ThemeProvider';
 import { useAuth } from '@/components/AuthProvider';
@@ -1356,7 +1357,7 @@ export default function SettingsPage() {
     return (
         <div className="flex-1 flex flex-col h-screen overflow-hidden bg-background">
             <main className="flex-1 overflow-y-auto custom-scrollbar">
-                <div className="max-w-[1440px] mx-auto p-8 pb-32 space-y-10 animate-page-in">
+                <div className="w-full p-8 pb-32 space-y-10 animate-page-in">
                     {/* Header Integrado */}
                     <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
                         <div className="space-y-2">
@@ -1683,6 +1684,13 @@ export default function SettingsPage() {
                                                                             Desconectar
                                                                         </button>
                                                                     )}
+                                                                    <Link
+                                                                        href={`/settings/bot/${channel.id}`}
+                                                                        className="p-2 bg-white/5 hover:bg-violet-500/20 border border-white/5 hover:border-violet-500/30 text-[var(--color-text-muted)] hover:text-violet-400 rounded-lg transition-all"
+                                                                        title="Configurar Bot"
+                                                                    >
+                                                                        <Bot className="w-3.5 h-3.5" />
+                                                                    </Link>
                                                                     <button
                                                                         onClick={() => openChannelModal(channel)}
                                                                         className="p-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-[var(--color-text-muted)] hover:text-foreground rounded-lg transition-all"
@@ -2190,7 +2198,7 @@ export default function SettingsPage() {
                                                     </div>
                                                     <button
                                                         onClick={handleCreateSector}
-                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/20 active:scale-95"
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
                                                     >
                                                         {editingSector ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
                                                         {editingSector ? 'Salvar Alterações' : 'Criar Setor'}
@@ -2564,7 +2572,7 @@ export default function SettingsPage() {
                                                     </div>
                                                     <button
                                                         onClick={handleCreateCatalogItem}
-                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-amber-500/20 active:scale-95"
+                                                        className="w-full flex items-center justify-center gap-2 premium-gradient hover:brightness-110 text-white p-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-accent-theme/20 active:scale-95"
                                                     >
                                                         {editingCatalogItem ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
                                                         {editingCatalogItem ? 'Salvar Alterações' : 'Adicionar ao Catálogo'}
