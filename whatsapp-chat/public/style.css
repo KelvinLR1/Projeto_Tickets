@@ -308,9 +308,17 @@ h2, h3 {
 .msg-attendant {
   align-self: flex-end;
   background: var(--accent-gradient);
-  color: #ffffff;
+  color: #ffffff !important;
   border-bottom-right-radius: 4px;
   box-shadow: var(--accent-glow);
+}
+
+.msg-attendant * {
+  color: #ffffff !important;
+}
+
+.msg-attendant .msg-time {
+  color: rgba(255, 255, 255, 0.7) !important;
 }
 
 .msg-system {
@@ -371,6 +379,8 @@ h2, h3 {
 /* Sobrescrita de Modais e Overlays */
 #qr-modal,
 #new-chat-modal,
+#forward-modal,
+#message-info-modal,
 #attendant-modal {
   background: color-mix(in srgb, var(--color-background) 85%, transparent) !important;
   backdrop-filter: blur(16px);
@@ -378,6 +388,8 @@ h2, h3 {
 
 #qr-modal > div,
 #new-chat-modal > div,
+#forward-modal > div,
+#message-info-modal > div,
 #attendant-modal > div {
   background: var(--color-card) !important;
   border-color: var(--border-color) !important;
@@ -437,3 +449,165 @@ aside > div:last-child {
 .glass-card.active p {
   color: var(--color-primary-theme) !important;
 }
+
+/* ==============================================================================
+   AJUSTE DE ÍCONES DE ACORDO COM O TEMA DO SISTEMA
+   ============================================================================== */
+/* Ícones dentro de botões com cor de destaque do tema (ex: Novo Atendimento, Enviar) */
+.btn-accent-theme svg,
+.btn-accent-theme svg * {
+  color: #ffffff !important;
+}
+
+/* Ícones dentro de badges/círculos de destaque (ex: Modais, Estado Vazio) */
+.badge-accent-theme svg,
+.badge-accent-theme svg * {
+  color: var(--color-primary-theme) !important;
+}
+
+/* Container e Ícone do Placeholder do Bot integrado ao tema */
+.bot-placeholder-icon {
+  background: color-mix(in srgb, var(--color-primary-theme) 10%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 20%, transparent) !important;
+}
+
+.bot-placeholder-icon svg,
+.bot-placeholder-icon svg * {
+  color: var(--color-primary-theme) !important;
+}
+
+/* ==============================================================================
+   ESTILOS DO MENU DE CONTEXTO E BANNER DE RESPOSTA (GLASSMORPHISM COERENTE)
+   ============================================================================== */
+#message-context-menu {
+  background: var(--color-card) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-foreground) !important;
+}
+
+#message-context-menu button {
+  color: var(--color-foreground) !important;
+}
+
+#message-context-menu button:hover {
+  background: color-mix(in srgb, var(--color-primary-theme) 12%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+}
+
+#message-context-menu button.text-red-500 {
+  color: #ef4444 !important;
+}
+
+#message-context-menu button.text-red-500:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #f87171 !important;
+}
+
+#reply-preview-container {
+  background: color-mix(in srgb, var(--color-foreground) 2.5%, transparent) !important;
+  border-color: var(--border-color) !important;
+}
+
+#reply-preview-container .text-slate-300 {
+  color: var(--color-foreground) !important;
+  opacity: 0.85;
+}
+
+/* Badge de Reação das Mensagens (Estilo WhatsApp) */
+.msg-reaction-badge {
+  background: var(--color-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-foreground) !important;
+  box-shadow: 0 2px 5px -1px rgba(0, 0, 0, 0.25) !important;
+  transition: all 0.15s ease-in-out;
+}
+
+.msg-reaction-badge:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Grade de Emojis Expandida no Menu de Contexto */
+#context-emoji-grid button {
+  background: transparent;
+  border: none;
+  font-size: 1.25rem;
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.1s ease-in-out;
+}
+
+#context-emoji-grid button:hover {
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent) !important;
+  transform: scale(1.2);
+}
+
+/* ==============================================================================
+   CLASSES PARA DIÁLOGOS DE CONFIRMAÇÃO DO SISTEMA (MODAL CONFIRM)
+   ============================================================================== */
+#custom-confirm-modal {
+  background: rgba(15, 23, 42, 0.4) !important;
+  backdrop-filter: blur(12px) !important;
+  transition: all 0.3s ease;
+}
+
+#custom-confirm-modal .modal-card {
+  background: var(--color-card) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;
+  border-radius: 24px !important;
+  color: var(--color-foreground) !important;
+  transition: all 0.3s ease;
+}
+
+.theme-light #custom-confirm-modal {
+  background: rgba(241, 245, 249, 0.4) !important;
+}
+
+#custom-confirm-modal h2 {
+  color: var(--color-foreground) !important;
+}
+
+#custom-confirm-modal p {
+  color: var(--color-text-muted) !important;
+}
+
+#custom-confirm-modal #confirm-modal-cancel {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-text-muted) !important;
+  cursor: pointer;
+}
+
+.theme-light #custom-confirm-modal #confirm-modal-cancel {
+  background: rgba(0, 0, 0, 0.03) !important;
+}
+
+#custom-confirm-modal #confirm-modal-cancel:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--color-foreground) !important;
+}
+
+.theme-light #custom-confirm-modal #confirm-modal-cancel:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.badge-danger-theme {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #f87171 !important;
+  border: 1px solid rgba(239, 68, 68, 0.2) !important;
+}
+.btn-danger-theme {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 4px 15px -3px rgba(239, 68, 68, 0.3) !important;
+}
+.btn-danger-theme:hover {
+  background: #b91c1c !important;
+  box-shadow: 0 6px 20px -3px rgba(239, 68, 68, 0.4) !important;
+}
+

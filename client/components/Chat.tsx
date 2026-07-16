@@ -273,7 +273,7 @@ INSTRUÇÃO: Responda a pergunta diretamente com a solução. Não mencione os d
                                         <img src={msg.images[0]} alt="Upload" className="max-w-xs group-hover:scale-105 transition-transform duration-500" />
                                     </div>
                                 )}
-                                <div className={`prose max-w-none prose-p:leading-relaxed prose-pre:bg-black/20 text-sm font-medium ${document.documentElement.classList.contains('theme-light') ? 'prose-slate' : 'prose-invert'
+                                <div className={`prose max-w-none prose-p:leading-relaxed prose-pre:bg-black/20 text-sm font-medium ${(typeof window !== 'undefined' && document.documentElement.classList.contains('theme-light')) ? 'prose-slate' : 'prose-invert'
                                     }`}>
                                     <ReactMarkdown>{msg.originalContent || msg.content}</ReactMarkdown>
                                 </div>

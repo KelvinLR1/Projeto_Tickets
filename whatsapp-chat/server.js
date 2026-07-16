@@ -114,7 +114,11 @@ db.serialize(() => {
       texto TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `);
+  `, (err) => {
+    if (!err) {
+      db.run("ALTER TABLE tabela_mensagens ADD COLUMN reacao TEXT", (alterErr) => {});
+    }
+  });
 });
 
 // ==============================================================================
@@ -569,6 +573,34 @@ io.on('connection', (socket) => {
         broadcastQueue();
       }
     );
+  });
+
+  // 6b. EXCLUIR MENSAGEM DO HISTÓRICO
+  socket.on('delete_message', ({ message_id, atendente_id, cliente_jid }) => {
+    if (!message_id || !atendente_id) return;
+    console.log(`🗑️ Excluindo mensagem ID ${message_id} por solicitação de atendente ${atendente_id}`);
+    db.run(`DELETE FROM tabela_mensagens WHERE id = ?`, [message_id], (err) => {
+      if (err) {
+        console.error('Erro ao excluir mensagem do banco de dados:', err.message);
+        return;
+      }
+      // Notifica todos os sockets do atendente para remover o card da tela
+      io.to(atendente_id).emit('message_deleted', { message_id, cliente_jid });
+    });
+  });
+
+  // 6c. REAGIR A MENSAGEM
+  socket.on('react_message', ({ message_id, reacao, atendente_id, cliente_jid }) => {
+    if (!message_id || !atendente_id) return;
+    console.log(`❤️ Reagindo à mensagem ID ${message_id} com "${reacao || 'Nenhuma'}" por solicitação de atendente ${atendente_id}`);
+    db.run(`UPDATE tabela_mensagens SET reacao = ? WHERE id = ?`, [reacao, message_id], (err) => {
+      if (err) {
+        console.error('Erro ao atualizar reação da mensagem:', err.message);
+        return;
+      }
+      // Notifica todos os sockets do atendente para atualizar a reação da mensagem na tela
+      io.to(atendente_id).emit('message_reacted', { message_id, reacao, cliente_jid });
+    });
   });
 
   // 7. Desconexão de socket
