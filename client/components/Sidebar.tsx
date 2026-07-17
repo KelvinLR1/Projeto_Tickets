@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from "@/components/AuthProvider";
 import { usePathname } from "next/navigation";
@@ -8,6 +8,7 @@ import { canAccessMenu, getFirstAllowedPath, canPerformAction } from '@/lib/perm
 import { useTimer } from './TimerProvider';
 import { useNotification } from './NotificationProvider';
 import { useSystemSettings } from './SystemSettingsProvider';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard,
     BookOpen,
@@ -43,6 +44,20 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
     const { activeTimers, openPiP, closePiP, isPiPOpen, isInternalPiPOpen } = useTimer();
     const { unreadCount } = useNotification();
     const { systemName, logoUrlOnAccent } = useSystemSettings();
+
+    // Menu de opções do usuário logado
+    const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+    const userMenuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+                setIsUserMenuOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     /**
      * Filtra os itens do menu lateral com base nas permissões de cada perfil.
@@ -203,52 +218,84 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
             </div>
 
             {/* Rodapé: Perfil e Logout */}
-            <div className={clsx(
-                "border-t border-border-theme bg-card/10 backdrop-blur-md transition-all", 
-                isCollapsed ? "p-0 py-6 flex flex-col items-center w-full" : "p-4"
-            )}>
-                <div className={clsx("flex items-center w-full", isCollapsed ? "flex-col gap-6" : "justify-between")}>
-                    <div className={clsx(
-                        "flex items-center p-2 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group shrink-0 overflow-hidden",
-                        isCollapsed ? "justify-center gap-0" : "gap-3 mr-2"
-                    )}>
-                        <div className="w-9 h-9 shrink-0 rounded-full bg-accent-theme/20 border border-accent-theme/30 flex items-center justify-center text-accent-theme group-hover:scale-105 transition-transform overflow-hidden relative">
-                            {user?.avatar_url ? (
-                                <img
-                                    src={`${typeof window !== 'undefined' ? `http://${window.location.hostname}:8080` : 'http://localhost:8080'}${user.avatar_url}`}
-                                    alt={user.full_name || user.username}
-                                    className="w-full h-full object-cover"
-                                />
-                            ) : user?.username ? (
-                                <span className="font-bold">{(user.full_name || user.username)[0].toUpperCase()}</span>
-                            ) : (
-                                <User className="w-5 h-5" />
+            <div 
+                ref={userMenuRef}
+                className={clsx(
+                    "border-t border-border-theme bg-card/10 backdrop-blur-md transition-all relative", 
+                    isCollapsed ? "p-0 py-6 flex flex-col items-center w-full" : "p-4"
+                )}
+            >
+                {/* Menu Popover de Opções */}
+                <AnimatePresence>
+                    {isUserMenuOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, x: -10, scale: 0.95 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: -10, scale: 0.95 }}
+                            transition={{ duration: 0.15, ease: "easeOut" }}
+                            className={clsx(
+                                "absolute z-50 premium-gradient border border-white/10 p-1.5 rounded-2xl shadow-2xl w-48 flex flex-col gap-1 shadow-accent-theme/20 left-full ml-4",
+                                isCollapsed ? "bottom-6" : "bottom-4"
                             )}
-                            
-                            {/* Indicador de status online (exemplo) */}
-                            <div className={clsx(
-                                "absolute w-2.5 h-2.5 bg-emerald-500 border-2 border-card rounded-full",
-                                isCollapsed ? "bottom-0.5 right-0.5" : "bottom-0 right-0"
-                            )} />
-                        </div>
-                        {!isCollapsed && (
-                            <div className="flex flex-col truncate animate-in fade-in duration-500">
-                                <span className="text-xs font-bold text-foreground opacity-90 truncate">
-                                    {user?.full_name || user?.username || 'Carregando...'}
-                                </span>
-                                <span className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase">
-                                    {user?.role || 'Visitante'}
-                                </span>
-                            </div>
+                        >
+                            <Link
+                                href="/profile"
+                                onClick={() => setIsUserMenuOpen(false)}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-white/90 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                            >
+                                <Settings className="w-4 h-4" />
+                                <span>Configurações</span>
+                            </Link>
+                            <button
+                                onClick={() => {
+                                    setIsUserMenuOpen(false);
+                                    logout();
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-white/90 hover:text-white hover:bg-black/15 transition-all text-left cursor-pointer"
+                            >
+                                <LogOut className="w-4 h-4" />
+                                <span>Sair</span>
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <div 
+                    onClick={() => setIsUserMenuOpen(prev => !prev)}
+                    className={clsx(
+                        "flex items-center hover:bg-white/5 transition-all cursor-pointer group shrink-0 overflow-hidden select-none",
+                        isCollapsed ? "w-12 h-12 justify-center rounded-2xl" : "w-full p-2 rounded-2xl gap-3"
+                    )}
+                >
+                    <div className="w-9 h-9 shrink-0 rounded-full bg-accent-theme/20 border border-accent-theme/30 flex items-center justify-center text-accent-theme group-hover:scale-105 transition-transform overflow-hidden relative">
+                        {user?.avatar_url ? (
+                            <img
+                                src={`${typeof window !== 'undefined' ? `http://${window.location.hostname}:8080` : 'http://localhost:8080'}${user.avatar_url}`}
+                                alt={user.full_name || user.username}
+                                className="w-full h-full object-cover"
+                            />
+                        ) : user?.username ? (
+                            <span className="font-bold">{(user.full_name || user.username)[0].toUpperCase()}</span>
+                        ) : (
+                            <User className="w-5 h-5" />
                         )}
+                        
+                        {/* Indicador de status online (exemplo) */}
+                        <div className={clsx(
+                            "absolute w-2.5 h-2.5 bg-emerald-500 border-2 border-card rounded-full",
+                            isCollapsed ? "bottom-0.5 right-0.5" : "bottom-0 right-0"
+                        )} />
                     </div>
-                    <button
-                        onClick={logout}
-                        className="p-2 text-[var(--color-text-muted)] hover:text-red-500 transition-colors"
-                        title="Sair"
-                    >
-                        <LogOut className="w-5 h-5" />
-                    </button>
+                    {!isCollapsed && (
+                        <div className="flex flex-col truncate animate-in fade-in duration-500 flex-1">
+                            <span className="text-xs font-bold text-foreground opacity-90 truncate">
+                                {user?.full_name || user?.username || 'Carregando...'}
+                            </span>
+                            <span className="text-[10px] text-[var(--color-text-muted)] font-mono uppercase">
+                                {user?.role || 'Visitante'}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
         </aside>

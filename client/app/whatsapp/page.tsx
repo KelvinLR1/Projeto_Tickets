@@ -120,17 +120,14 @@ export default function WhatsAppPage() {
     return (
         <main className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-border-theme shrink-0 bg-background/30 backdrop-blur-md">
-                <div className="flex items-center gap-3">
-                    <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-r from-[var(--color-primary-theme)] to-[var(--color-accent-theme)] flex items-center justify-center shadow-lg shadow-[var(--color-primary-theme)]/15 shrink-0">
-                        <MessageSquare className="w-4 h-4 text-white" />
-                    </div>
-                    <div className="leading-tight">
-                        <h1 className="text-sm font-bold tracking-tight text-foreground">Atendimento</h1>
-                        <p className="text-[10px] text-[var(--color-text-muted)] font-medium mt-0.5">
-                            Painel Multi-Canal — {channels.length} canal(is) configurado(s)
-                        </p>
-                    </div>
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme px-8 pt-8 pb-10 shrink-0 bg-background/30 backdrop-blur-md">
+                <div className="space-y-2">
+                    <h1 className="text-5xl font-black font-display tracking-tight italic uppercase">
+                        Painel de <span className="text-accent-theme">Atendimento</span>
+                    </h1>
+                    <p className="text-[var(--color-text-muted)] text-sm font-medium mt-1">
+                        Painel Multi-Canal — {channels.length} canal(is) configurado(s)
+                    </p>
                 </div>
 
                 <div className="flex items-center gap-3">

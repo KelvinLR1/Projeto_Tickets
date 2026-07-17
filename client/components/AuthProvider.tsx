@@ -14,6 +14,7 @@ interface AuthContextType {
     login: (username: string, password: string) => Promise<void>; // Função para realizar login
     logout: () => void;        // Função para realizar logout
     isAuthenticated: boolean;  // Atalho para saber se há um usuário logado
+    refreshUser: () => Promise<void>; // Atualiza os dados do usuário autenticado
 }
 
 // Cria o contexto de autenticação
@@ -136,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user, refreshUser: loadUser }}>
             {children}
         </AuthContext.Provider>
     );

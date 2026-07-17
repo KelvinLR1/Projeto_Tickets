@@ -323,10 +323,24 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(database.get_db)
     return crud.create_user(db=db, user=user, hashed_password=hashed_password)
 
 @app.put("/users/{user_id}", response_model=schemas.User)
-def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
-    """Atualiza dados do usuário. Somente ROOT pode promover outro para ROOT."""
-    if user.role == "ROOT" and current_user.role != "ROOT":
-         raise HTTPException(status_code=403, detail="Apenas usuários ROOT podem criar outros ROOT")
+def update_user_endpoint(user_id: int, user: schemas.UserUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Atualiza dados do usuário. Usuários normais só podem atualizar a si mesmos e não podem alterar permissões."""
+    if current_user.id != user_id and current_user.role not in ["ADMIN", "ROOT"]:
+         raise HTTPException(status_code=403, detail="Sem permissão para atualizar este usuário")
+    
+    # Se o usuário não for Admin/Root, impede alterar papel (role), status de ativo, perfil ou setores
+    if current_user.role not in ["ADMIN", "ROOT"]:
+         db_orig = db.query(models.User).filter(models.User.id == user_id).first()
+         if db_orig:
+              user.role = db_orig.role
+              user.is_active = db_orig.is_active
+              user.profile_id = db_orig.profile_id
+              user.sector_ids = [s.id for s in db_orig.sectors]
+              user.username = db_orig.username
+    else:
+         if user.role == "ROOT" and current_user.role != "ROOT":
+              raise HTTPException(status_code=403, detail="Apenas usuários ROOT podem criar ou promover outros ROOT")
+
     hashed_password = auth.get_password_hash(user.password) if user.password else None
     db_user = crud.update_user(db=db, user_id=user_id, user_update=user, hashed_password=hashed_password)
     if db_user is None: raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -340,11 +354,14 @@ def delete_user_endpoint(user_id: int, db: Session = Depends(database.get_db), c
     return {"message": "Usuário excluído com sucesso"}
 
 @app.post("/users/{user_id}/avatar", response_model=schemas.User)
-async def upload_user_avatar(user_id: int, file: UploadFile = File(...), db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
+async def upload_user_avatar(user_id: int, file: UploadFile = File(...), db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     Realiza o upload de foto de perfil (avatar) para um usuário.
-    Suporta PNG, JPG, WEBP e GIF. O arquivo é salvo localmente no servidor.
+    Usuários normais só podem alterar seu próprio avatar.
     """
+    if current_user.id != user_id and current_user.role not in ["ADMIN", "ROOT"]:
+         raise HTTPException(status_code=403, detail="Sem permissão para alterar este avatar")
+
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -381,8 +398,14 @@ async def upload_user_avatar(user_id: int, file: UploadFile = File(...), db: Ses
     return db_user
 
 @app.delete("/users/{user_id}/avatar", response_model=schemas.User)
-def remove_user_avatar(user_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_active_admin)):
-    """Remove o avatar de um usuário e apaga o arquivo do servidor."""
+def remove_user_avatar(user_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """
+    Remove o avatar de um usuário e apaga o arquivo do servidor.
+    Usuários normais só podem remover seu próprio avatar.
+    """
+    if current_user.id != user_id and current_user.role not in ["ADMIN", "ROOT"]:
+         raise HTTPException(status_code=403, detail="Sem permissão para remover este avatar")
+
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
