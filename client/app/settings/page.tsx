@@ -128,6 +128,7 @@ export default function SettingsPage() {
     const [channelStatuses, setChannelStatuses] = useState<Record<string, { status: string; qr: string | null } | null>>({});
     const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
     const [editingChannel, setEditingChannel] = useState<WhatsAppChannel | null>(null);
+    const [zoomedChannelId, setZoomedChannelId] = useState<string | null>(null);
     const [channelForm, setChannelForm] = useState<Partial<WhatsAppChannel>>({});
     const [savingChannel, setSavingChannel] = useState(false);
     // Legacy single-channel states (mantidos para compatibilidade com código de teste de conexão)
@@ -1354,6 +1355,8 @@ export default function SettingsPage() {
         return MODEL_TIPS[baseName] || { label: 'Desconhecido', color: 'text-gray-500', speed: '?', quality: '?' };
     };
 
+    const zoomedQr = zoomedChannelId ? channelStatuses[zoomedChannelId]?.qr : null;
+
     return (
         <div className="flex-1 flex flex-col h-screen overflow-hidden bg-background">
             <main className="flex-1 overflow-y-auto custom-scrollbar">
@@ -1711,7 +1714,11 @@ export default function SettingsPage() {
                                                             {/* QR Code Display */}
                                                             {isWaiting && st?.qr && (
                                                                 <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-amber-500/5 border border-amber-500/15 rounded-xl">
-                                                                    <div className="p-2 bg-white rounded-xl shadow-lg shrink-0">
+                                                                    <div 
+                                                                        className="p-2 bg-white rounded-xl shadow-lg shrink-0 cursor-zoom-in transition-all duration-300 hover:scale-[1.03] hover:shadow-xl active:scale-[0.98]"
+                                                                        onClick={() => setZoomedChannelId(channel.id)}
+                                                                        title="Clique para ampliar o QR Code"
+                                                                    >
                                                                         <img src={st.qr} alt="QR Code" className="w-36 h-36 block" />
                                                                     </div>
                                                                     <div className="space-y-1 text-center sm:text-left">
@@ -4090,6 +4097,23 @@ export default function SettingsPage() {
                         </div>
                     )
                 }
+                {zoomedQr && (
+                    <div 
+                        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity duration-300 cursor-zoom-out"
+                        onClick={() => setZoomedChannelId(null)}
+                    >
+                        <div className="relative p-6 bg-white rounded-3xl shadow-2xl max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-4 transition-transform duration-300 scale-100 cursor-default" onClick={(e) => e.stopPropagation()}>
+                            <button 
+                                onClick={() => setZoomedChannelId(null)} 
+                                className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                            <img src={zoomedQr} alt="QR Code Ampliado" className="w-[300px] h-[300px] sm:w-[450px] sm:h-[450px] block rounded-xl shadow-inner border border-slate-100" />
+                            <p className="text-slate-500 text-[10px] font-black uppercase tracking-wider select-none">Clique fora para fechar</p>
+                        </div>
+                    </div>
+                )}
             </main >
         </div >
     );

@@ -7,7 +7,8 @@ import {
     updateUser, uploadUserAvatar, removeUserAvatar 
 } from '@/lib/api';
 import { 
-    User as UserIcon, Mail, Key, Upload, Trash2, Loader2, Save, Camera, Check 
+    User as UserIcon, Mail, Key, Upload, Trash2, Loader2, Save, Camera, Check,
+    Building2, Lock, ShieldCheck, Sparkles, Briefcase, Layers
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -149,7 +150,7 @@ export default function ProfilePage() {
 
     return (
         <main className="min-h-screen p-8 bg-background text-foreground transition-all duration-500">
-            <div className="w-full max-w-5xl mx-auto space-y-12 animate-page-in">
+            <div className="w-full space-y-12 animate-page-in">
                 
                 {/* Header Area */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme pb-10">
@@ -163,69 +164,191 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     
-                    {/* Coluna 1: Avatar e Status */}
-                    <div className="glass-card p-8 rounded-3xl border border-border-theme flex flex-col items-center text-center space-y-6">
-                        <div className="relative group">
-                            <div className="w-32 h-32 rounded-full bg-accent-theme/10 border-2 border-accent-theme/35 flex items-center justify-center text-accent-theme text-4xl font-black uppercase overflow-hidden relative shadow-xl">
-                                {avatarFullUrl ? (
-                                    <img 
-                                        src={avatarFullUrl} 
-                                        alt={user.full_name || user.username} 
-                                        className="w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    user.username[0]
-                                )}
+                    {/* Coluna Lateral: Avatar, Setores e Carteira */}
+                    <div className="lg:col-span-4 space-y-8">
+                        {/* Card: Avatar e Status */}
+                        <div className="glass-card p-8 rounded-3xl border border-border-theme flex flex-col items-center text-center space-y-6">
+                            <div className="relative group">
+                                <div className="w-32 h-32 rounded-full bg-accent-theme/10 border-2 border-accent-theme/35 flex items-center justify-center text-accent-theme text-4xl font-black uppercase overflow-hidden relative shadow-xl">
+                                    {avatarFullUrl ? (
+                                        <img 
+                                            src={avatarFullUrl} 
+                                            alt={user.full_name || user.username} 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        user.username[0]
+                                    )}
 
-                                {uploadingAvatar && (
-                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                        <Loader2 className="w-8 h-8 animate-spin text-white" />
+                                    {uploadingAvatar && (
+                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                            <Loader2 className="w-8 h-8 animate-spin text-white" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <label className="absolute bottom-0 right-0 p-2.5 bg-accent-theme hover:bg-accent-theme/90 text-white rounded-full cursor-pointer shadow-lg active:scale-95 transition-transform">
+                                    <Camera className="w-4 h-4" />
+                                    <input 
+                                        type="file" 
+                                        accept="image/png, image/jpeg, image/webp, image/gif" 
+                                        className="hidden" 
+                                        onChange={handleAvatarUpload}
+                                        disabled={uploadingAvatar}
+                                    />
+                                </label>
+                            </div>
+
+                            <div className="space-y-2 w-full">
+                                <h2 className="text-xl font-bold text-foreground truncate">
+                                    {user.full_name || user.username}
+                                </h2>
+                                <div className="flex justify-center gap-2">
+                                    <span className="px-3.5 py-1.5 rounded-xl bg-card border border-border-theme text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">
+                                        Papel: {user.role}
+                                    </span>
+                                    <span className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black uppercase tracking-wider text-emerald-400">
+                                        Ativo
+                                    </span>
+                                </div>
+                            </div>
+
+                            {avatarFullUrl && (
+                                <button
+                                    onClick={handleAvatarRemove}
+                                    disabled={uploadingAvatar}
+                                    className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl border border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 text-red-400 hover:text-red-500 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                    Remover Foto
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Card: Setores Vinculados */}
+                        <div className="glass-card p-8 rounded-3xl border border-border-theme space-y-6">
+                            <div className="flex items-center gap-3 border-b border-border-theme pb-4">
+                                <div className="p-2.5 bg-accent-theme/10 rounded-2xl text-accent-theme">
+                                    <Layers className="w-5 h-5" />
+                                </div>
+                                <div className="text-left">
+                                    <h3 className="text-lg font-bold text-foreground">Setores Vinculados</h3>
+                                    <p className="text-xs text-[var(--color-text-muted)] font-medium">Setores aos quais você possui permissão de atendimento.</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3 text-left">
+                                {user.sectors && user.sectors.length > 0 ? (
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {user.sectors.map((sector) => (
+                                            <div 
+                                                key={sector.id} 
+                                                className="flex items-center justify-between p-4 rounded-2xl bg-card border border-border-theme hover:border-accent-theme/35 transition-all group"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400">
+                                                        <ShieldCheck className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-foreground">{sector.name}</h4>
+                                                        {sector.description && (
+                                                            <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{sector.description}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <span className="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black uppercase tracking-wider text-emerald-400">
+                                                    Ativo
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-card border border-border-theme text-center space-y-2">
+                                        <Building2 className="w-8 h-8 text-[var(--color-text-muted)] opacity-50" />
+                                        <p className="text-xs font-bold text-foreground">Nenhum setor vinculado</p>
+                                        <p className="text-[10px] text-[var(--color-text-muted)]">Entre em contato com seu administrador para vincular um setor.</p>
                                     </div>
                                 )}
                             </div>
-
-                            <label className="absolute bottom-0 right-0 p-2.5 bg-accent-theme hover:bg-accent-theme/90 text-white rounded-full cursor-pointer shadow-lg active:scale-95 transition-transform">
-                                <Camera className="w-4 h-4" />
-                                <input 
-                                    type="file" 
-                                    accept="image/png, image/jpeg, image/webp, image/gif" 
-                                    className="hidden" 
-                                    onChange={handleAvatarUpload}
-                                    disabled={uploadingAvatar}
-                                />
-                            </label>
                         </div>
 
-                        <div className="space-y-2 w-full">
-                            <h2 className="text-xl font-bold text-foreground truncate">
-                                {user.full_name || user.username}
-                            </h2>
-                            <div className="flex justify-center gap-2">
-                                <span className="px-3.5 py-1.5 rounded-xl bg-card border border-border-theme text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">
-                                    Papel: {user.role}
-                                </span>
-                                <span className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black uppercase tracking-wider text-emerald-400">
-                                    Ativo
-                                </span>
+                        {/* Card: Carteira de Clientes */}
+                        <div className="glass-card p-8 rounded-3xl border border-border-theme space-y-6 relative overflow-hidden group">
+                            {/* Badge Em breve com gradiente */}
+                            <div className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1 rounded-full premium-gradient text-white text-[9px] font-black uppercase tracking-wider shadow-lg shadow-accent-theme/10">
+                                <Sparkles className="w-3 h-3 animate-pulse" />
+                                Em Breve
+                            </div>
+
+                            <div className="flex items-center gap-3 border-b border-border-theme pb-4">
+                                <div className="p-2.5 bg-violet-500/10 rounded-2xl text-violet-400">
+                                    <Briefcase className="w-5 h-5" />
+                                </div>
+                                <div className="text-left">
+                                    <h3 className="text-lg font-bold text-foreground">Carteira de Clientes</h3>
+                                    <p className="text-xs text-[var(--color-text-muted)] font-medium">Clientes sob sua responsabilidade direta de atendimento.</p>
+                                </div>
+                            </div>
+
+                            {/* Estatísticas Mockadas */}
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="p-3 rounded-2xl bg-card border border-border-theme text-center">
+                                    <p className="text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">Clientes</p>
+                                    <p className="text-lg font-black text-foreground mt-1">12</p>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-card border border-border-theme text-center">
+                                    <p className="text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">Ativos</p>
+                                    <p className="text-lg font-black text-emerald-400 mt-1">3</p>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-card border border-border-theme text-center">
+                                    <p className="text-[9px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">SLA Médio</p>
+                                    <p className="text-lg font-black text-violet-400 mt-1">98%</p>
+                                </div>
+                            </div>
+
+                            {/* Lista Preview de Clientes com Blur */}
+                            <div className="space-y-3 relative text-left">
+                                <div className="absolute inset-0 bg-background/80 flex flex-col items-center justify-center text-center p-4 backdrop-blur-[1.5px] rounded-2xl border border-border-theme z-10">
+                                    <Lock className="w-5 h-5 text-accent-theme mb-1.5 animate-bounce" />
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-foreground">Acesso Reservado</p>
+                                    <p className="text-[9px] text-[var(--color-text-muted)] mt-0.5">Módulo de carteira de clientes em desenvolvimento.</p>
+                                </div>
+
+                                {/* Mock Clientes de Fundo */}
+                                <div className="space-y-2 opacity-20 select-none pointer-events-none">
+                                    <div className="flex items-center justify-between p-3 rounded-xl bg-card border border-border-theme">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center text-[10px] font-black text-blue-400">
+                                                AC
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-foreground">Acme Corporation</p>
+                                                <p className="text-[9px] text-[var(--color-text-muted)]">Premium</p>
+                                            </div>
+                                        </div>
+                                        <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-[8px] font-black uppercase tracking-wider text-emerald-400">Ativo</span>
+                                    </div>
+                                    <div className="flex items-center justify-between p-3 rounded-xl bg-card border border-border-theme">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-7 h-7 rounded-full bg-purple-500/20 flex items-center justify-center text-[10px] font-black text-purple-400">
+                                                GI
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-foreground">Globex Industries</p>
+                                                <p className="text-[9px] text-[var(--color-text-muted)]">Enterprise</p>
+                                            </div>
+                                        </div>
+                                        <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-[8px] font-black uppercase tracking-wider text-emerald-400">Ativo</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-
-                        {avatarFullUrl && (
-                            <button
-                                onClick={handleAvatarRemove}
-                                disabled={uploadingAvatar}
-                                className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl border border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 text-red-400 hover:text-red-500 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                                Remover Foto
-                            </button>
-                        )}
                     </div>
 
-                    {/* Colunas 2 & 3: Formulários */}
-                    <div className="lg:col-span-2 space-y-8">
+                    {/* Coluna Principal: Formulários */}
+                    <div className="lg:col-span-8 space-y-8">
                         
                         {/* Card: Dados Pessoais */}
                         <div className="glass-card p-8 rounded-3xl border border-border-theme space-y-6">

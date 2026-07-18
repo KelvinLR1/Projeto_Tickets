@@ -479,7 +479,8 @@ aside > div:last-child {
 /* ==============================================================================
    ESTILOS DO MENU DE CONTEXTO E BANNER DE RESPOSTA (GLASSMORPHISM COERENTE)
    ============================================================================== */
-#message-context-menu {
+#message-context-menu,
+#chat-context-menu {
   background: var(--color-card) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -487,20 +488,24 @@ aside > div:last-child {
   color: var(--color-foreground) !important;
 }
 
-#message-context-menu button {
+#message-context-menu button,
+#chat-context-menu button {
   color: var(--color-foreground) !important;
 }
 
-#message-context-menu button:hover {
+#message-context-menu button:hover,
+#chat-context-menu button:hover {
   background: color-mix(in srgb, var(--color-primary-theme) 12%, transparent) !important;
   color: var(--color-primary-theme) !important;
 }
 
-#message-context-menu button.text-red-500 {
+#message-context-menu button.text-red-500,
+#chat-context-menu button.text-red-500 {
   color: #ef4444 !important;
 }
 
-#message-context-menu button.text-red-500:hover {
+#message-context-menu button.text-red-500:hover,
+#chat-context-menu button.text-red-500:hover {
   background: rgba(239, 68, 68, 0.1) !important;
   color: #f87171 !important;
 }
@@ -529,19 +534,44 @@ aside > div:last-child {
   box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.35) !important;
 }
 
-/* Grade de Emojis Expandida no Menu de Contexto */
 #context-emoji-grid button {
   background: transparent;
   border: none;
   font-size: 1.25rem;
-  padding: 4px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   cursor: pointer;
   transition: all 0.1s ease-in-out;
+  margin: 0 auto;
 }
 
 #context-emoji-grid button:hover {
   background: color-mix(in srgb, var(--color-foreground) 8%, transparent) !important;
+  transform: scale(1.2);
+}
+
+/* Barra de Reações Recentes no Topo do Menu */
+#context-recent-reactions button {
+  background: transparent !important;
+  border: none;
+  font-size: 1.25rem !important;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.1s ease-in-out;
+}
+
+#context-recent-reactions button:hover {
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent) !important;
+  color: inherit !important;
   transform: scale(1.2);
 }
 
@@ -609,5 +639,79 @@ aside > div:last-child {
 .btn-danger-theme:hover {
   background: #b91c1c !important;
   box-shadow: 0 6px 20px -3px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Animação para a troca de abas da Sidebar (Premium) */
+.tab-content-active {
+  animation: tabSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+@keyframes tabSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Backdrop dos Modais/Zoom Sincronizados com o Tema */
+.modal-backdrop-theme {
+  background-color: color-mix(in srgb, var(--color-background) 90%, transparent) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+/* Cartão de Dropdown Sincronizado com a Cor Primária dos Botões do Tema */
+.dropdown-theme {
+  background-color: var(--color-primary-theme) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Ajustes de contraste para textos e elementos internos sobre fundo colorido sólido */
+.dropdown-theme div,
+.dropdown-theme span,
+.dropdown-theme p {
+  color: #ffffff !important;
+}
+
+/* Hover nos itens do dropdown */
+.dropdown-theme .hover\:bg-white\/5:hover {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Textos secundários (ex: cabeçalhos e placeholders) */
+.dropdown-theme .text-slate-500,
+.dropdown-theme .text-slate-600 {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Divisores internos */
+.dropdown-theme .bg-white\/5 {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Checkmarks da ordenação e filtros selecionados */
+.dropdown-theme .text-blue-400 {
+  color: #ffffff !important;
+}
+
+/* Botão de Excluir Filtro */
+.dropdown-theme button {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.dropdown-theme button:hover {
+  color: #ffffff !important;
+}
+
+/* Botão pontilhado "Criar Novo Filtro" */
+.dropdown-theme .border-accent-theme\/30 {
+  border-color: rgba(255, 255, 255, 0.4) !important;
+}
+.dropdown-theme .text-accent-theme {
+  color: #ffffff !important;
 }
 

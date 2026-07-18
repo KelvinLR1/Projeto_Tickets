@@ -14,6 +14,7 @@ let activeChats = [];
 let queueChats = [];
 let botChats = [];
 let currentChatMessages = [];
+let isQrBypassed = sessionStorage.getItem('tf_qr_bypassed') === 'true';
 
 // Elementos da DOM
 const qrModal = document.getElementById('qr-modal');
@@ -123,35 +124,106 @@ let currentSidebarTab = 'active';
 const tabActiveBtn = document.getElementById('tab-active');
 const tabQueueBtn = document.getElementById('tab-queue');
 const tabBotBtn = document.getElementById('tab-bot');
+const tabHistoryBtn = document.getElementById('tab-history');
 
 const activeChatsContainer = document.getElementById('active-chats-container');
+const activeListContainer = document.getElementById('active-list');
+const inputActiveSearch = document.getElementById('input-active-search');
+const btnActiveFilterAll = document.getElementById('btn-active-filter-all');
+const btnActiveFilterUnread = document.getElementById('btn-active-filter-unread');
+const btnActiveFilterGroups = document.getElementById('btn-active-filter-groups');
+
+let activeFilterType = 'all'; // 'all', 'unread', 'groups'
+let activeSearchQuery = '';
+let activeChatsSortOrder = 'desc'; // 'desc' (novas primeiro) ou 'asc' (antigas primeiro)
+let customFilters = (() => {
+  try {
+    const saved = localStorage.getItem('tf_custom_filters');
+    return saved ? JSON.parse(saved) : [];
+  } catch (e) {
+    return [];
+  }
+})();
+let activeCustomFilterId = null;
+let activeFilterTimeout = null;
+
 const queueChatsContainer = document.getElementById('queue-list-container');
 const botChatsContainer = document.getElementById('bot-chats-container');
+const historyChatsContainer = document.getElementById('history-chats-container');
+const historyListContainer = document.getElementById('history-list');
+const inputHistorySearch = document.getElementById('input-history-search');
+const btnSearchTypeChat = document.getElementById('btn-search-type-chat');
+const btnSearchTypeMessage = document.getElementById('btn-search-type-message');
+
+let historyChats = [];
+let historySearchType = 'chat';
+
+const tabIndicator = document.getElementById('tab-indicator');
+const tabsContainer = document.getElementById('tabs-container');
+
+function updateTabIndicator(activeBtn) {
+  if (!tabIndicator || !activeBtn || !tabsContainer) return;
+  const containerRect = tabsContainer.getBoundingClientRect();
+  const btnRect = activeBtn.getBoundingClientRect();
+  
+  const relativeLeft = btnRect.left - containerRect.left;
+  const width = btnRect.width;
+  
+  tabIndicator.style.left = `${relativeLeft}px`;
+  tabIndicator.style.width = `${width}px`;
+}
+
+function updateActiveFilterIndicator(activeBtn) {
+  const container = document.getElementById('active-filters-container');
+  const indicator = document.getElementById('active-filter-indicator');
+  if (!container || !indicator) return;
+
+  if (!activeBtn) {
+    indicator.style.width = '0px';
+    indicator.classList.add('opacity-0');
+    return;
+  }
+
+  const containerRect = container.getBoundingClientRect();
+  const btnRect = activeBtn.getBoundingClientRect();
+  
+  const relativeLeft = btnRect.left - containerRect.left;
+  const width = btnRect.width;
+  const height = btnRect.height;
+  const relativeTop = btnRect.top - containerRect.top;
+  
+  indicator.style.left = `${relativeLeft}px`;
+  indicator.style.width = `${width}px`;
+  indicator.style.top = `${relativeTop}px`;
+  indicator.style.height = `${height}px`;
+  indicator.classList.remove('opacity-0');
+}
 
 function switchSidebarTab(tab) {
   currentSidebarTab = tab;
   
-  // Reset buttons styles
-  [tabActiveBtn, tabQueueBtn, tabBotBtn].forEach(btn => {
-    btn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1";
-  });
+  const buttons = [
+    { name: 'active', btn: tabActiveBtn, container: activeChatsContainer },
+    { name: 'queue', btn: tabQueueBtn, container: queueChatsContainer },
+    { name: 'bot', btn: tabBotBtn, container: botChatsContainer },
+    { name: 'history', btn: tabHistoryBtn, container: historyChatsContainer }
+  ];
 
-  // Reset containers visibility
-  [activeChatsContainer, queueChatsContainer, botChatsContainer].forEach(container => {
-    container.classList.add('hidden');
+  buttons.forEach(item => {
+    if (item.name === tab) {
+      item.btn.classList.remove('text-slate-400', 'hover:text-slate-200', 'hover:scale-[1.01]', 'active:scale-[0.98]');
+      item.btn.classList.add('text-white', 'scale-[1.02]');
+      item.container.classList.remove('hidden');
+      void item.container.offsetWidth; // Force browser reflow to restart keyframe animation
+      item.container.classList.add('tab-content-active');
+      updateTabIndicator(item.btn);
+    } else {
+      item.btn.classList.remove('text-white', 'scale-[1.02]');
+      item.btn.classList.add('text-slate-400', 'hover:text-slate-200', 'hover:scale-[1.01]', 'active:scale-[0.98]');
+      item.container.classList.add('hidden');
+      item.container.classList.remove('tab-content-active');
+    }
   });
-
-  // Apply active styles
-  if (tab === 'active') {
-    tabActiveBtn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-white transition-all flex items-center justify-center gap-1 bg-white/5 border border-white/10 shadow-sm";
-    activeChatsContainer.classList.remove('hidden');
-  } else if (tab === 'queue') {
-    tabQueueBtn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-white transition-all flex items-center justify-center gap-1 bg-white/5 border border-white/10 shadow-sm";
-    queueChatsContainer.classList.remove('hidden');
-  } else if (tab === 'bot') {
-    tabBotBtn.className = "flex-1 py-2 px-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-white transition-all flex items-center justify-center gap-1 bg-white/5 border border-white/10 shadow-sm";
-    botChatsContainer.classList.remove('hidden');
-  }
 }
 
 // ==============================================================================
@@ -170,6 +242,8 @@ function closeNewChatModal() {
 }
 
 function bypassQR() {
+  isQrBypassed = true;
+  sessionStorage.setItem('tf_qr_bypassed', 'true');
   qrModal.classList.add('hidden');
 }
 
@@ -237,15 +311,19 @@ socket.on('whatsapp_status', ({ status, qr }) => {
   console.log(`Status do WhatsApp: ${status}`);
   
   if (status === 'pronto' || status === 'autenticado') {
-    // Esconde Modal do QR Code
+    // Esconde Modal do QR Code e reseta o bypass
+    isQrBypassed = false;
+    sessionStorage.removeItem('tf_qr_bypassed');
     qrModal.classList.add('hidden');
     
     // Badge do Header -> Verde
     statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
     statusText.textContent = 'Conectado';
   } else if (status === 'aguardando_qr') {
-    // Exibe Modal do QR Code
-    qrModal.classList.remove('hidden');
+    // Exibe Modal do QR Code se não estiver em bypass
+    if (!isQrBypassed) {
+      qrModal.classList.remove('hidden');
+    }
     qrSpinner.classList.add('hidden');
     qrImage.classList.remove('hidden');
     
@@ -259,7 +337,9 @@ socket.on('whatsapp_status', ({ status, qr }) => {
     statusText.textContent = 'QR Code Pendente';
   } else {
     // Desconectado / Carregando
-    qrModal.classList.remove('hidden');
+    if (!isQrBypassed) {
+      qrModal.classList.remove('hidden');
+    }
     qrSpinner.classList.remove('hidden');
     qrImage.classList.add('hidden');
     qrStatusText.textContent = 'Inicializando WhatsApp local...';
@@ -279,7 +359,22 @@ socket.on('queue_list', (rows) => {
   queueChats = rows;
   queueCountBadge.textContent = rows.length;
   renderQueueList();
+  checkReadOnlyBanner();
 });
+
+function checkReadOnlyBanner() {
+  if (selectedChatJid) {
+    const inQueue = queueChats.some(c => c.cliente_jid === selectedChatJid);
+    const readOnlyBanner = document.getElementById('chat-read-only-banner');
+    if (readOnlyBanner) {
+      if (inQueue) {
+        readOnlyBanner.classList.remove('hidden');
+      } else {
+        readOnlyBanner.classList.add('hidden');
+      }
+    }
+  }
+}
 
 function renderQueueList() {
   if (queueChats.length === 0) {
@@ -290,7 +385,7 @@ function renderQueueList() {
   queueContainer.innerHTML = queueChats.map(chat => `
     <div class="glass-card rounded-2xl p-4 flex flex-col gap-3 relative fade-in border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-300">
       <div class="flex items-center gap-3">
-        <div class="w-11.5 h-11.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-base text-amber-400 uppercase shrink-0 overflow-hidden">
+        <div class="w-12 h-12 rounded-2xl avatar-inactive-theme flex items-center justify-center font-bold text-sm uppercase transition-all shrink-0 overflow-hidden">
           ${chat.cliente_avatar 
             ? `<img src="${chat.cliente_avatar}" alt="${chat.cliente_nome}" class="w-full h-full object-cover" onerror="this.outerHTML='${chat.cliente_nome.substring(0, 2).toUpperCase()}'"/>` 
             : chat.cliente_nome.substring(0, 2).toUpperCase()
@@ -299,6 +394,17 @@ function renderQueueList() {
         <div class="leading-tight text-left flex-1 min-w-0">
           <p class="text-xs font-semibold text-slate-100 truncate" title="${chat.cliente_nome}">${chat.cliente_nome}</p>
           <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+        </div>
+        <!-- Ícones de Ação da Fila -->
+        <div class="flex items-center gap-1 shrink-0">
+          <!-- Ícone de Informações -->
+          <button onclick="openClientInfoDrawer('${chat.cliente_jid}', '${chat.cliente_nome}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shadow-sm" title="Informações do contato">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </button>
+          <!-- Ícone de Mensagens (Modo Leitura) -->
+          <button onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shadow-sm" title="Visualizar conversa (Modo Leitura)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
         </div>
       </div>
       
@@ -320,7 +426,424 @@ socket.on('active_chats_list', (rows) => {
   activeChats = rows;
   activeCountBadge.textContent = rows.length;
   renderActiveChats();
+  checkReadOnlyBanner();
 });
+
+// Recebe Lista de Conversas do Histórico
+socket.on('history_chats_list', (rows) => {
+  historyChats = rows;
+  renderHistoryChats();
+});
+
+function renderHistoryChats() {
+  if (!historyListContainer) return;
+  if (historyChats.length === 0) {
+    historyListContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Nenhum atendimento no histórico</div>`;
+    return;
+  }
+
+  historyListContainer.innerHTML = historyChats.map(chat => {
+    const isSelected = selectedChatJid === chat.cliente_jid;
+    return `
+      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
+        <div class="w-12 h-12 rounded-2xl ${isSelected ? 'avatar-accent-theme text-white' : 'avatar-inactive-theme'} flex items-center justify-center font-bold text-sm uppercase transition-all shrink-0 overflow-hidden">
+          ${chat.cliente_avatar 
+            ? `<img src="${chat.cliente_avatar}" alt="${chat.cliente_nome}" class="w-full h-full object-cover" onerror="this.outerHTML='${chat.cliente_nome.substring(0, 2).toUpperCase()}'"/>` 
+            : chat.cliente_nome.substring(0, 2).toUpperCase()
+          }
+        </div>
+        <div class="leading-tight text-left flex-1 min-w-0">
+          <p class="text-xs font-semibold text-slate-200 truncate" title="${chat.cliente_nome}">${chat.cliente_nome}</p>
+          <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+        </div>
+        <div class="flex flex-col items-end gap-1.5 shrink-0 text-right">
+          <span class="text-[8px] bg-slate-800 text-slate-400 font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider">Finalizado</span>
+          <span class="text-[7px] text-slate-600 font-mono">${chat.started_at ? new Date(chat.started_at).toLocaleDateString([], {day: '2-digit', month: '2-digit'}) : ''}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Envia busca do histórico ao servidor
+function handleHistorySearch() {
+  if (!currentOperator) return;
+  const query = inputHistorySearch ? inputHistorySearch.value.trim() : '';
+  socket.emit('search_history', { query, type: historySearchType, atendente_id: currentOperator.id });
+}
+
+// Controla o tipo de busca selecionado no histórico
+function setHistorySearchType(type) {
+  if (historySearchType === type) return;
+  historySearchType = type;
+
+  const buttons = [
+    { name: 'chat', btn: btnSearchTypeChat },
+    { name: 'message', btn: btnSearchTypeMessage }
+  ];
+
+  buttons.forEach(item => {
+    if (item.name === type) {
+      item.btn.className = "w-8 h-8 rounded-xl bg-white/10 border border-white/20 text-white flex items-center justify-center scale-[1.05] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer";
+    } else {
+      item.btn.className = "w-8 h-8 rounded-xl bg-transparent border border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer";
+    }
+  });
+
+  handleHistorySearch();
+}
+
+// Controla a busca na aba de Ativos
+function handleActiveSearch() {
+  activeSearchQuery = inputActiveSearch ? inputActiveSearch.value.trim() : '';
+  renderActiveChats();
+}
+
+// Controla o filtro rápido selecionado nos Ativos
+function setActiveFilter(filter) {
+  // Limpar filtro personalizado se houver
+  activeCustomFilterId = null;
+
+  if (activeFilterType === filter) {
+    // Se o filtro selecionado for o mesmo, apenas garanta o alinhamento do indicador
+    const activeBtn = filter === 'all' ? btnActiveFilterAll : (filter === 'unread' ? btnActiveFilterUnread : btnActiveFilterGroups);
+    updateActiveFilterIndicator(activeBtn);
+    return;
+  }
+  activeFilterType = filter;
+
+  const filters = [
+    { name: 'all', btn: btnActiveFilterAll },
+    { name: 'unread', btn: btnActiveFilterUnread },
+    { name: 'groups', btn: btnActiveFilterGroups }
+  ];
+
+  filters.forEach(item => {
+    if (item.btn) {
+      if (item.name === filter) {
+        item.btn.className = "px-2.5 py-1 rounded-lg text-white text-[9px] font-bold uppercase tracking-wider transition-all scale-[1.02] cursor-pointer z-10";
+        updateActiveFilterIndicator(item.btn);
+      } else {
+        item.btn.className = "px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 hover:scale-[1.01] active:scale-[0.98] text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer z-10";
+      }
+    }
+  });
+
+  renderActiveChats();
+}
+
+// Alterna a exibição entre a barra de busca e as pílulas de filtros na aba de Ativos
+function toggleActiveSearch(show) {
+  const pillsRow = document.getElementById('active-pills-row');
+  const searchRow = document.getElementById('active-search-row');
+  const searchInput = document.getElementById('input-active-search');
+
+  if (!pillsRow || !searchRow) return;
+
+  if (show) {
+    pillsRow.classList.remove('translate-x-0', 'opacity-100');
+    pillsRow.classList.add('-translate-x-full', 'opacity-0', 'pointer-events-none');
+
+    searchRow.classList.remove('translate-x-full', 'opacity-0', 'pointer-events-none');
+    searchRow.classList.add('translate-x-0', 'opacity-100', 'pointer-events-auto');
+
+    if (searchInput) {
+      setTimeout(() => searchInput.focus(), 150);
+    }
+  } else {
+    searchRow.classList.remove('translate-x-0', 'opacity-100', 'pointer-events-auto');
+    searchRow.classList.add('translate-x-full', 'opacity-0', 'pointer-events-none');
+
+    pillsRow.classList.remove('-translate-x-full', 'opacity-0', 'pointer-events-none');
+    pillsRow.classList.add('translate-x-0', 'opacity-100');
+
+    if (searchInput) {
+      searchInput.value = '';
+    }
+    activeSearchQuery = '';
+    renderActiveChats();
+  }
+}
+
+// Abre a bandeja lateral de informações do cliente (Fila / Ativos)
+function openClientInfoDrawer(jid, name) {
+  const drawer = document.getElementById('client-info-drawer');
+  const avatarEl = document.getElementById('client-info-drawer-avatar');
+  const nameEl = document.getElementById('client-info-drawer-name');
+  const phoneEl = document.getElementById('client-info-drawer-phone');
+  const statusEl = document.getElementById('client-info-drawer-status');
+  const takeBtn = document.getElementById('btn-client-info-drawer-take');
+
+  if (!drawer) return;
+
+  nameEl.textContent = name;
+  phoneEl.textContent = jid.split('@')[0];
+
+  // Identificar se está na Fila ou Ativos
+  const inQueue = queueChats.some(c => c.cliente_jid === jid);
+  const chatObj = queueChats.find(c => c.cliente_jid === jid) || activeChats.find(c => c.cliente_jid === jid);
+  const avatar = chatObj ? chatObj.cliente_avatar : null;
+
+  if (avatar) {
+    avatarEl.innerHTML = `<img src="${avatar}" alt="${name}" class="w-full h-full object-cover" onerror="this.outerHTML='${name.substring(0, 2).toUpperCase()}'"/>`;
+    avatarEl.className = "w-28 h-28 rounded-2xl mx-auto border border-white/10 flex items-center justify-center shrink-0 overflow-hidden bg-slate-800 cursor-zoom-in hover:scale-105 active:scale-95 transition-all duration-200 shadow-md";
+    avatarEl.onclick = () => openAvatarZoomModal(avatar, name);
+  } else {
+    avatarEl.innerHTML = name.substring(0, 2).toUpperCase();
+    avatarEl.className = "w-28 h-28 rounded-2xl mx-auto avatar-accent-theme flex items-center justify-center font-bold text-3xl uppercase text-white shadow-lg shrink-0 cursor-zoom-in hover:scale-105 active:scale-95 transition-all duration-200";
+    avatarEl.onclick = () => openAvatarZoomModal(null, name);
+  }
+
+  if (inQueue) {
+    statusEl.textContent = "Aguardando na Fila";
+    statusEl.className = "font-bold text-amber-400";
+    takeBtn.className = "w-full h-11 premium-gradient text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer";
+    takeBtn.removeAttribute('disabled');
+    takeBtn.onclick = () => {
+      takeChat(jid);
+      closeClientInfoDrawer();
+    };
+  } else {
+    statusEl.textContent = "Em Atendimento";
+    statusEl.className = "font-bold text-emerald-400";
+    takeBtn.className = "w-full h-11 bg-white/5 border border-white/5 text-slate-500 rounded-xl text-xs font-bold tracking-wider uppercase cursor-not-allowed opacity-50";
+    takeBtn.setAttribute('disabled', 'true');
+    takeBtn.onclick = null;
+  }
+
+  // Animar abertura da bandeja lateral (slide-in)
+  drawer.classList.remove('w-0', 'border-transparent');
+  drawer.classList.add('w-[400px]', 'border-white/10');
+}
+
+// Fecha a bandeja lateral de informações do cliente
+function closeClientInfoDrawer() {
+  const drawer = document.getElementById('client-info-drawer');
+  if (drawer) {
+    drawer.classList.remove('w-[400px]', 'border-white/10');
+    drawer.classList.add('w-0', 'border-transparent');
+  }
+}
+
+// Abre a bandeja ao clicar no cabeçalho da conversa
+function handleChatHeaderClick() {
+  if (selectedChatJid && selectedChatName) {
+    openClientInfoDrawer(selectedChatJid, selectedChatName);
+  }
+}
+
+// Abre o modal de zoom do avatar
+function openAvatarZoomModal(imgUrl, name) {
+  const modal = document.getElementById('avatar-zoom-modal');
+  const container = document.getElementById('zoomed-avatar-container');
+  const nameEl = document.getElementById('zoomed-avatar-name');
+  const wrapper = document.getElementById('avatar-zoom-content-wrapper');
+  if (!modal || !container || !nameEl || !wrapper) return;
+
+  nameEl.textContent = name;
+
+  if (imgUrl) {
+    container.innerHTML = `<img src="${imgUrl}" alt="${name}" class="w-full h-full object-cover" />`;
+    container.className = "w-80 h-80 sm:w-96 sm:h-96 rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex items-center justify-center bg-slate-800";
+  } else {
+    container.innerHTML = name.substring(0, 2).toUpperCase();
+    container.className = "w-80 h-80 sm:w-96 sm:h-96 rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex items-center justify-center avatar-accent-theme text-7xl font-black uppercase text-white";
+  }
+
+  // Ativar transições de fade e escala
+  modal.classList.remove('opacity-0', 'pointer-events-none');
+  modal.classList.add('opacity-100', 'pointer-events-auto');
+  wrapper.classList.remove('scale-95');
+  wrapper.classList.add('scale-100');
+}
+
+// Fecha o modal de zoom do avatar
+function closeAvatarZoomModal() {
+  const modal = document.getElementById('avatar-zoom-modal');
+  const wrapper = document.getElementById('avatar-zoom-content-wrapper');
+  if (modal && wrapper) {
+    modal.classList.remove('opacity-100', 'pointer-events-auto');
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    wrapper.classList.remove('scale-100');
+    wrapper.classList.add('scale-95');
+  }
+}
+
+// Abre o modal de cadastro de novo filtro personalizado
+function openCustomFilterModal() {
+  const modal = document.getElementById('custom-filter-modal');
+  if (modal) {
+    // Resetar campos
+    document.getElementById('input-filter-name').value = '';
+    document.getElementById('input-filter-keyword').value = '';
+    document.getElementById('select-filter-type').value = 'all';
+    document.getElementById('checkbox-filter-unread').checked = false;
+    modal.classList.remove('hidden');
+  }
+}
+
+// Fecha o modal de cadastro de novo filtro
+function closeCustomFilterModal() {
+  const modal = document.getElementById('custom-filter-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+// Salva o filtro personalizado configurado no localStorage
+function saveCustomFilter(e) {
+  e.preventDefault();
+  const name = document.getElementById('input-filter-name').value.trim();
+  const keyword = document.getElementById('input-filter-keyword').value.trim();
+  const type = document.getElementById('select-filter-type').value;
+  const unreadOnly = document.getElementById('checkbox-filter-unread').checked;
+
+  if (!name) return;
+
+  const newFilter = {
+    id: 'filter_' + Date.now(),
+    name: name,
+    keyword: keyword,
+    type: type,
+    unreadOnly: unreadOnly
+  };
+
+  customFilters.push(newFilter);
+  localStorage.setItem('tf_custom_filters', JSON.stringify(customFilters));
+  
+  closeCustomFilterModal();
+  renderCustomFiltersDropdown();
+}
+
+// Deleta um filtro personalizado existente
+function deleteCustomFilter(filterId, event) {
+  if (event) event.stopPropagation();
+  customFilters = customFilters.filter(f => f.id !== filterId);
+  localStorage.setItem('tf_custom_filters', JSON.stringify(customFilters));
+  
+  if (activeCustomFilterId === filterId) {
+    applyCustomFilter(null);
+  } else {
+    renderCustomFiltersDropdown();
+  }
+}
+
+// Aplica um filtro personalizado na listagem
+function applyCustomFilter(filterId) {
+  activeCustomFilterId = filterId;
+  
+  // Limpar os filtros rápidos tradicionais se for um filtro ativo
+  if (filterId) {
+    activeFilterType = 'custom';
+    
+    // Atualizar estilo visual das abas normais (remover classe active de Tudo/Não Lidas/Grupos)
+    const pills = [btnActiveFilterAll, btnActiveFilterUnread, btnActiveFilterGroups];
+    pills.forEach(btn => {
+      if (btn) {
+        btn.className = "px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 hover:scale-[1.01] active:scale-[0.98] text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer z-10";
+      }
+    });
+    // Apagar indicador deslizante
+    updateActiveFilterIndicator(null);
+  } else {
+    // Se limpar, volta para o Tudo
+    setActiveFilter('all');
+    return;
+  }
+
+  const dropdown = document.getElementById('active-filter-dropdown');
+  if (dropdown) dropdown.classList.add('hidden');
+  
+  renderActiveChats();
+}
+
+// Desenha a lista de filtros personalizados no menu suspenso
+function renderCustomFiltersDropdown() {
+  const container = document.getElementById('custom-filters-list');
+  if (!container) return;
+
+  if (customFilters.length === 0) {
+    container.innerHTML = `<div class="px-3 py-3.5 text-[8px] font-semibold text-slate-600 text-center select-none">Nenhum filtro criado.</div>`;
+    return;
+  }
+
+  container.innerHTML = customFilters.map(filter => {
+    const isSelected = activeCustomFilterId === filter.id;
+    return `
+      <div onclick="applyCustomFilter('${filter.id}')" class="group flex items-center justify-between px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-wider text-slate-300 hover:text-white hover:bg-white/5 cursor-pointer transition-all shrink-0 ${isSelected ? 'bg-white/5 text-white' : ''}">
+        <span class="truncate flex-1 pr-2 text-left">${filter.name}</span>
+        <div class="flex items-center gap-1.5">
+          ${isSelected ? '<span class="text-blue-400">✓</span>' : ''}
+          <button onclick="deleteCustomFilter('${filter.id}', event)" class="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 rounded transition-all cursor-pointer" title="Excluir filtro">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Alterna a exibição do dropdown de filtros por clique
+function toggleActiveFilterDropdown(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  const dropdown = document.getElementById('active-filter-dropdown');
+  if (!dropdown) return;
+
+  if (dropdown.classList.contains('hidden')) {
+    // Renderiza a lista antes de exibir
+    renderCustomFiltersDropdown();
+
+    const targetBtn = document.getElementById('btn-active-extra-filter') || e.currentTarget;
+    const rect = targetBtn.getBoundingClientRect();
+    dropdown.style.top = `${rect.bottom + 6}px`;
+    dropdown.style.left = `${rect.left}px`;
+    dropdown.classList.remove('hidden');
+
+    // Fechar ao clicar fora
+    document.addEventListener('click', closeActiveFilterDropdownOutside);
+  } else {
+    hideActiveFilterDropdown();
+  }
+}
+
+function hideActiveFilterDropdown() {
+  const dropdown = document.getElementById('active-filter-dropdown');
+  if (dropdown) dropdown.classList.add('hidden');
+  document.removeEventListener('click', closeActiveFilterDropdownOutside);
+}
+
+function closeActiveFilterDropdownOutside(e) {
+  const dropdown = document.getElementById('active-filter-dropdown');
+  const button = document.getElementById('btn-active-extra-filter');
+  if (!dropdown) return;
+
+  // Se o clique for fora do dropdown e fora do botão de filtro, fecha
+  if (!dropdown.contains(e.target) && (!button || !button.contains(e.target))) {
+    hideActiveFilterDropdown();
+  }
+}
+
+// Altera a ordenação dos Ativos e atualiza a exibição
+function setActiveSort(order) {
+  if (activeChatsSortOrder === order) return;
+  activeChatsSortOrder = order;
+
+  const descCheck = document.getElementById('sort-desc-check');
+  const ascCheck = document.getElementById('sort-asc-check');
+
+  if (descCheck && ascCheck) {
+    if (order === 'desc') {
+      descCheck.classList.remove('hidden');
+      ascCheck.classList.add('hidden');
+    } else {
+      ascCheck.classList.remove('hidden');
+      descCheck.classList.add('hidden');
+    }
+  }
+
+  renderActiveChats();
+}
 
 // Recebe Lista de Conversas do Bot
 socket.on('bot_chats_list', (rows) => {
@@ -370,15 +893,62 @@ function renderBotChats() {
 }
 
 function renderActiveChats() {
-  if (activeChats.length === 0) {
-    activeContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Você não possui atendimentos ativos</div>`;
+  if (!activeListContainer) return;
+
+  // 1. Filtrar com base no tipo de filtro selecionado
+  let filtered = [...activeChats];
+  if (activeFilterType === 'unread') {
+    filtered = filtered.filter(chat => chat.unread === 1);
+  } else if (activeFilterType === 'groups') {
+    filtered = filtered.filter(chat => chat.cliente_jid && chat.cliente_jid.endsWith('@g.us'));
+  } else if (activeFilterType === 'custom' && activeCustomFilterId) {
+    const filter = customFilters.find(f => f.id === activeCustomFilterId);
+    if (filter) {
+      if (filter.type === 'private') {
+        filtered = filtered.filter(chat => chat.cliente_jid && !chat.cliente_jid.endsWith('@g.us'));
+      } else if (filter.type === 'groups') {
+        filtered = filtered.filter(chat => chat.cliente_jid && chat.cliente_jid.endsWith('@g.us'));
+      }
+      
+      if (filter.unreadOnly) {
+        filtered = filtered.filter(chat => chat.unread === 1);
+      }
+      
+      if (filter.keyword) {
+        const kw = filter.keyword.toLowerCase();
+        filtered = filtered.filter(chat => 
+          (chat.cliente_nome && chat.cliente_nome.toLowerCase().includes(kw)) ||
+          (chat.cliente_jid && chat.cliente_jid.includes(kw))
+        );
+      }
+    }
+  }
+
+  // 2. Filtrar com base na query de busca
+  if (activeSearchQuery) {
+    const query = activeSearchQuery.toLowerCase();
+    filtered = filtered.filter(chat => 
+      (chat.cliente_nome && chat.cliente_nome.toLowerCase().includes(query)) ||
+      (chat.cliente_jid && chat.cliente_jid.includes(query))
+    );
+  }
+
+  // 3. Ordenar os resultados
+  filtered.sort((a, b) => {
+    return activeChatsSortOrder === 'desc' ? b.id - a.id : a.id - b.id;
+  });
+
+  if (filtered.length === 0) {
+    activeListContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Nenhum atendimento encontrado</div>`;
     return;
   }
 
-  activeContainer.innerHTML = activeChats.map(chat => {
+  activeListContainer.innerHTML = filtered.map(chat => {
     const isSelected = selectedChatJid === chat.cliente_jid;
+    const isUnread = chat.unread === 1;
+    const isGroup = chat.cliente_jid && chat.cliente_jid.endsWith('@g.us');
     return `
-      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
+      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
         <div class="w-12 h-12 rounded-2xl ${isSelected ? 'avatar-accent-theme text-white' : 'avatar-inactive-theme'} flex items-center justify-center font-bold text-sm uppercase transition-all shrink-0 overflow-hidden">
           ${chat.cliente_avatar 
             ? `<img src="${chat.cliente_avatar}" alt="${chat.cliente_nome}" class="w-full h-full object-cover" onerror="this.outerHTML='${chat.cliente_nome.substring(0, 2).toUpperCase()}'"/>` 
@@ -386,12 +956,25 @@ function renderActiveChats() {
           }
         </div>
         <div class="leading-tight text-left flex-1 min-w-0">
-          <p class="text-xs font-semibold text-slate-200 truncate">${chat.cliente_nome}</p>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <p class="text-xs font-semibold text-slate-200 truncate flex-1">${chat.cliente_nome}</p>
+            ${isGroup ? `
+              <span class="text-[8px] bg-slate-800 text-slate-400 font-black px-1.5 py-0.5 rounded-md uppercase shrink-0">Grupo</span>
+            ` : ''}
+          </div>
           <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
         </div>
-        <div class="relative flex h-2 w-2 shrink-0">
-          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        <div class="flex items-center gap-2 shrink-0">
+          ${isUnread ? `
+            <div class="relative flex h-2 w-2" title="Mensagem não lida">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+            </div>
+          ` : ''}
+          <div class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </div>
         </div>
       </div>
     `;
@@ -427,6 +1010,17 @@ function selectChat(jid, name) {
   // Solicita histórico de mensagens
   socket.emit('select_chat', { cliente_jid: jid, atendente_id: currentOperator.id });
 
+  // Verifica se o chat está na fila de espera (modo de leitura)
+  const inQueue = queueChats.some(c => c.cliente_jid === jid);
+  const readOnlyBanner = document.getElementById('chat-read-only-banner');
+  if (readOnlyBanner) {
+    if (inQueue) {
+      readOnlyBanner.classList.remove('hidden');
+    } else {
+      readOnlyBanner.classList.add('hidden');
+    }
+  }
+
   // Re-renderiza para destacar o chat selecionado
   renderActiveChats();
 }
@@ -455,6 +1049,10 @@ socket.on('new_message', (msg) => {
     currentChatMessages.push(msg);
     appendMessageHTML(msg);
     scrollToBottom();
+    // Avisa o servidor que já visualizamos a mensagem para limpar o status "não lido"
+    if (currentOperator) {
+      socket.emit('select_chat', { cliente_jid: selectedChatJid, atendente_id: currentOperator.id });
+    }
   }
 });
 
@@ -601,6 +1199,24 @@ const forwardModal = document.getElementById('forward-modal');
 const forwardChatsList = document.getElementById('forward-chats-list');
 const inputForwardPhone = document.getElementById('input-forward-phone');
 
+// Menu de contexto dos cards de chat ativos
+const chatContextMenu = document.getElementById('chat-context-menu');
+let activeChatContextJid = null;
+
+// Interceptar clique com o botão direito nos cards de chat ativos
+activeContainer.addEventListener('contextmenu', (e) => {
+  const card = e.target.closest('.glass-card');
+  if (!card) return;
+
+  e.preventDefault();
+
+  const clientJid = card.getAttribute('data-client-jid');
+  if (!clientJid) return;
+
+  activeChatContextJid = clientJid;
+  showChatContextMenu(e.clientX, e.clientY);
+});
+
 // Interceptar clique com o botão direito nas mensagens do chat
 messagesContainer.addEventListener('contextmenu', (e) => {
   const bubble = e.target.closest('.msg-bubble');
@@ -662,7 +1278,7 @@ function renderRecentReactions() {
   recent = recent ? JSON.parse(recent) : ['👍', '❤️', '😂', '😮', '😢', '🙏'];
   
   container.innerHTML = recent.map(emoji => `
-    <button onclick="handleContextReact('${emoji}')" class="text-base hover:scale-125 transition-transform active:scale-95 duration-100">${emoji}</button>
+    <button onclick="handleContextReact('${emoji}')">${emoji}</button>
   `).join('');
 }
 
@@ -713,6 +1329,53 @@ function showContextMenu(x, y) {
 function closeContextMenu() {
   if (contextMenu) contextMenu.classList.add('hidden');
   document.removeEventListener('click', closeContextMenu);
+}
+
+// Lógica de exibição e ações do menu de contexto de chat
+function showChatContextMenu(x, y) {
+  if (!chatContextMenu) return;
+
+  chatContextMenu.style.left = `${x}px`;
+  chatContextMenu.style.top = `${y}px`;
+  chatContextMenu.classList.remove('hidden');
+
+  // Ajusta a posição caso ultrapasse o limite inferior/direito da tela
+  const rect = chatContextMenu.getBoundingClientRect();
+  if (rect.bottom > window.innerHeight) {
+    chatContextMenu.style.top = `${y - rect.height}px`;
+  }
+  if (rect.right > window.innerWidth) {
+    chatContextMenu.style.left = `${x - rect.width}px`;
+  }
+
+  document.addEventListener('click', closeChatContextMenu);
+}
+
+function closeChatContextMenu() {
+  if (chatContextMenu) chatContextMenu.classList.add('hidden');
+  document.removeEventListener('click', closeChatContextMenu);
+}
+
+function handleChatContextMarkUnread(e) {
+  e.stopPropagation();
+  closeChatContextMenu();
+  if (!activeChatContextJid || !currentOperator) return;
+
+  socket.emit('mark_unread', { 
+    cliente_jid: activeChatContextJid, 
+    atendente_id: currentOperator.id 
+  });
+}
+
+function handleChatContextFinishSilently(e) {
+  e.stopPropagation();
+  closeChatContextMenu();
+  if (!activeChatContextJid || !currentOperator) return;
+
+  socket.emit('finish_chat_silently', { 
+    cliente_jid: activeChatContextJid, 
+    atendente_id: currentOperator.id 
+  });
 }
 
 // Ação: Dados da Mensagem
@@ -965,6 +1628,21 @@ window.addEventListener('DOMContentLoaded', () => {
       e.stopPropagation();
     });
   }
+
+  // Initialize sliding indicators
+  setTimeout(() => {
+    updateTabIndicator(tabActiveBtn);
+    updateActiveFilterIndicator(btnActiveFilterAll);
+  }, 150);
+
+  // Update indicators position on window resize
+  window.addEventListener('resize', () => {
+    const activeBtn = currentSidebarTab === 'active' ? tabActiveBtn : (currentSidebarTab === 'queue' ? tabQueueBtn : (currentSidebarTab === 'bot' ? tabBotBtn : tabHistoryBtn));
+    updateTabIndicator(activeBtn);
+    
+    const activeFilterBtn = activeFilterType === 'all' ? btnActiveFilterAll : (activeFilterType === 'unread' ? btnActiveFilterUnread : (activeFilterType === 'groups' ? btnActiveFilterGroups : null));
+    updateActiveFilterIndicator(activeFilterBtn);
+  });
 });
 
 // ==============================================================================

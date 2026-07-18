@@ -102,6 +102,7 @@ db.serialize(() => {
       db.run("ALTER TABLE tabela_atendimentos ADD COLUMN cliente_avatar TEXT", (alterErr) => {});
       db.run("ALTER TABLE tabela_atendimentos ADD COLUMN bot_node_id TEXT", (alterErr) => {});
       db.run("ALTER TABLE tabela_atendimentos ADD COLUMN sector_id INTEGER", (alterErr) => {});
+      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN unread INTEGER DEFAULT 0", (alterErr) => {});
     }
   });
 
@@ -351,7 +352,7 @@ io.on('connection', (socket) => {
         // Se já existe e está finalizado, reabre
         if (existingChat.status !== 'em_atendimento') {
           db.run(
-            `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, started_at = ?, cliente_avatar = ? WHERE cliente_jid = ?`,
+            `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, started_at = ?, cliente_avatar = ?, unread = 0 WHERE cliente_jid = ?`,
             [atendente_id, startedAt, profilePicUrl || existingChat.cliente_avatar, formattedJid]
           );
           // Adiciona mensagem de sistema no histórico
@@ -362,7 +363,7 @@ io.on('connection', (socket) => {
         } else if (existingChat.atendente_id !== atendente_id) {
           // Se pertence a outro atendente, transfere
           db.run(
-            `UPDATE tabela_atendimentos SET atendente_id = ?, cliente_avatar = ? WHERE cliente_jid = ?`,
+            `UPDATE tabela_atendimentos SET atendente_id = ?, cliente_avatar = ?, unread = 0 WHERE cliente_jid = ?`,
             [atendente_id, profilePicUrl || existingChat.cliente_avatar, formattedJid]
           );
           db.run(
@@ -502,7 +503,7 @@ io.on('connection', (socket) => {
 
     // Atualiza o banco de dados
     db.run(
-      `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
+      `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, bot_node_id = NULL, unread = 0 WHERE cliente_jid = ?`,
       [atendente_id, cliente_jid],
       (err) => {
         if (err) {
@@ -536,6 +537,16 @@ io.on('connection', (socket) => {
 
   // 5. SELECIONAR CHAT ATIVO (Para carregar histórico)
   socket.on('select_chat', ({ cliente_jid, atendente_id }) => {
+    // Marca como lida no banco de dados
+    db.run(
+      `UPDATE tabela_atendimentos SET unread = 0 WHERE cliente_jid = ?`,
+      [cliente_jid],
+      (updateErr) => {
+        if (updateErr) console.error('Erro ao marcar como lida:', updateErr.message);
+        sendActiveChats(atendente_id);
+      }
+    );
+
     db.all(
       `SELECT * FROM tabela_mensagens WHERE cliente_jid = ? ORDER BY timestamp ASC`,
       [cliente_jid],
@@ -568,8 +579,50 @@ io.on('connection', (socket) => {
           return;
         }
 
-        // Atualiza a visualização do atendente
+        // Atualiza a visualização do atendente e o histórico
         sendActiveChats(atendente_id);
+        sendHistoryChats(atendente_id);
+        broadcastQueue();
+      }
+    );
+  });
+
+  // 6c. MARCAR CONVERSA COMO NÃO LIDA
+  socket.on('mark_unread', ({ cliente_jid, atendente_id }) => {
+    if (!cliente_jid || !atendente_id) return;
+    
+    db.run(
+      `UPDATE tabela_atendimentos SET unread = 1 WHERE cliente_jid = ?`,
+      [cliente_jid],
+      (err) => {
+        if (err) {
+          console.error('Erro ao marcar chat como não lida:', err.message);
+          return;
+        }
+        sendActiveChats(atendente_id);
+      }
+    );
+  });
+
+  // 6d. FINALIZAR CONVERSA SILENCIOSAMENTE
+  socket.on('finish_chat_silently', ({ cliente_jid, atendente_id }) => {
+    if (!cliente_jid || !atendente_id) return;
+
+    console.log(`🤫 Atendimento finalizado silenciosamente para [${cliente_jid}] por [${atendente_id}]`);
+
+    // Atualiza status do atendimento sem inserir mensagem de sistema no histórico
+    db.run(
+      `UPDATE tabela_atendimentos SET status = 'finalizado' WHERE cliente_jid = ?`,
+      [cliente_jid],
+      (err) => {
+        if (err) {
+          console.error('Erro ao finalizar atendimento silenciosamente:', err.message);
+          return;
+        }
+
+        // Atualiza a visualização do atendente, fila e histórico
+        sendActiveChats(atendente_id);
+        sendHistoryChats(atendente_id);
         broadcastQueue();
       }
     );
@@ -587,6 +640,24 @@ io.on('connection', (socket) => {
       // Notifica todos os sockets do atendente para remover o card da tela
       io.to(atendente_id).emit('message_deleted', { message_id, cliente_jid });
     });
+  });
+
+  // 6e. BUSCAR NO HISTÓRICO DE CHATS FINALIZADOS
+  socket.on('search_history', ({ query, atendente_id }) => {
+    if (!atendente_id) return;
+    const searchVal = `%${(query || '').trim()}%`;
+    db.all(
+      `SELECT * FROM tabela_atendimentos 
+       WHERE status = 'finalizado' 
+       AND (cliente_nome LIKE ? OR cliente_jid LIKE ? OR id LIKE ?)
+       ORDER BY id DESC LIMIT 50`,
+      [searchVal, searchVal, searchVal],
+      (err, rows) => {
+        if (!err) {
+          socket.emit('history_chats_list', rows);
+        }
+      }
+    );
   });
 
   // 6c. REAGIR A MENSAGEM
@@ -629,18 +700,21 @@ function getChannelConfig() {
   return null;
 }
 
-// Desativa o chatbot se o atendente intervir mandando mensagem manualmente
+// Desativa o chatbot ou reabre se o atendente intervir mandando mensagem manualmente
 function checkManualTakeover(clienteJid, atendenteId) {
   db.get(`SELECT status FROM tabela_atendimentos WHERE cliente_jid = ?`, [clienteJid], (err, row) => {
-    if (row && row.status === 'bot') {
-      console.log(`🔌 Intervenção humana detectada para [${clienteJid}]. Desativando Chatbot...`);
+    if (row && (row.status === 'bot' || row.status === 'finalizado')) {
+      const isFinished = row.status === 'finalizado';
+      console.log(`🔌 Intervenção humana detectada para [${clienteJid}]. Status anterior: ${row.status}.`);
       db.run(
-        `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
+        `UPDATE tabela_atendimentos SET status = 'em_atendimento', atendente_id = ?, bot_node_id = NULL, unread = 0 WHERE cliente_jid = ?`,
         [atendenteId, clienteJid],
         () => {
-          db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento assumido pelo atendente. Bot desativado.')`, [clienteJid]);
+          const sysMsg = isFinished ? 'Atendimento reaberto por nova mensagem do atendente.' : 'Atendimento assumido pelo atendente. Bot desativado.';
+          db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', ?)`, [clienteJid, sysMsg]);
           broadcastBotList();
           sendActiveChats(atendenteId);
+          sendHistoryChats(atendenteId);
         }
       );
     }
@@ -723,6 +797,16 @@ async function processIncomingMessage(clienteJid, texto, clienteNome, profilePic
         if (profilePicUrl && row.cliente_avatar !== profilePicUrl) {
           db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
         }
+
+        // Marca como não lida no banco de dados e atualiza a lista do atendente
+        db.run(
+          `UPDATE tabela_atendimentos SET unread = 1 WHERE cliente_jid = ?`,
+          [clienteJid],
+          (updateErr) => {
+            if (updateErr) console.error('Erro ao atualizar status unread:', updateErr.message);
+            sendActiveChats(atendenteId);
+          }
+        );
 
         db.run(
           `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
@@ -999,6 +1083,29 @@ function sendInitialData(socket, atendenteId) {
     [],
     (err, botRows) => {
       if (!err) socket.emit('bot_chats_list', botRows);
+    }
+  );
+
+  // Histórico de Conversas Finalizadas (Últimos 30)
+  db.all(
+    `SELECT * FROM tabela_atendimentos WHERE status = 'finalizado' ORDER BY id DESC LIMIT 30`,
+    [],
+    (err, historyRows) => {
+      if (!err) socket.emit('history_chats_list', historyRows);
+    }
+  );
+}
+
+// Transmite o histórico recente para um atendente
+function sendHistoryChats(atendenteId) {
+  if (!atendenteId) return;
+  db.all(
+    `SELECT * FROM tabela_atendimentos WHERE status = 'finalizado' ORDER BY id DESC LIMIT 30`,
+    [],
+    (err, rows) => {
+      if (!err) {
+        io.to(atendenteId).emit('history_chats_list', rows);
+      }
     }
   );
 }
