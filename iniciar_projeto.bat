@@ -22,9 +22,11 @@ call npm install
 cd ..
 
 :check_python
-:: 2. Verificar se o Python esta realmente instalado (evita o atalho da Windows Store)
-python --version >nul 2>&1
+:: 2. Verificar se o Python esta instalado (usa o Python Launcher 'py' para evitar o alias da Windows Store)
+py --version >nul 2>&1
 if not errorlevel 1 goto check_venv
+:: Tenta tambem com o caminho do venv caso o py launcher nao esteja disponivel
+if exist "server\.venv\Scripts\python.exe" goto check_venv
 
 echo * ERRO: O Python nao foi encontrado no seu computador.
 echo ====================================================
@@ -43,11 +45,11 @@ echo * Ambiente virtual do Backend (.venv) ou dependencias nao encontradas.
 echo * Configurando ambiente virtual e instalando bibliotecas em server...
 cd server
 if not exist ".venv" (
-    python -m venv .venv
+    py -m venv .venv
 )
 call .venv\Scripts\activate.bat
 echo * Atualizando o pip...
-python -m pip install --upgrade pip --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org
+.venv\Scripts\python.exe -m pip install --upgrade pip --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org
 echo * Instalando dependencias do backend...
 pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org
 if not exist ".venv\Scripts\uvicorn.exe" (
@@ -65,23 +67,65 @@ if not exist ".venv\Scripts\uvicorn.exe" (
 cd ..
 
 :start_services
-:: 4. Iniciar FastAPI Backend
+:: 3b. Gerar/Corrigir o .env com o caminho correto desta maquina
+echo * Verificando configuracao do banco de dados (.env)...
+set "DB_PATH=%~dp0.env"
+set "CORRECT_DB_URL=sqlite:///%~dp0server\tickets.db"
+set "CORRECT_DB_URL=%CORRECT_DB_URL:\=/%"
+if not exist "%DB_PATH%" (
+    echo * Arquivo .env nao encontrado. Criando com caminho local...
+    echo DATABASE_URL=%CORRECT_DB_URL%> "%DB_PATH%"
+    echo * .env criado com sucesso!
+) else (
+    :: Verifica se o caminho no .env esta correto para esta maquina
+    findstr /C:"%CORRECT_DB_URL%" "%DB_PATH%" >nul 2>&1
+    if errorlevel 1 (
+        echo * AVISO: DATABASE_URL desatualizada no .env. Corrigindo para este computador...
+        server\.venv\Scripts\python.exe -c "import re,sys; f=open('.env','r',encoding='utf-8'); c=f.read(); f.close(); c2=re.sub(r'DATABASE_URL=sqlite:///[^\r\n]*','DATABASE_URL=%CORRECT_DB_URL%',c); f=open('.env','w',encoding='utf-8'); f.write(c2); f.close(); print('OK')"
+        echo * .env atualizado para: %CORRECT_DB_URL%
+    ) else (
+        echo * DATABASE_URL OK para este computador!
+    )
+)
+:: 4. Verificar se o uvicorn e acessivel antes de iniciar
+echo * Verificando disponibilidade do uvicorn...
+server\.venv\Scripts\python.exe -c "import uvicorn" >nul 2>&1
+if errorlevel 1 (
+    echo * AVISO: uvicorn nao encontrado. Reinstalando dependencias do backend...
+    cd server
+    .venv\Scripts\python.exe -m pip install uvicorn fastapi --trusted-host pypi.org --trusted-host files.pythonhosted.org
+    cd ..
+    server\.venv\Scripts\python.exe -c "import uvicorn" >nul 2>&1
+    if errorlevel 1 (
+        echo ====================================================
+        echo * ERRO: Nao foi possivel instalar o uvicorn.
+        echo * Verifique sua conexao com a internet e tente novamente.
+        echo ====================================================
+        pause
+        exit /b
+    )
+    echo * uvicorn instalado com sucesso!
+) else (
+    echo * uvicorn OK!
+)
+
+:: 5. Iniciar FastAPI Backend
 echo * Iniciando Servidor principal (FastAPI)...
-start "Backend - FastAPI" cmd /k "cd server && .venv\Scripts\activate && uvicorn main:app --host 0.0.0.0 --port 8080"
+start "Backend - FastAPI" cmd /k "cd server && .venv\Scripts\activate && .venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8080"
 
 :: Aguardar 2 segundos (usando ping para compatibilidade sem input)
 ping 127.0.0.1 -n 3 >nul
 
-:: 5. Iniciar Next.js Frontend
+:: 6. Iniciar Next.js Frontend
 echo * Interface do Portal (Next.js)...
 start "Frontend - Next.js" cmd /k "cd client && npm run dev"
 
 :: Aguardar 2 segundos
 ping 127.0.0.1 -n 3 >nul
 
-:: 6. Iniciar canal(is) WhatsApp
+:: 7. Iniciar canal(is) WhatsApp
 echo * Servidor(es) WhatsApp (Node.js)...
-python scripts\whatsapp_channels_helper.py start
+server\.venv\Scripts\python.exe scripts\whatsapp_channels_helper.py start
 if exist "_ws_start.bat" (
     call _ws_start.bat
     del _ws_start.bat

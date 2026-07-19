@@ -18,7 +18,7 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":3000" ^| findstr "LISTENING
 
 :: Parar canal(is) WhatsApp
 echo * Parando Servidor(es) WhatsApp...
-python scripts\whatsapp_channels_helper.py stop
+server\.venv\Scripts\python.exe scripts\whatsapp_channels_helper.py stop
 if exist "_ws_stop.bat" (
     call _ws_stop.bat
     del _ws_stop.bat
