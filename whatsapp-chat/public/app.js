@@ -15,6 +15,8 @@ let queueChats = [];
 let botChats = [];
 let currentChatMessages = [];
 let isQrBypassed = sessionStorage.getItem('tf_qr_bypassed') === 'true';
+let allowedSectors = [];
+let selectedSectorsFilter = [];
 
 // Elementos da DOM
 const qrModal = document.getElementById('qr-modal');
@@ -59,10 +61,15 @@ function initOperator() {
   const urlParams = new URLSearchParams(window.location.search);
   const paramId = urlParams.get('operator_id');
   const paramName = urlParams.get('operator_name');
+  const paramSectors = urlParams.get('sectors');
 
   if (paramId && paramName) {
     localStorage.setItem('tf_operator_id', paramId.trim());
     localStorage.setItem('tf_operator_name', paramName.trim());
+  }
+
+  if (paramSectors) {
+    localStorage.setItem('tf_operator_sectors', paramSectors.trim());
   }
 
   const savedId = localStorage.getItem('tf_operator_id');
@@ -85,6 +92,60 @@ function initOperator() {
     // Exibe modal
     attendantModal.classList.remove('hidden');
   }
+
+  // Inicializa os setores
+  initSectors();
+}
+
+function initSectors() {
+  const savedSectors = localStorage.getItem('tf_operator_sectors');
+  if (savedSectors) {
+    try {
+      allowedSectors = JSON.parse(savedSectors).map(s => ({
+        id: parseInt(s.id, 10),
+        name: s.name
+      }));
+    } catch (e) {
+      console.error('Error parsing sectors:', e);
+      allowedSectors = [];
+    }
+  }
+
+  const savedFilter = localStorage.getItem('tf_selected_sectors_filter');
+  if (savedFilter) {
+    try {
+      selectedSectorsFilter = JSON.parse(savedFilter).map(id => parseInt(id, 10));
+      // Garante que apenas setores válidos continuem selecionados
+      selectedSectorsFilter = selectedSectorsFilter.filter(id => allowedSectors.some(s => s.id === id));
+    } catch (e) {
+      selectedSectorsFilter = allowedSectors.map(s => s.id);
+    }
+  } else {
+    selectedSectorsFilter = allowedSectors.map(s => s.id);
+  }
+}
+
+function toggleSectorFilter(sectorId, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const idNum = parseInt(sectorId, 10);
+  const idx = selectedSectorsFilter.indexOf(idNum);
+  if (idx > -1) {
+    selectedSectorsFilter.splice(idx, 1);
+  } else {
+    selectedSectorsFilter.push(idNum);
+  }
+  
+  localStorage.setItem('tf_selected_sectors_filter', JSON.stringify(selectedSectorsFilter));
+  
+  // Atualiza a renderização
+  renderSectorsDropdown();
+  renderActiveChats();
+  renderQueueList();
+  renderBotChats();
+  renderHistoryChats();
 }
 
 // Salva informações do operador a partir do formulário
@@ -377,12 +438,24 @@ function checkReadOnlyBanner() {
 }
 
 function renderQueueList() {
-  if (queueChats.length === 0) {
+  let filtered = [...queueChats];
+  if (allowedSectors.length > 0) {
+    filtered = filtered.filter(chat => {
+      return chat.sector_id === null || chat.sector_id === undefined || selectedSectorsFilter.includes(chat.sector_id);
+    });
+  }
+
+  // Update badge to match filtered list
+  if (queueCountBadge) {
+    queueCountBadge.textContent = filtered.length;
+  }
+
+  if (filtered.length === 0) {
     queueContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Nenhum cliente na fila</div>`;
     return;
   }
 
-  queueContainer.innerHTML = queueChats.map(chat => `
+  queueContainer.innerHTML = filtered.map(chat => `
     <div class="glass-card rounded-2xl p-4 flex flex-col gap-3 relative fade-in border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-300">
       <div class="flex items-center gap-3">
         <div class="w-12 h-12 rounded-2xl avatar-inactive-theme flex items-center justify-center font-bold text-sm uppercase transition-all shrink-0 overflow-hidden">
@@ -437,12 +510,20 @@ socket.on('history_chats_list', (rows) => {
 
 function renderHistoryChats() {
   if (!historyListContainer) return;
-  if (historyChats.length === 0) {
+
+  let filtered = [...historyChats];
+  if (allowedSectors.length > 0) {
+    filtered = filtered.filter(chat => {
+      return chat.sector_id === null || chat.sector_id === undefined || selectedSectorsFilter.includes(chat.sector_id);
+    });
+  }
+
+  if (filtered.length === 0) {
     historyListContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Nenhum atendimento no histórico</div>`;
     return;
   }
 
-  historyListContainer.innerHTML = historyChats.map(chat => {
+  historyListContainer.innerHTML = filtered.map(chat => {
     const isSelected = selectedChatJid === chat.cliente_jid;
     return `
       <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
@@ -781,6 +862,29 @@ function renderCustomFiltersDropdown() {
   }).join('');
 }
 
+// Desenha a lista de setores no menu suspenso
+function renderSectorsDropdown() {
+  const container = document.getElementById('sectors-filter-list');
+  if (!container) return;
+
+  if (allowedSectors.length === 0) {
+    container.innerHTML = `<div class="px-3 py-3.5 text-[8px] font-semibold text-slate-600 text-center select-none">Nenhum setor disponível.</div>`;
+    return;
+  }
+
+  container.innerHTML = allowedSectors.map(sector => {
+    const isChecked = selectedSectorsFilter.includes(sector.id);
+    return `
+      <div onclick="toggleSectorFilter(${sector.id}, event)" class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/5 cursor-pointer rounded-xl select-none transition-all">
+        <div class="w-3.5 h-3.5 rounded border border-white/20 bg-slate-950/60 flex items-center justify-center transition-all shrink-0 ${isChecked ? 'bg-accent-theme border-accent-theme text-white shadow-sm shadow-accent-theme/20' : 'text-transparent'}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" class="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <span class="text-[9px] font-bold uppercase tracking-wider text-slate-300 truncate">${sector.name}</span>
+      </div>
+    `;
+  }).join('');
+}
+
 // Alterna a exibição do dropdown de filtros por clique
 function toggleActiveFilterDropdown(e) {
   if (e) {
@@ -793,6 +897,7 @@ function toggleActiveFilterDropdown(e) {
   if (dropdown.classList.contains('hidden')) {
     // Renderiza a lista antes de exibir
     renderCustomFiltersDropdown();
+    renderSectorsDropdown();
 
     const targetBtn = document.getElementById('btn-active-extra-filter') || e.currentTarget;
     const rect = targetBtn.getBoundingClientRect();
@@ -848,16 +953,26 @@ function setActiveSort(order) {
 // Recebe Lista de Conversas do Bot
 socket.on('bot_chats_list', (rows) => {
   botChats = rows;
-  const botCountBadge = document.getElementById('bot-chats-count') || document.querySelector('#tab-bot span');
-  if (botCountBadge) {
-    botCountBadge.textContent = rows.length;
-  }
   renderBotChats();
 });
 
 function renderBotChats() {
   if (!botChatsContainer) return;
-  if (botChats.length === 0) {
+
+  let filtered = [...botChats];
+  if (allowedSectors.length > 0) {
+    filtered = filtered.filter(chat => {
+      return chat.sector_id === null || chat.sector_id === undefined || selectedSectorsFilter.includes(chat.sector_id);
+    });
+  }
+
+  // Update badge to match filtered list
+  const botCountBadge = document.getElementById('bot-chats-count') || document.querySelector('#tab-bot span');
+  if (botCountBadge) {
+    botCountBadge.textContent = filtered.length;
+  }
+
+  if (filtered.length === 0) {
     botChatsContainer.innerHTML = `
       <div class="flex flex-col items-center justify-center py-16 text-center">
         <div class="w-10 h-10 rounded-xl bot-placeholder-icon flex items-center justify-center mb-3.5 shadow-md shadow-blue-500/5">
@@ -870,7 +985,7 @@ function renderBotChats() {
     return;
   }
 
-  botChatsContainer.innerHTML = botChats.map(chat => {
+  botChatsContainer.innerHTML = filtered.map(chat => {
     const isSelected = selectedChatJid === chat.cliente_jid;
     return `
       <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
@@ -931,6 +1046,13 @@ function renderActiveChats() {
       (chat.cliente_nome && chat.cliente_nome.toLowerCase().includes(query)) ||
       (chat.cliente_jid && chat.cliente_jid.includes(query))
     );
+  }
+
+  // Filtrar por setores selecionados
+  if (allowedSectors.length > 0) {
+    filtered = filtered.filter(chat => {
+      return chat.sector_id === null || chat.sector_id === undefined || selectedSectorsFilter.includes(chat.sector_id);
+    });
   }
 
   // 3. Ordenar os resultados

@@ -20,7 +20,9 @@ function buildIframeUrl(channel: WhatsAppChannel, user: any, sessionToken: numbe
     if (!user) return base;
     const encodedId = encodeURIComponent(user.username);
     const encodedName = encodeURIComponent(user.full_name || user.username);
-    return `${base}?operator_id=${encodedId}&operator_name=${encodedName}&_t=${sessionToken}&theme=${theme}`;
+    const sectorsJson = user.sectors ? JSON.stringify(user.sectors) : '[]';
+    const encodedSectors = encodeURIComponent(sectorsJson);
+    return `${base}?operator_id=${encodedId}&operator_name=${encodedName}&sectors=${encodedSectors}&_t=${sessionToken}&theme=${theme}`;
 }
 
 export default function WhatsAppPage() {
