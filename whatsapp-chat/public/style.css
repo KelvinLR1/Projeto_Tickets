@@ -715,3 +715,20 @@ aside > div:last-child {
   color: #ffffff !important;
 }
 
+/* Animação de piscar para a aba Fila de espera */
+@keyframes flash-tab {
+  0%, 100% {
+    background-color: transparent;
+    color: var(--color-text-muted, #94a3b8);
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--color-primary-theme) 15%, transparent);
+    color: var(--color-primary-theme);
+    text-shadow: 0 0 4px var(--color-primary-theme);
+  }
+}
+
+.animate-flash-tab {
+  animation: flash-tab 1.2s infinite ease-in-out !important;
+}
+

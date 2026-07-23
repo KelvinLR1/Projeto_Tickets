@@ -137,7 +137,7 @@ export default function WhatsAppPage() {
     return (
         <main className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme px-8 pt-8 pb-10 shrink-0 bg-background/30 backdrop-blur-md">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-border-theme px-8 py-5 shrink-0 bg-background/30 backdrop-blur-md">
                 <div className="space-y-2">
                     <h1 className="text-5xl font-black font-display tracking-tight italic uppercase">
                         Painel de <span className="text-accent-theme">Atendimento</span>

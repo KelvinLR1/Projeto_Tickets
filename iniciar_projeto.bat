@@ -118,7 +118,7 @@ ping 127.0.0.1 -n 3 >nul
 
 :: 6. Iniciar Next.js Frontend
 echo * Interface do Portal (Next.js)...
-start "Frontend - Next.js" cmd /k "cd client && npm run dev"
+start "Frontend - Next.js" cmd /k "cd client && set NODE_OPTIONS=--max-old-space-size=4096 && npm run dev"
 
 :: Aguardar 2 segundos
 ping 127.0.0.1 -n 3 >nul

@@ -6,6 +6,15 @@ document.documentElement.className = `theme-${currentTheme}`;
 // Conexão Socket.io (conecta-se automaticamente ao host que serve o arquivo)
 const socket = io();
 
+// Re-registrar atendente automaticamente em caso de reconexão do socket para garantir associação de salas
+socket.on('connect', () => {
+  const savedId = localStorage.getItem('tf_operator_id');
+  const savedName = localStorage.getItem('tf_operator_name');
+  if (savedId && savedName) {
+    socket.emit('register_attendant', { atendente_id: savedId, nome: savedName });
+  }
+});
+
 // Estado Global da Aplicação
 let currentOperator = { id: '', name: '' };
 let selectedChatJid = null;
@@ -50,6 +59,17 @@ const chatInput = document.getElementById('chat-input');
 const statusBadge = document.getElementById('connection-status-badge');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
+
+// Helper para atualizar badge de contagem (esconde se for <= 0)
+function updateBadge(badge, count) {
+  if (!badge) return;
+  badge.textContent = count;
+  if (count > 0) {
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
 
 // ==============================================================================
 // 👤 CONTROLE DE LOGIN / IDENTIFICAÇÃO DO OPERADOR
@@ -263,6 +283,11 @@ function updateActiveFilterIndicator(activeBtn) {
 function switchSidebarTab(tab) {
   currentSidebarTab = tab;
   
+  // Remove piscar ao selecionar a aba de fila
+  if (tab === 'queue' && tabQueueBtn) {
+    tabQueueBtn.classList.remove('animate-flash-tab');
+  }
+  
   const buttons = [
     { name: 'active', btn: tabActiveBtn, container: activeChatsContainer },
     { name: 'queue', btn: tabQueueBtn, container: queueChatsContainer },
@@ -417,21 +442,27 @@ socket.on('whatsapp_status', ({ status, qr }) => {
 
 // Recebe Lista de Fila
 socket.on('queue_list', (rows) => {
+  const previousQueueCount = queueChats.length;
   queueChats = rows;
-  queueCountBadge.textContent = rows.length;
+  updateBadge(queueCountBadge, rows.length);
   renderQueueList();
   checkReadOnlyBanner();
+
+  // Piscar a aba de fila se novos clientes entrarem na fila e o atendente não estiver visualizando ela
+  if (rows.length > previousQueueCount && currentSidebarTab !== 'queue' && tabQueueBtn) {
+    tabQueueBtn.classList.add('animate-flash-tab');
+  }
 });
 
 function checkReadOnlyBanner() {
   if (selectedChatJid) {
-    const inQueue = queueChats.some(c => c.cliente_jid === selectedChatJid);
+    const isActive = activeChats.some(c => c.cliente_jid === selectedChatJid);
     const readOnlyBanner = document.getElementById('chat-read-only-banner');
     if (readOnlyBanner) {
-      if (inQueue) {
-        readOnlyBanner.classList.remove('hidden');
-      } else {
+      if (isActive) {
         readOnlyBanner.classList.add('hidden');
+      } else {
+        readOnlyBanner.classList.remove('hidden');
       }
     }
   }
@@ -446,9 +477,7 @@ function renderQueueList() {
   }
 
   // Update badge to match filtered list
-  if (queueCountBadge) {
-    queueCountBadge.textContent = filtered.length;
-  }
+  updateBadge(queueCountBadge, filtered.length);
 
   if (filtered.length === 0) {
     queueContainer.innerHTML = `<div class="text-center py-10 text-xs text-slate-500 font-medium">Nenhum cliente na fila</div>`;
@@ -492,12 +521,15 @@ function renderQueueList() {
 function takeChat(clienteJid) {
   if (!currentOperator.id) return;
   socket.emit('take_chat', { cliente_jid: clienteJid, atendente_id: currentOperator.id });
+  
+  // Alterna automaticamente para a aba de Ativos para o atendente acompanhar o chat
+  switchSidebarTab('active');
 }
 
 // Recebe Lista de Conversas Ativas
 socket.on('active_chats_list', (rows) => {
   activeChats = rows;
-  activeCountBadge.textContent = rows.length;
+  updateBadge(activeCountBadge, rows.length);
   renderActiveChats();
   checkReadOnlyBanner();
 });
@@ -1133,15 +1165,7 @@ function selectChat(jid, name) {
   socket.emit('select_chat', { cliente_jid: jid, atendente_id: currentOperator.id });
 
   // Verifica se o chat está na fila de espera (modo de leitura)
-  const inQueue = queueChats.some(c => c.cliente_jid === jid);
-  const readOnlyBanner = document.getElementById('chat-read-only-banner');
-  if (readOnlyBanner) {
-    if (inQueue) {
-      readOnlyBanner.classList.remove('hidden');
-    } else {
-      readOnlyBanner.classList.add('hidden');
-    }
-  }
+  checkReadOnlyBanner();
 
   // Re-renderiza para destacar o chat selecionado
   renderActiveChats();
@@ -1345,6 +1369,10 @@ messagesContainer.addEventListener('contextmenu', (e) => {
   if (!bubble) return;
 
   e.preventDefault();
+
+  // Impedir abertura do menu de contexto se o atendimento não estiver ativo com o atendente atual
+  const isActiveChat = activeChats.some(c => c.cliente_jid === selectedChatJid);
+  if (!isActiveChat) return;
 
   const msgDiv = bubble.closest('[data-message-id]');
   if (!msgDiv) return;
@@ -1617,6 +1645,9 @@ function showContextMainView(e) {
 
 // Remover Reação
 window.removeReaction = function(messageId) {
+  const isActiveChat = activeChats.some(c => c.cliente_jid === selectedChatJid);
+  if (!isActiveChat) return;
+
   socket.emit('react_message', {
     message_id: messageId,
     reacao: null,

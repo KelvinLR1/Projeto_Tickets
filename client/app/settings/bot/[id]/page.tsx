@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { 
     Play, MessageSquare, HelpCircle, Clock, Users, Globe, Plus, Trash2, 
-    Save, ArrowLeft, AlertCircle, X, ChevronRight, CheckCircle2, RotateCcw, Loader2
+    Save, ArrowLeft, AlertCircle, X, ChevronRight, CheckCircle2, RotateCcw, Loader2, Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
@@ -381,8 +381,8 @@ export default function BotConfigPage() {
         if ((e.target as HTMLElement).closest('.handle-connector') || (e.target as HTMLElement).closest('button')) {
             return; // Ignora arrastar se clicou em conexões ou botões
         }
-        e.preventDefault();
         e.stopPropagation(); // Evita que dispare o panning do background
+        setSelectedNodeId(nodeId); // Seleciona o nó ao clicar nele para abrir o painel de edição
         setDraggingNodeId(nodeId);
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
@@ -399,6 +399,7 @@ export default function BotConfigPage() {
             setIsPanning(true);
             panStartClient.current = { x: e.clientX, y: e.clientY };
             panStartPos.current = { x: pan.x, y: pan.y };
+            setSelectedNodeId(null);
         }
     };
 
@@ -988,8 +989,12 @@ export default function BotConfigPage() {
                             <div
                                 key={node.id}
                                 onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedNodeId(node.id);
+                                }}
                                 className={clsx(
-                                    "absolute w-[260px] bg-card border rounded-3xl shadow-2xl select-none z-10 flex flex-col backdrop-blur-md group",
+                                    "absolute w-[260px] bg-card border rounded-3xl shadow-2xl select-none z-10 flex flex-col backdrop-blur-md group cursor-pointer",
                                     draggingNodeId !== node.id && "transition-[border-color,transform,box-shadow,ring] duration-200",
                                     isSelected 
                                         ? "border-accent-theme ring-2 ring-accent-theme/20 scale-[1.01]" 
@@ -1034,15 +1039,32 @@ export default function BotConfigPage() {
                                         </div>
                                         <span className="text-[10px] font-black uppercase tracking-wider text-foreground">{node.title}</span>
                                     </div>
-                                    {node.id !== 'node-start' && (
+                                    <div className="flex items-center gap-1">
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id); }}
-                                            className="p-1 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 text-text-muted hover:text-red-400 rounded-lg transition-all"
-                                            title="Excluir Bloco"
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                setSelectedNodeId(node.id); 
+                                            }}
+                                            className={clsx(
+                                                "p-1 rounded-lg transition-all border",
+                                                isSelected 
+                                                    ? "bg-accent-theme/20 text-accent-theme border-accent-theme/30" 
+                                                    : "hover:bg-foreground/10 border-transparent text-text-muted hover:text-foreground"
+                                            )}
+                                            title="Editar Bloco"
                                         >
-                                            <Trash2 className="w-3.5 h-3.5" />
+                                            <Pencil className="w-3.5 h-3.5" />
                                         </button>
-                                    )}
+                                        {node.id !== 'node-start' && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id); }}
+                                                className="p-1 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 text-text-muted hover:text-red-400 rounded-lg transition-all"
+                                                title="Excluir Bloco"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Conector de Entrada (Esquerda) */}
