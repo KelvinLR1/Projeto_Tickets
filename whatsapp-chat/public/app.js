@@ -440,16 +440,31 @@ socket.on('whatsapp_status', ({ status, qr }) => {
 // 📋 RENDERIZAÇÃO DA FILA DE ESPERA E CONVERSAS ATIVAS
 // ==============================================================================
 
+function getFilteredQueueCount(rows) {
+  if (!rows || rows.length === 0) return 0;
+  if (allowedSectors.length > 0) {
+    return rows.filter(chat => {
+      return chat.sector_id === null || chat.sector_id === undefined || selectedSectorsFilter.includes(chat.sector_id);
+    }).length;
+  }
+  return rows.length;
+}
+
 // Recebe Lista de Fila
 socket.on('queue_list', (rows) => {
-  const previousQueueCount = queueChats.length;
+  const previousFilteredCount = getFilteredQueueCount(queueChats);
   queueChats = rows;
-  updateBadge(queueCountBadge, rows.length);
+  const currentFilteredCount = getFilteredQueueCount(rows);
+
   renderQueueList();
   checkReadOnlyBanner();
 
+  // Se a fila filtrada estiver vazia, remove o efeito de piscar
+  if (currentFilteredCount === 0 && tabQueueBtn) {
+    tabQueueBtn.classList.remove('animate-flash-tab');
+  } 
   // Piscar a aba de fila se novos clientes entrarem na fila e o atendente não estiver visualizando ela
-  if (rows.length > previousQueueCount && currentSidebarTab !== 'queue' && tabQueueBtn) {
+  else if (currentFilteredCount > previousFilteredCount && currentSidebarTab !== 'queue' && tabQueueBtn) {
     tabQueueBtn.classList.add('animate-flash-tab');
   }
 });
@@ -661,7 +676,7 @@ function toggleActiveSearch(show) {
     searchRow.classList.add('translate-x-0', 'opacity-100', 'pointer-events-auto');
 
     if (searchInput) {
-      setTimeout(() => searchInput.focus(), 150);
+      setTimeout(() => searchInput.focus(), 310);
     }
   } else {
     searchRow.classList.remove('translate-x-0', 'opacity-100', 'pointer-events-auto');
@@ -678,6 +693,10 @@ function toggleActiveSearch(show) {
   }
 }
 
+let transferTargetJid = null;
+let transferTargetName = '';
+let transferSelectedSectorId = null;
+
 // Abre a bandeja lateral de informações do cliente (Fila / Ativos)
 function openClientInfoDrawer(jid, name) {
   const drawer = document.getElementById('client-info-drawer');
@@ -686,6 +705,9 @@ function openClientInfoDrawer(jid, name) {
   const phoneEl = document.getElementById('client-info-drawer-phone');
   const statusEl = document.getElementById('client-info-drawer-status');
   const takeBtn = document.getElementById('btn-client-info-drawer-take');
+  const activeActions = document.getElementById('client-info-drawer-active-actions');
+  const returnBtn = document.getElementById('btn-client-info-drawer-return');
+  const transferBtn = document.getElementById('btn-client-info-drawer-transfer');
 
   if (!drawer) return;
 
@@ -710,23 +732,255 @@ function openClientInfoDrawer(jid, name) {
   if (inQueue) {
     statusEl.textContent = "Aguardando na Fila";
     statusEl.className = "font-bold text-amber-400";
-    takeBtn.className = "w-full h-11 premium-gradient text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer";
-    takeBtn.removeAttribute('disabled');
-    takeBtn.onclick = () => {
-      takeChat(jid);
-      closeClientInfoDrawer();
-    };
+    if (takeBtn) takeBtn.classList.remove('hidden');
+    if (activeActions) activeActions.classList.add('hidden');
+
+    if (takeBtn) {
+      takeBtn.onclick = () => {
+        takeChat(jid);
+        closeClientInfoDrawer();
+      };
+    }
   } else {
     statusEl.textContent = "Em Atendimento";
     statusEl.className = "font-bold text-emerald-400";
-    takeBtn.className = "w-full h-11 bg-white/5 border border-white/5 text-slate-500 rounded-xl text-xs font-bold tracking-wider uppercase cursor-not-allowed opacity-50";
-    takeBtn.setAttribute('disabled', 'true');
-    takeBtn.onclick = null;
+    if (takeBtn) takeBtn.classList.add('hidden');
+    if (activeActions) activeActions.classList.remove('hidden');
+
+    if (returnBtn) {
+      returnBtn.onclick = () => {
+        returnChatToQueue(jid, name);
+      };
+    }
+
+    if (transferBtn) {
+      transferBtn.onclick = () => {
+        openTransferModal(jid, name);
+      };
+    }
   }
 
   // Animar abertura da bandeja lateral (slide-in)
   drawer.classList.remove('w-0', 'border-transparent');
   drawer.classList.add('w-[400px]', 'border-white/10');
+}
+
+// Exibe notificação Toast flutuante com animação
+function showToast(message, title = 'Notificação', type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  
+  let bgClasses = 'bg-slate-900/90 border border-white/10 text-slate-200';
+  let iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-accent-theme"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`;
+
+  if (type === 'amber' || type === 'warning' || type === 'return') {
+    bgClasses = 'bg-slate-950/95 border border-amber-500/30 text-amber-300 shadow-amber-500/10';
+    iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-amber-400 shrink-0"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
+  } else if (type === 'blue' || type === 'transfer') {
+    bgClasses = 'bg-slate-950/95 border border-blue-500/30 text-blue-300 shadow-blue-500/10';
+    iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-blue-400 shrink-0"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`;
+  } else if (type === 'success') {
+    bgClasses = 'bg-slate-950/95 border border-emerald-500/30 text-emerald-300 shadow-emerald-500/10';
+    iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-emerald-400 shrink-0"><polyline points="20 6 9 17 4 12"/></svg>`;
+  }
+
+  toast.className = `toast-notification ${bgClasses}`;
+  toast.innerHTML = `
+    <div class="p-2 rounded-xl bg-white/5 shrink-0 flex items-center justify-center">${iconSvg}</div>
+    <div class="flex-1 leading-tight text-left min-w-0">
+      <h4 class="text-xs font-bold uppercase tracking-wider">${title}</h4>
+      <p class="text-[11px] opacity-80 mt-0.5 truncate">${message}</p>
+    </div>
+  `;
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add('toast-hide');
+    setTimeout(() => toast.remove(), 350);
+  }, 3200);
+}
+
+// Oculta a área de chat ativa com animação suave e transição graciosa para o estado vazio
+function closeActiveChatAreaWithAnimation(targetJid) {
+  if (!activeChatArea) return;
+
+  if (!targetJid || selectedChatJid === targetJid) {
+    // 1. Aplica classe de saída suave
+    activeChatArea.classList.add('chat-viewport-exit');
+
+    // 2. Aguarda o encerramento fluido da transição
+    setTimeout(() => {
+      if (!targetJid || selectedChatJid === targetJid) {
+        selectedChatJid = null;
+        selectedChatName = '';
+
+        activeChatArea.classList.add('hidden');
+        activeChatArea.classList.remove('chat-viewport-exit');
+
+        if (emptyChatState) {
+          emptyChatState.classList.remove('hidden');
+          emptyChatState.classList.add('empty-state-enter');
+          setTimeout(() => {
+            if (emptyChatState) emptyChatState.classList.remove('empty-state-enter');
+          }, 450);
+        }
+      }
+    }, 400);
+  }
+}
+
+// Devolve o atendimento da lista de ativos de volta para a Fila de Espera
+async function returnChatToQueue(jid, name) {
+  const targetJid = jid || selectedChatJid;
+  const targetName = name || selectedChatName || 'este cliente';
+  if (!targetJid) return;
+
+  const confirmed = await showCustomConfirm(
+    'Devolver à Fila?',
+    `Tem certeza que deseja devolver o atendimento de ${targetName} para a Fila de Espera?`,
+    'warning'
+  );
+
+  if (confirmed) {
+    // 1. Animar a saída do card na lista lateral de chats ativos
+    const cardEl = document.querySelector(`[data-client-jid="${targetJid}"]`);
+    if (cardEl) {
+      cardEl.classList.add('card-return-exit');
+    }
+
+    // 2. Animar a saída da área de chat principal
+    closeActiveChatAreaWithAnimation(targetJid);
+
+    // 3. Emitir evento Socket para o servidor
+    socket.emit('return_to_queue', { cliente_jid: targetJid, atendente_id: currentOperator.id });
+
+    // 4. Exibir Toast de Notificação
+    showToast(`O atendimento de ${targetName} foi devolvido para a Fila de Espera.`, 'Devolvido à Fila', 'return');
+
+    closeClientInfoDrawer();
+  }
+}
+
+// Abre Modal de Transferência de Atendimento
+function openTransferModal(jid, name) {
+  transferTargetJid = jid || selectedChatJid;
+  transferTargetName = name || selectedChatName || 'este cliente';
+  transferSelectedSectorId = null;
+
+  if (!transferTargetJid) return;
+
+  const modal = document.getElementById('transfer-modal');
+  const clientNameEl = document.getElementById('transfer-modal-client-name');
+  const sectorsContainer = document.getElementById('transfer-sectors-list');
+
+  if (!modal || !sectorsContainer) return;
+
+  if (clientNameEl) clientNameEl.textContent = `Cliente: ${transferTargetName}`;
+
+  // Monta lista de setores disponíveis
+  let html = `
+    <div onclick="selectTransferSector(null)" id="transfer-sector-card-null" class="transfer-sector-option p-3 rounded-xl border border-blue-500/30 bg-blue-500/10 text-white flex items-center justify-between cursor-pointer transition-all hover:bg-blue-500/20">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs">F</div>
+        <div>
+          <p class="text-xs font-bold text-slate-200">Fila Geral</p>
+          <p class="text-[9px] text-slate-400">Encaminha para a fila sem setor específico</p>
+        </div>
+      </div>
+      <div class="w-4 h-4 rounded-full border-2 border-blue-400 bg-blue-400 flex items-center justify-center text-black text-[9px] font-bold">✓</div>
+    </div>
+  `;
+
+  if (allowedSectors && allowedSectors.length > 0) {
+    allowedSectors.forEach(sec => {
+      html += `
+        <div onclick="selectTransferSector(${sec.id})" id="transfer-sector-card-${sec.id}" class="transfer-sector-option p-3 rounded-xl border border-white/5 bg-white/[0.02] text-slate-300 flex items-center justify-between cursor-pointer transition-all hover:bg-white/[0.05]">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 font-bold text-xs">S</div>
+            <div>
+              <p class="text-xs font-bold text-slate-200">${sec.name}</p>
+              <p class="text-[9px] text-slate-500">Setor ID: ${sec.id}</p>
+            </div>
+          </div>
+          <div class="w-4 h-4 rounded-full border border-white/20 flex items-center justify-center text-[9px] font-bold"></div>
+        </div>
+      `;
+    });
+  }
+
+  sectorsContainer.innerHTML = html;
+  modal.classList.remove('hidden');
+}
+
+// Seleciona um setor no modal de transferência
+function selectTransferSector(sectorId) {
+  transferSelectedSectorId = sectorId;
+
+  document.querySelectorAll('.transfer-sector-option').forEach(el => {
+    el.className = "transfer-sector-option p-3 rounded-xl border border-white/5 bg-white/[0.02] text-slate-300 flex items-center justify-between cursor-pointer transition-all hover:bg-white/[0.05]";
+    const checkEl = el.querySelector('div:last-child');
+    if (checkEl) {
+      checkEl.className = "w-4 h-4 rounded-full border border-white/20 flex items-center justify-center text-[9px] font-bold";
+      checkEl.innerHTML = "";
+    }
+  });
+
+  const targetId = sectorId === null ? 'null' : sectorId;
+  const selectedEl = document.getElementById(`transfer-sector-card-${targetId}`);
+  if (selectedEl) {
+    selectedEl.className = "transfer-sector-option p-3 rounded-xl border border-blue-500/30 bg-blue-500/10 text-white flex items-center justify-between cursor-pointer transition-all hover:bg-blue-500/20";
+    const checkEl = selectedEl.querySelector('div:last-child');
+    if (checkEl) {
+      checkEl.className = "w-4 h-4 rounded-full border-2 border-blue-400 bg-blue-400 flex items-center justify-center text-black text-[9px] font-bold";
+      checkEl.innerHTML = "✓";
+    }
+  }
+}
+
+// Confirma a transferência de atendimento
+function confirmTransferChat() {
+  if (!transferTargetJid) return;
+
+  const targetJid = transferTargetJid;
+  const targetName = transferTargetName || 'Cliente';
+
+  // Identificar nome do setor de destino
+  let sectorName = 'Fila Geral';
+  if (transferSelectedSectorId !== null && allowedSectors) {
+    const sec = allowedSectors.find(s => s.id === transferSelectedSectorId);
+    if (sec) sectorName = sec.name;
+  }
+
+  // 1. Animar a saída do card na lista de ativos
+  const cardEl = document.querySelector(`[data-client-jid="${targetJid}"]`);
+  if (cardEl) {
+    cardEl.classList.add('card-transfer-exit');
+  }
+
+  // 2. Animar a saída da área de chat principal
+  closeActiveChatAreaWithAnimation(targetJid);
+
+  // 3. Emitir evento Socket para o servidor
+  socket.emit('transfer_chat', {
+    cliente_jid: targetJid,
+    atendente_id: currentOperator.id,
+    sector_id: transferSelectedSectorId
+  });
+
+  // 4. Exibir Toast de Notificação
+  showToast(`Atendimento de ${targetName} transferido para ${sectorName}.`, 'Transferência Concluída', 'transfer');
+
+  closeTransferModal();
+  closeClientInfoDrawer();
+}
+
+// Fecha Modal de Transferência
+function closeTransferModal() {
+  const modal = document.getElementById('transfer-modal');
+  if (modal) modal.classList.add('hidden');
 }
 
 // Fecha a bandeja lateral de informações do cliente
@@ -1097,13 +1351,33 @@ function renderActiveChats() {
     return;
   }
 
+  // Preserva nós do DOM se a lista de chats for idêntica (permite transição CSS fluida ao selecionar)
+  const existingCards = Array.from(activeListContainer.querySelectorAll('.glass-card'));
+  const existingJids = existingCards.map(c => c.getAttribute('data-client-jid'));
+  const newJids = filtered.map(c => c.cliente_jid);
+
+  const jidsMatch = existingJids.length === newJids.length && existingJids.every((jid, i) => jid === newJids[i]);
+
+  if (jidsMatch) {
+    existingCards.forEach((cardEl, index) => {
+      const chat = filtered[index];
+      const isSelected = selectedChatJid === chat.cliente_jid;
+      if (isSelected) {
+        cardEl.classList.add('active');
+      } else {
+        cardEl.classList.remove('active');
+      }
+    });
+    return;
+  }
+
   activeListContainer.innerHTML = filtered.map(chat => {
     const isSelected = selectedChatJid === chat.cliente_jid;
     const isUnread = chat.unread === 1;
     const isGroup = chat.cliente_jid && chat.cliente_jid.endsWith('@g.us');
     return `
-      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
-        <div class="w-12 h-12 rounded-2xl ${isSelected ? 'avatar-accent-theme text-white' : 'avatar-inactive-theme'} flex items-center justify-center font-bold text-sm uppercase transition-all shrink-0 overflow-hidden">
+      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer border ${isSelected ? 'active' : ''}">
+        <div class="w-12 h-12 rounded-2xl avatar-icon-box flex items-center justify-center font-bold text-sm uppercase shrink-0 overflow-hidden">
           ${chat.cliente_avatar 
             ? `<img src="${chat.cliente_avatar}" alt="${chat.cliente_nome}" class="w-full h-full object-cover" onerror="this.outerHTML='${chat.cliente_nome.substring(0, 2).toUpperCase()}'"/>` 
             : chat.cliente_nome.substring(0, 2).toUpperCase()
@@ -1135,40 +1409,74 @@ function renderActiveChats() {
   }).join('');
 }
 
+// Atualiza o destaque ativo dos cards na sidebar sem destruir/recriar o DOM
+function updateActiveCardSelection(selectedJid) {
+  document.querySelectorAll('#active-chats-list .glass-card').forEach(card => {
+    const cardJid = card.getAttribute('data-client-jid');
+    const avatarEl = card.querySelector('.w-12.h-12');
+
+    if (cardJid === selectedJid) {
+      card.classList.add('active');
+      if (avatarEl && !avatarEl.querySelector('img')) {
+        avatarEl.classList.remove('avatar-inactive-theme');
+        avatarEl.classList.add('avatar-accent-theme', 'text-white');
+      }
+    } else {
+      card.classList.remove('active');
+      if (avatarEl && !avatarEl.querySelector('img')) {
+        avatarEl.classList.remove('avatar-accent-theme', 'text-white');
+        avatarEl.classList.add('avatar-inactive-theme');
+      }
+    }
+  });
+}
+
 // Seleciona um chat ativo
 function selectChat(jid, name) {
+  const isChanging = selectedChatJid !== jid;
   selectedChatJid = jid;
   selectedChatName = name;
 
-  // Atualiza UI
-  emptyChatState.classList.add('hidden');
-  activeChatArea.classList.remove('hidden');
-  activeChatArea.classList.remove('opacity-0');
-  activeChatArea.classList.add('fade-in');
-  
-  chatClientName.textContent = name;
-  chatClientJid.textContent = jid.split('@')[0];
-
-  // Carrega e exibe avatar no cabeçalho
-  const chatObj = activeChats.find(c => c.cliente_jid === jid) || queueChats.find(c => c.cliente_jid === jid);
-  const avatar = chatObj ? chatObj.cliente_avatar : null;
-  
-  if (avatar) {
-    chatClientAvatar.innerHTML = `<img src="${avatar}" alt="${name}" class="w-full h-full object-cover" onerror="this.innerHTML='${name.substring(0, 2).toUpperCase()}'"/>`;
-    chatClientAvatar.className = "w-12 h-12 rounded-2xl border border-white/10 flex items-center justify-center shrink-0 overflow-hidden";
-  } else {
-    chatClientAvatar.innerHTML = name.substring(0, 2).toUpperCase();
-    chatClientAvatar.className = "w-12 h-12 rounded-2xl avatar-accent-theme flex items-center justify-center font-bold text-sm uppercase text-white shadow-lg shrink-0";
+  // 1. Limpar rascunho de texto e estado de áudio da conversa anterior ao trocar
+  if (isChanging) {
+    if (chatInput) chatInput.value = '';
+    resetAudioState();
+    cancelReply();
   }
 
-  // Solicita histórico de mensagens
-  socket.emit('select_chat', { cliente_jid: jid, atendente_id: currentOperator.id });
+  // 2. Atualizar visual dos cards na sidebar de forma fluida (sem recriar DOM)
+  updateActiveCardSelection(jid);
 
-  // Verifica se o chat está na fila de espera (modo de leitura)
-  checkReadOnlyBanner();
+  // 2. Animar transição de saída da área de chat se já houver uma conversa aberta
+  if (isChanging && activeChatArea && !activeChatArea.classList.contains('hidden')) {
+    activeChatArea.classList.add('chat-switch-out');
+  }
 
-  // Re-renderiza para destacar o chat selecionado
-  renderActiveChats();
+  setTimeout(() => {
+    emptyChatState.classList.add('hidden');
+    activeChatArea.classList.remove('hidden', 'opacity-0');
+    
+    chatClientName.textContent = name;
+    chatClientJid.textContent = jid.split('@')[0];
+
+    // Carrega e exibe avatar no cabeçalho
+    const chatObj = activeChats.find(c => c.cliente_jid === jid) || queueChats.find(c => c.cliente_jid === jid);
+    const avatar = chatObj ? chatObj.cliente_avatar : null;
+    
+    if (avatar) {
+      chatClientAvatar.innerHTML = `<img src="${avatar}" alt="${name}" class="w-full h-full object-cover" onerror="this.innerHTML='${name.substring(0, 2).toUpperCase()}'"/>`;
+      chatClientAvatar.className = "w-12 h-12 rounded-2xl border border-white/10 flex items-center justify-center shrink-0 overflow-hidden";
+    } else {
+      chatClientAvatar.innerHTML = name.substring(0, 2).toUpperCase();
+      chatClientAvatar.className = "w-12 h-12 rounded-2xl avatar-accent-theme flex items-center justify-center font-bold text-sm uppercase text-white shadow-lg shrink-0";
+    }
+
+    // Solicita histórico de mensagens
+    socket.emit('select_chat', { cliente_jid: jid, atendente_id: currentOperator.id });
+
+    // Verifica se o chat está na fila de espera (modo de leitura)
+    checkReadOnlyBanner();
+  }, isChanging ? 120 : 0);
 }
 
 // ==============================================================================
@@ -1186,6 +1494,17 @@ socket.on('chat_history', ({ cliente_jid, messages }) => {
   });
   
   scrollToBottom();
+
+  // Executa animação de entrada do novo chat selecionado
+  if (activeChatArea) {
+    activeChatArea.classList.remove('chat-switch-out');
+    activeChatArea.classList.remove('chat-switch-in');
+    void activeChatArea.offsetWidth; // Force reflow
+    activeChatArea.classList.add('chat-switch-in');
+    setTimeout(() => {
+      activeChatArea.classList.remove('chat-switch-in');
+    }, 300);
+  }
 });
 
 // Recebe Nova Mensagem
@@ -1254,10 +1573,24 @@ function appendMessageHTML(msg) {
       `;
     }
 
+    // Renderizador de conteúdo (áudio de voz vs texto)
+    let contentHTML = `<p class="whitespace-pre-wrap leading-relaxed">${textToShow}</p>`;
+    if (msg.texto && (msg.texto.startsWith('data:audio/') || (msg.texto.startsWith('http') && (msg.texto.endsWith('.mp3') || msg.texto.endsWith('.ogg') || msg.texto.endsWith('.m4a') || msg.texto.endsWith('.webm'))))) {
+      contentHTML = `
+        <div class="flex flex-col gap-1.5 my-1 min-w-[220px]">
+          <div class="flex items-center gap-1.5 opacity-80">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-accent-theme shrink-0"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            <span class="text-[9px] font-black uppercase tracking-wider text-slate-300">Mensagem de Voz</span>
+          </div>
+          <audio controls src="${msg.texto}" class="w-full h-8 rounded-xl outline-none"></audio>
+        </div>
+      `;
+    }
+
     msgDiv.innerHTML = `
       <div class="${bubbleClass}">
         ${quoteHTML}
-        <p class="whitespace-pre-wrap leading-relaxed">${textToShow}</p>
+        ${contentHTML}
         <span class="msg-time">${formattedTime}</span>
         ${reactionHTML}
       </div>
@@ -1292,6 +1625,419 @@ function sendMessage(e) {
   chatInput.value = '';
 }
 
+// Alterna entre os 3 Modos da Barra de Envio (Texto, Gravando, Pré-visualizar) com transições graciosas
+function setInputBarMode(mode) {
+  const textModeEl = document.getElementById('chat-input-form');
+  const recordingModeEl = document.getElementById('input-mode-recording');
+  const previewModeEl = document.getElementById('input-mode-preview');
+
+  const textBtns = document.getElementById('buttons-mode-text');
+  const recordingBtns = document.getElementById('buttons-mode-recording');
+  const previewBtns = document.getElementById('buttons-mode-preview');
+
+  const container = document.getElementById('chat-input-container');
+
+  // Resetar áreas de conteúdo da esquerda
+  [textModeEl, recordingModeEl, previewModeEl].forEach(el => {
+    if (el) {
+      el.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+      el.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+  });
+
+  // Ocultar grupos de botões da direita
+  [textBtns, recordingBtns, previewBtns].forEach(el => {
+    if (el) el.classList.add('hidden');
+  });
+
+  if (mode === 'recording') {
+    if (recordingModeEl) {
+      recordingModeEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      recordingModeEl.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+    if (recordingBtns) recordingBtns.classList.remove('hidden');
+    if (container) container.classList.add('border-red-500/40', 'bg-red-500/[0.04]');
+  } else if (mode === 'preview') {
+    if (previewModeEl) {
+      previewModeEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      previewModeEl.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+    if (previewBtns) previewBtns.classList.remove('hidden');
+    if (container) container.classList.remove('border-red-500/40', 'bg-red-500/[0.04]');
+  } else {
+    // Modo Texto por padrão
+    if (textModeEl) {
+      textModeEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      textModeEl.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+    if (textBtns) textBtns.classList.remove('hidden');
+    if (container) container.classList.remove('border-red-500/40', 'bg-red-500/[0.04]');
+  }
+}
+
+// Helper para disparar envio de texto pelo botão do modo texto
+function sendMessageFromInput() {
+  const formEl = document.getElementById('chat-input-form');
+  if (formEl) {
+    const event = new Event('submit', { cancelable: true });
+    formEl.dispatchEvent(event);
+  }
+}
+
+// ==============================================================================
+// 🎙️ RECURSO DE GRAVAÇÃO E PRE-VISUALIZAÇÃO DE ÁUDIO DE VOZ
+// ==============================================================================
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingTimerInterval = null;
+let recordingSeconds = 0;
+let recordedAudioBlob = null;
+let recordedAudioBase64 = null;
+
+let audioContext = null;
+let audioAnalyser = null;
+let audioSource = null;
+let visualizerAnimationFrame = null;
+
+// Inicializa Visualizador de Espectro Real de Voz (Web Audio API)
+function initAudioVisualizer(stream) {
+  const visualizerContainer = document.getElementById('audio-waveform-visualizer');
+  if (!visualizerContainer) return;
+
+  // Criar 32 barras de espectro reativas ao longo da barra
+  const barCount = 32;
+  visualizerContainer.innerHTML = Array.from({ length: barCount }, () => `
+    <div class="waveform-bar w-1 rounded-full bg-red-500/80 transition-all duration-75 shadow-[0_0_8px_rgba(239,68,68,0.4)]" style="height: 4px; min-height: 4px;"></div>
+  `).join('');
+
+  const bars = visualizerContainer.querySelectorAll('.waveform-bar');
+
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    if (audioContext && audioContext.state !== 'closed') {
+      audioContext.close().catch(() => {});
+    }
+
+    audioContext = new AudioContextClass();
+    audioSource = audioContext.createMediaStreamSource(stream);
+    audioAnalyser = audioContext.createAnalyser();
+    audioAnalyser.fftSize = 64; // 32 bins de frequência
+
+    audioSource.connect(audioAnalyser);
+
+    const bufferLength = audioAnalyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    function drawVisualizer() {
+      if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+
+      audioAnalyser.getByteFrequencyData(dataArray);
+
+      bars.forEach((bar, index) => {
+        const val = dataArray[index] || 0;
+        const minHeight = 4;
+        const maxHeight = 24;
+        const height = Math.max(minHeight, Math.min(maxHeight, (val / 255) * maxHeight));
+        const opacity = val > 20 ? 0.85 + (val / 255) * 0.15 : 0.45;
+        
+        bar.style.height = `${height}px`;
+        bar.style.opacity = opacity;
+      });
+
+      visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
+    }
+
+    drawVisualizer();
+  } catch (err) {
+    console.warn('Visualizador de áudio não inicializado:', err);
+  }
+}
+
+// Interrompe e limpa o visualizador de áudio
+function stopAudioVisualizer() {
+  if (visualizerAnimationFrame) {
+    cancelAnimationFrame(visualizerAnimationFrame);
+    visualizerAnimationFrame = null;
+  }
+  if (audioContext && audioContext.state !== 'closed') {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+  }
+  audioAnalyser = null;
+  audioSource = null;
+
+  const visualizerContainer = document.getElementById('audio-waveform-visualizer');
+  if (visualizerContainer) {
+    visualizerContainer.innerHTML = '';
+  }
+}
+
+async function startAudioRecording() {
+  if (!selectedChatJid) {
+    showToast('Selecione uma conversa ativa para gravar áudio.', 'Aviso', 'warning');
+    return;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Seu navegador não suporta gravação de áudio ou a permissão de microfone foi negada.');
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    recordingSeconds = 0;
+    recordedAudioBlob = null;
+    recordedAudioBase64 = null;
+
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        audioChunks.push(e.data);
+      }
+    };
+
+    mediaRecorder.start();
+
+    // Inicializa o visualizador gráfico de voz real por Web Audio API
+    initAudioVisualizer(stream);
+
+    // Transiciona para o modo gravando com animação suave
+    setInputBarMode('recording');
+    const timerEl = document.getElementById('recording-timer');
+    if (timerEl) timerEl.textContent = '00:00';
+
+    clearInterval(recordingTimerInterval);
+    recordingTimerInterval = setInterval(() => {
+      recordingSeconds++;
+      const mins = String(Math.floor(recordingSeconds / 60)).padStart(2, '0');
+      const secs = String(recordingSeconds % 60).padStart(2, '0');
+      if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+    }, 1000);
+
+  } catch (err) {
+    console.error('Erro ao acessar o microfone:', err);
+    alert('Não foi possível acessar o microfone. Verifique as permissões do seu navegador.');
+  }
+}
+
+// ==============================================================================
+// 🎧 PLAYER DE ÁUDIO CUSTOMIZADO DE PRÉ-VISUALIZAÇÃO (TEMA DARK GLASSMORPHISM)
+// ==============================================================================
+
+function setupAudioPreviewEvents() {
+  const player = document.getElementById('audio-preview-player');
+  const timerEl = document.getElementById('preview-audio-timer');
+  const progressBar = document.getElementById('preview-progress-bar');
+  const progressPin = document.getElementById('preview-progress-pin');
+  const iconPlay = document.getElementById('icon-preview-play');
+  const iconPause = document.getElementById('icon-preview-pause');
+  const btnToggle = document.getElementById('btn-preview-play-toggle');
+
+  if (!player) return;
+
+  player.addEventListener('loadedmetadata', () => {
+    updateAudioPreviewTimer();
+  });
+
+  player.addEventListener('timeupdate', () => {
+    if (!player.duration) return;
+    const progressPercent = (player.currentTime / player.duration) * 100;
+    if (progressBar) progressBar.style.width = `${progressPercent}%`;
+    if (progressPin) progressPin.style.left = `${progressPercent}%`;
+
+    const curMins = String(Math.floor(player.currentTime / 60)).padStart(2, '0');
+    const curSecs = String(Math.floor(player.currentTime % 60)).padStart(2, '0');
+    const durMins = String(Math.floor(player.duration / 60)).padStart(2, '0');
+    const durSecs = String(Math.floor(player.duration % 60)).padStart(2, '0');
+
+    if (timerEl) {
+      timerEl.textContent = `${curMins}:${curSecs} / ${durMins}:${durSecs}`;
+    }
+  });
+
+  player.addEventListener('play', () => {
+    if (iconPlay) iconPlay.classList.add('hidden');
+    if (iconPause) iconPause.classList.remove('hidden');
+    if (btnToggle) btnToggle.classList.add('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
+  });
+
+  player.addEventListener('pause', () => {
+    if (iconPlay) iconPlay.classList.remove('hidden');
+    if (iconPause) iconPause.classList.add('hidden');
+    if (btnToggle) btnToggle.classList.remove('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
+  });
+
+  player.addEventListener('ended', () => {
+    if (iconPlay) iconPlay.classList.remove('hidden');
+    if (iconPause) iconPause.classList.add('hidden');
+    if (btnToggle) btnToggle.classList.remove('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressPin) progressPin.style.left = '0%';
+    player.currentTime = 0;
+    updateAudioPreviewTimer();
+  });
+}
+
+function updateAudioPreviewTimer() {
+  const player = document.getElementById('audio-preview-player');
+  const timerEl = document.getElementById('preview-audio-timer');
+  const progressBar = document.getElementById('preview-progress-bar');
+  const progressPin = document.getElementById('preview-progress-pin');
+  if (!player || !timerEl) return;
+
+  const duration = player.duration || 0;
+  const durMins = String(Math.floor(duration / 60)).padStart(2, '0');
+  const durSecs = String(Math.floor(duration % 60)).padStart(2, '0');
+  timerEl.textContent = `00:00 / ${durMins}:${durSecs}`;
+  if (progressBar) progressBar.style.width = '0%';
+  if (progressPin) progressPin.style.left = '0%';
+}
+
+function toggleAudioPreviewPlay() {
+  const player = document.getElementById('audio-preview-player');
+  if (!player || !player.src) return;
+
+  if (player.paused) {
+    player.play().catch(err => console.error('Erro ao tocar áudio:', err));
+  } else {
+    player.pause();
+  }
+}
+
+function seekAudioPreview(e) {
+  const player = document.getElementById('audio-preview-player');
+  const container = document.getElementById('preview-progress-container');
+  if (!player || !player.duration || !container) return;
+
+  const rect = container.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  const width = rect.width;
+  const targetTime = (clickX / width) * player.duration;
+
+  player.currentTime = Math.max(0, Math.min(player.duration, targetTime));
+}
+
+// Parar gravação e liberar o áudio para escutar (Pré-visualização)
+function finishAudioRecordingAndPreview() {
+  clearInterval(recordingTimerInterval);
+  stopAudioVisualizer();
+
+  if (!mediaRecorder) return;
+
+  const stream = mediaRecorder.stream;
+
+  mediaRecorder.onstop = () => {
+    // Parar faixas do microfone
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+
+    const mimeType = mediaRecorder.mimeType || 'audio/webm';
+    recordedAudioBlob = new Blob(audioChunks, { type: mimeType });
+
+    if (recordedAudioBlob.size === 0) {
+      showToast('Áudio gravado está vazio.', 'Aviso', 'warning');
+      cancelAudioRecording();
+      return;
+    }
+
+    // Criar URL para o player escutar
+    const audioUrl = URL.createObjectURL(recordedAudioBlob);
+    const player = document.getElementById('audio-preview-player');
+    if (player) {
+      player.src = audioUrl;
+      player.load();
+      updateAudioPreviewTimer();
+    }
+
+    // Converter para Base64 para envio futuro
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      recordedAudioBase64 = reader.result;
+    };
+    reader.readAsDataURL(recordedAudioBlob);
+
+    // Alternar suavemente para o Modo de Pré-visualização
+    setInputBarMode('preview');
+  };
+
+  if (mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+}
+
+// Confirmar e Enviar o Áudio após escutar na Pré-visualização
+function sendRecordedAudio() {
+  if (!selectedChatJid || (!recordedAudioBase64 && !recordedAudioBlob)) {
+    showToast('Nenhum áudio disponível para envio.', 'Aviso', 'warning');
+    cancelAudioRecording();
+    return;
+  }
+
+  if (recordedAudioBase64) {
+    socket.emit('send_message', {
+      cliente_jid: selectedChatJid,
+      texto: recordedAudioBase64,
+      atendente_id: currentOperator.id
+    });
+    showToast('Mensagem de voz enviada com sucesso!', 'Áudio Enviado', 'success');
+    resetAudioState();
+  } else if (recordedAudioBlob) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      recordedAudioBase64 = reader.result;
+      socket.emit('send_message', {
+        cliente_jid: selectedChatJid,
+        texto: recordedAudioBase64,
+        atendente_id: currentOperator.id
+      });
+      showToast('Mensagem de voz enviada com sucesso!', 'Áudio Enviado', 'success');
+      resetAudioState();
+    };
+    reader.readAsDataURL(recordedAudioBlob);
+  }
+}
+
+// Cancelar / Descartar Gravação de Áudio
+function cancelAudioRecording() {
+  clearInterval(recordingTimerInterval);
+  stopAudioVisualizer();
+
+  if (mediaRecorder) {
+    const stream = mediaRecorder.stream;
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    if (mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  }
+
+  showToast('Gravação de áudio descartada.', 'Descartado', 'warning');
+  resetAudioState();
+}
+
+// Restaura estado inicial do formulário de chat
+function resetAudioState() {
+  mediaRecorder = null;
+  audioChunks = [];
+  recordedAudioBlob = null;
+  recordedAudioBase64 = null;
+
+  stopAudioVisualizer();
+
+  const player = document.getElementById('audio-preview-player');
+  if (player) {
+    player.pause();
+    player.src = '';
+  }
+
+  setInputBarMode('text');
+}
+
 // Finaliza Atendimento atual
 async function finishCurrentChat() {
   if (!selectedChatJid) return;
@@ -1303,14 +2049,11 @@ async function finishCurrentChat() {
   );
   
   if (confirmed) {
-    socket.emit('finish_chat', { cliente_jid: selectedChatJid, atendente_id: currentOperator.id });
+    const targetJid = selectedChatJid;
+    socket.emit('finish_chat', { cliente_jid: targetJid, atendente_id: currentOperator.id });
     
-    // Retorna ao estado vazio
-    selectedChatJid = null;
-    selectedChatName = '';
-    
-    activeChatArea.classList.add('hidden');
-    emptyChatState.classList.remove('hidden');
+    // Retorna ao estado vazio com transição suave
+    closeActiveChatAreaWithAnimation(targetJid);
   }
 }
 
@@ -1775,6 +2518,7 @@ socket.on('message_reacted', ({ message_id, reacao, cliente_jid }) => {
 window.addEventListener('DOMContentLoaded', () => {
   initOperator();
   initEmojiGrid();
+  setupAudioPreviewEvents();
   
   if (contextMenu) {
     contextMenu.addEventListener('click', (e) => {

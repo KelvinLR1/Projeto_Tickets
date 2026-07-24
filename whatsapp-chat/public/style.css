@@ -190,23 +190,92 @@ section {
   border: 1px solid var(--border-color);
 }
 
+/* Glass Card Container */
 .glass-card {
   background: color-mix(in srgb, var(--color-foreground) 1.5%, transparent) !important;
   border: 1px solid var(--border-color) !important;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .glass-card:hover {
-  background: color-mix(in srgb, var(--color-foreground) 4%, transparent) !important;
+  background: color-mix(in srgb, var(--color-foreground) 4.5%, transparent) !important;
   border-color: color-mix(in srgb, var(--color-foreground) 15%, transparent) !important;
-  transform: translateY(-0.5px);
 }
 
-.glass-card.active {
-  background: color-mix(in srgb, var(--color-primary-theme) 8%, transparent) !important;
-  border-color: color-mix(in srgb, var(--color-primary-theme) 40%, transparent) !important;
-  box-shadow: 0 0 15px -5px color-mix(in srgb, var(--color-primary-theme) 20%, transparent) !important;
+/* Barra Neon Vertical Indicadora (GPU Accelerated) */
+.glass-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14%;
+  bottom: 14%;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--color-primary-theme);
+  box-shadow: 0 0 10px var(--color-primary-theme);
+  opacity: 0;
+  transform: scaleY(0.2);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  z-index: 2;
+}
+
+.glass-card.active::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Camada de Fundo Ativo & Glow Neon (GPU Accelerated Opacity Overlay) */
+.glass-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-primary-theme) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 50%, transparent);
+  box-shadow: inset 0 0 20px color-mix(in srgb, var(--color-primary-theme) 15%, transparent),
+              0 4px 22px -4px color-mix(in srgb, var(--color-primary-theme) 35%, transparent);
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.glass-card.active::after {
+  opacity: 1;
+}
+
+/* Avatar Box GPU Overlay Transition */
+.avatar-icon-box {
+  position: relative;
+  background: color-mix(in srgb, var(--color-foreground) 4%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent) !important;
+  color: #94a3b8 !important;
+  z-index: 2;
+  transition: color 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.avatar-icon-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-gradient);
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  z-index: -1;
+}
+
+.glass-card.active .avatar-icon-box {
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-primary-theme) 35%, transparent) !important;
+}
+
+.glass-card.active .avatar-icon-box::after {
+  opacity: 1;
 }
 
 /* ==============================================================================
@@ -408,6 +477,13 @@ input[type="text"] {
 input:focus {
   border-color: color-mix(in srgb, var(--color-primary-theme) 50%, transparent) !important;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-theme) 15%, transparent) !important;
+}
+
+#input-active-search:focus,
+#input-history-search:focus {
+  border-color: color-mix(in srgb, var(--color-primary-theme) 60%, transparent) !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 /* Estado Vazio */
@@ -730,5 +806,212 @@ aside > div:last-child {
 
 .animate-flash-tab {
   animation: flash-tab 1.2s infinite ease-in-out !important;
+}
+
+/* ==============================================================================
+   ✨ ANIMAÇÕES DE DEVOLUÇÃO E TRANSFERÊNCIA DE ATENDIMENTO
+   ============================================================================== */
+
+/* Animação de Saída do Card na Lista (Devolução à Fila) */
+.card-return-exit {
+  opacity: 0 !important;
+  transform: translateX(-60px) scale(0.92) !important;
+  max-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  overflow: hidden !important;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Animação de Saída do Card na Lista (Transferência) */
+.card-transfer-exit {
+  opacity: 0 !important;
+  transform: translateX(60px) scale(0.92) !important;
+  max-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  overflow: hidden !important;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Toast Container (Flutuante no canto superior direito) */
+#toast-container {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  pointer-events: none;
+}
+
+.toast-notification {
+  pointer-events: auto;
+  min-width: 300px;
+  max-width: 420px;
+  padding: 0.85rem 1.15rem;
+  border-radius: 1.15rem;
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+  animation: toast-slide-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast-notification.toast-hide {
+  opacity: 0 !important;
+  transform: translateY(-20px) scale(0.92) !important;
+}
+
+@keyframes toast-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Transição fluida da área de chat principal */
+#active-chat-area {
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Animação de saída graciosa do painel de chat ao transferir/devolver */
+.chat-viewport-exit {
+  opacity: 0 !important;
+  transform: translateY(14px) scale(0.97) !important;
+  pointer-events: none !important;
+}
+
+/* Transição de entrada do estado vazio */
+#empty-chat-state {
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.empty-state-enter {
+  animation: empty-state-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes empty-state-fade-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Tooltip Customizado do Sistema em Hover (Padronizado com Seta e Glassmorphism) */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 9px;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px) scale(0.95);
+  background: rgba(7, 9, 14, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 5px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  z-index: 99;
+}
+
+[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  border-width: 5px 5px 0 5px;
+  border-style: solid;
+  border-color: rgba(7, 9, 14, 0.96) transparent transparent transparent;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 99;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:hover::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* Opção de tooltip posicionado abaixo se explicitamente configurado */
+[data-tooltip-pos="bottom"]::after {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 9px;
+  transform: translateX(-50%) translateY(-4px) scale(0.95);
+}
+
+[data-tooltip-pos="bottom"]::before {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 4px;
+  border-width: 0 5px 5px 5px;
+  border-color: transparent transparent rgba(7, 9, 14, 0.96) transparent;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+[data-tooltip-pos="bottom"]:hover::after,
+[data-tooltip-pos="bottom"]:hover::before {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* ==============================================================================
+   ✨ ANIMAÇÕES DE TROCA DE CONVERSA ATIVA
+   ============================================================================== */
+
+/* Animação de Saída de Troca do Painel de Chat */
+.chat-switch-out {
+  opacity: 0.2 !important;
+  transform: translateY(6px) scale(0.992) !important;
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out !important;
+}
+
+/* Animação de Entrada do Novo Chat */
+.chat-switch-in {
+  animation: chat-switch-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes chat-switch-enter {
+  0% {
+    opacity: 0.2;
+    transform: translateY(-8px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 

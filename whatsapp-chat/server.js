@@ -5,7 +5,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const qrcode = require('qrcode');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 
 // Configurações principais
 const PORT = process.env.PORT || 5000;
@@ -464,7 +464,19 @@ io.on('connection', (socket) => {
         return;
       }
 
-      await wwebClient.sendMessage(cliente_jid, texto);
+      if (texto.startsWith('data:audio/')) {
+        const matches = texto.match(/^data:(audio\/[a-zA-Z0-9\-]+);base64,(.+)$/);
+        if (matches) {
+          const mimeType = matches[1];
+          const base64Data = matches[2];
+          const media = new MessageMedia(mimeType, base64Data, 'audio.ogg');
+          await wwebClient.sendMessage(cliente_jid, media, { sendAudioAsVoice: true });
+        } else {
+          await wwebClient.sendMessage(cliente_jid, texto);
+        }
+      } else {
+        await wwebClient.sendMessage(cliente_jid, texto);
+      }
 
       // Salva no banco de dados local
       db.run(
@@ -583,6 +595,61 @@ io.on('connection', (socket) => {
         sendActiveChats(atendente_id);
         sendHistoryChats(atendente_id);
         broadcastQueue();
+      }
+    );
+  });
+
+  // 6a. DEVOLVER ATENDIMENTO À FILA DE ESPERA
+  socket.on('return_to_queue', ({ cliente_jid, atendente_id }) => {
+    if (!cliente_jid) return;
+    const opId = atendente_id || activeSockets.get(socket.id);
+
+    console.log(`↩️ Atendimento [${cliente_jid}] devolvido à fila por [${opId}]`);
+
+    db.run(
+      `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, bot_node_id = NULL WHERE cliente_jid = ?`,
+      [cliente_jid],
+      (err) => {
+        if (err) {
+          console.error('Erro ao devolver atendimento à fila:', err.message);
+          return;
+        }
+
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento devolvido à Fila de Espera.')`,
+          [cliente_jid]
+        );
+
+        broadcastQueue();
+        if (opId) sendActiveChats(opId);
+      }
+    );
+  });
+
+  // 6b. TRANSFERIR ATENDIMENTO DE SETOR / FILA
+  socket.on('transfer_chat', ({ cliente_jid, atendente_id, sector_id }) => {
+    if (!cliente_jid) return;
+    const opId = atendente_id || activeSockets.get(socket.id);
+
+    const parsedSectorId = (sector_id !== null && sector_id !== undefined && sector_id !== '') ? parseInt(sector_id, 10) : null;
+    console.log(`🔀 Transferindo atendimento de [${cliente_jid}] para o setor [${parsedSectorId}]`);
+
+    db.run(
+      `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, sector_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
+      [parsedSectorId, cliente_jid],
+      (err) => {
+        if (err) {
+          console.error('Erro ao transferir atendimento:', err.message);
+          return;
+        }
+
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento transferido de setor.')`,
+          [cliente_jid]
+        );
+
+        broadcastQueue();
+        if (opId) sendActiveChats(opId);
       }
     );
   });
