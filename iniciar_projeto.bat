@@ -110,21 +110,21 @@ if errorlevel 1 (
 )
 
 :: 5. Iniciar FastAPI Backend
-echo * Iniciando Servidor principal (FastAPI)...
+echo * [1/3] Iniciando Servidor principal (FastAPI - Porta 8080)...
 start "Backend - FastAPI" cmd /k "cd server && .venv\Scripts\activate && .venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8080"
 
 :: Aguardar 2 segundos (usando ping para compatibilidade sem input)
 ping 127.0.0.1 -n 3 >nul
 
 :: 6. Iniciar Next.js Frontend
-echo * Interface do Portal (Next.js)...
+echo * [2/3] Interface do Portal (Next.js - Porta 3000)...
 start "Frontend - Next.js" cmd /k "cd client && set NODE_OPTIONS=--max-old-space-size=4096 && npm run dev"
 
 :: Aguardar 2 segundos
 ping 127.0.0.1 -n 3 >nul
 
 :: 7. Iniciar canal(is) WhatsApp
-echo * Servidor(es) WhatsApp (Node.js)...
+echo * [3/3] Servidor(es) WhatsApp (Node.js)...
 server\.venv\Scripts\python.exe scripts\whatsapp_channels_helper.py start
 if exist "_ws_start.bat" (
     call _ws_start.bat
@@ -133,8 +133,14 @@ if exist "_ws_start.bat" (
     start "WhatsApp - Principal" cmd /k "cd whatsapp-chat && npm start"
 )
 
-echo ====================================================
-echo * Todos os servicos foram iniciados em novas janelas.
-echo * Acesse a interface em: http://localhost:3000
-echo ====================================================
-ping 127.0.0.1 -n 6 >nul
+:: 8. Executar monitor de status em tempo real
+if exist "server\.venv\Scripts\python.exe" (
+    server\.venv\Scripts\python.exe scripts\check_services.py
+) else (
+    echo ====================================================
+    echo * Todos os servicos foram iniciados em novas janelas.
+    echo * Acesse a interface em: http://localhost:3000
+    echo ====================================================
+    ping 127.0.0.1 -n 6 >nul
+)
+

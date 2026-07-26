@@ -103,6 +103,7 @@ db.serialize(() => {
       db.run("ALTER TABLE tabela_atendimentos ADD COLUMN bot_node_id TEXT", (alterErr) => {});
       db.run("ALTER TABLE tabela_atendimentos ADD COLUMN sector_id INTEGER", (alterErr) => {});
       db.run("ALTER TABLE tabela_atendimentos ADD COLUMN unread INTEGER DEFAULT 0", (alterErr) => {});
+      db.run("UPDATE tabela_atendimentos SET cliente_avatar = NULL WHERE cliente_avatar LIKE '%ui-avatars.com%'");
     }
   });
 
@@ -120,7 +121,123 @@ db.serialize(() => {
       db.run("ALTER TABLE tabela_mensagens ADD COLUMN reacao TEXT", (alterErr) => {});
     }
   });
+
+  // 4. Verificar se a base está vazia e popular dados de exemplo para testes
+  setTimeout(() => {
+    db.get("SELECT COUNT(*) as count FROM tabela_atendimentos", (err, row) => {
+      if (!err && row && row.count === 0) {
+        console.log('📌 Fila de atendimentos vazia. Inserindo exemplos de teste (Mock)...');
+        seedMockData(false);
+      }
+    });
+  }, 1000);
 });
+
+// ==============================================================================
+// 🧪 GERADOR DE DADOS DE TESTE (MOCK DATA PARA DESENVOLVIMENTO)
+// ==============================================================================
+function seedMockData(force = false, callback = null) {
+  const mockClients = [
+    {
+      jid: '5511988881111@c.us',
+      nome: 'Carlos Oliveira',
+      avatar: null,
+      status: 'fila',
+      unread: 1,
+      messages: [
+        { remetente: 'cliente', texto: 'Olá! Boa tarde. Preciso de suporte para redefinir minha senha de acesso ao portal de vendas.' }
+      ]
+    },
+    {
+      jid: '5511977772222@c.us',
+      nome: 'Fernanda Lima',
+      avatar: null,
+      status: 'fila',
+      unread: 1,
+      messages: [
+        { remetente: 'cliente', texto: 'Gostaria de saber se o meu pedido #94821 já foi enviado para a transportadora.' }
+      ]
+    },
+    {
+      jid: '5511966663333@c.us',
+      nome: 'Lucas Mendes',
+      avatar: null,
+      status: 'fila',
+      unread: 1,
+      messages: [
+        { remetente: 'cliente', texto: 'Boa tarde! Teria como me enviar a segunda via da nota fiscal referente à compra de ontem?' }
+      ]
+    },
+    {
+      jid: '5511955554444@c.us',
+      nome: 'Juliana Costa',
+      avatar: null,
+      status: 'fila',
+      unread: 1,
+      messages: [
+        { remetente: 'cliente', texto: 'Oi pessoal, qual o horário de funcionamento do atendimento presencial no final de semana?' }
+      ]
+    },
+    {
+      jid: '5511944445555@c.us',
+      nome: 'Roberto Alves',
+      avatar: null,
+      status: 'fila',
+      unread: 1,
+      messages: [
+        { remetente: 'cliente', texto: 'Estou tentando acessar o módulo financeiro e recebi um aviso de falta de permissão.' }
+      ]
+    }
+  ];
+
+  let addedCount = 0;
+  let processed = 0;
+
+  mockClients.forEach((client) => {
+    const startedAt = new Date().toISOString();
+    db.run(
+      `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, cliente_avatar, status, started_at, unread)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(cliente_jid) DO ${force ? 'UPDATE SET status = excluded.status, unread = excluded.unread' : 'NOTHING'}`,
+      [client.jid, client.nome, client.avatar, client.status, startedAt, client.unread],
+      function (err) {
+        if (!err && (this.changes > 0 || force)) {
+          addedCount++;
+          client.messages.forEach(msg => {
+            db.run(
+              `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+              [client.jid, msg.remetente, msg.texto]
+            );
+          });
+        }
+        processed++;
+        if (processed === mockClients.length) {
+          broadcastQueue();
+          broadcastBotList();
+          console.log(`✅ [Mock Seed] ${addedCount} atendimento(s) de teste adicionado(s) à fila.`);
+          if (callback) callback(null, addedCount);
+        }
+      }
+    );
+  });
+}
+
+app.get('/api/seed-mock-data', (req, res) => {
+  const force = req.query.force === 'true';
+  seedMockData(force, (err, count) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ status: 'success', message: `${count} exemplos de atendimento foram inseridos na fila!`, count });
+  });
+});
+
+app.post('/api/seed-mock-data', (req, res) => {
+  const force = req.body && req.body.force === true;
+  seedMockData(force, (err, count) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ status: 'success', message: `${count} exemplos de atendimento foram inseridos na fila!`, count });
+  });
+});
+
 
 // ==============================================================================
 // 🤖 INICIALIZAÇÃO DO WHATSAPP CLIENT (whatsapp-web.js)
@@ -128,7 +245,9 @@ db.serialize(() => {
 let qrCodeImage = null;
 let whatsappStatus = 'desconectado'; // 'desconectado', 'autenticando', 'pronto'
 
-console.log('🔄 Inicializando cliente do WhatsApp (Aguarde)...');
+console.log('🔄 Inicializando cliente do WhatsApp (Aguarde alguns segundos)...');
+console.log('🌐 Subindo navegador Chromium e conectando à sessão do WhatsApp Web...');
+
 const wwebClient = new Client({
   authStrategy: new LocalAuth({
     dataPath: authDataPath

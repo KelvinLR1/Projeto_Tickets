@@ -210,14 +210,14 @@
         </div>
 
         <!-- Input Bar -->
-        <div class="p-4 border-t border-white/5 bg-slate-950/20 shrink-0 flex flex-col gap-2 relative">
+        <div class="p-4 border-t border-white/5 shrink-0 flex flex-col gap-2 relative">
           <!-- Banner de Modo Leitura (Fila de Espera) -->
-          <div id="chat-read-only-banner" class="hidden absolute inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-between px-6 z-20">
-            <div class="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-amber-500 animate-pulse"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <p class="text-xs font-semibold text-slate-300">Modo de leitura. Para interagir com este cliente, assuma o atendimento.</p>
+          <div id="chat-read-only-banner" class="hidden absolute inset-0 backdrop-blur-md flex items-center justify-between px-6 z-20">
+            <div class="flex items-center gap-2.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="animate-pulse"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <p class="text-xs font-semibold">Modo de leitura. Para interagir com este cliente, assuma o atendimento.</p>
             </div>
-            <button id="btn-read-only-take" onclick="takeChat(selectedChatJid)" class="flex items-center justify-center px-5 h-9 bg-amber-500 hover:bg-amber-400 text-black text-[11px] font-bold rounded-xl transition-all duration-200 active:scale-95 shadow-lg shadow-amber-500/10 cursor-pointer">
+            <button id="btn-read-only-take" onclick="takeChat(selectedChatJid)" class="flex items-center justify-center px-5 h-9 btn-accent-theme text-[11px] font-bold rounded-xl transition-all duration-200 active:scale-95 cursor-pointer">
               Atender Cliente
             </button>
           </div>
@@ -234,23 +234,83 @@
           </div>
 
           <!-- Container Unificado de Envio com Transições de Modo (Texto / Gravando / Pré-visualizar) -->
-          <div class="max-w-4xl mx-auto relative w-full">
-            <div id="chat-input-container" class="w-full h-11 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-white/15 focus-within:bg-white/[0.04] focus-within:border-white/20 transition-all duration-300 flex items-center px-4 relative">
+          <div class="max-w-4xl mx-auto relative w-full h-[44px]">
+            <div id="chat-input-container" class="absolute bottom-0 left-0 right-0 w-full min-h-[44px] max-h-[160px] rounded-2xl backdrop-blur-xl transition-[height,max-height,background-color,border-color,box-shadow,transform] duration-400 ease-[cubic-bezier(0.25,1,0.5,1)] flex items-center px-4 py-2 z-20 shadow-2xl">
+              
+              <!-- Badge de Notificação Flutuante (Acompanha a expansão dinâmica do topo do contêiner) -->
+              <div id="discarded-audio-toast" class="absolute -top-12 left-1/2 -translate-x-1/2 hidden flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs md:text-sm font-bold shadow-[0_4px_20px_rgba(225,29,72,0.45)] border border-white/20 backdrop-blur-xl transition-all duration-300 transform translate-y-2 opacity-0 z-30 pointer-events-none whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                <span>Áudio descartado com sucesso</span>
+              </div>
               
               <!-- ÁREA DE CONTEÚDO ESQUERDA (Cross-fade suave entre os 3 Modos) -->
-              <div class="relative flex-1 h-full flex items-center min-w-0 mr-3 overflow-hidden">
+              <div class="relative flex-1 min-h-[24px] flex items-center min-w-0 mr-3 my-auto">
                 
-                <!-- MODO 1: Campo de Texto Normal -->
-                <form id="chat-input-form" onsubmit="sendMessage(event)" class="absolute inset-0 flex items-center transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]">
-                  <input type="text" id="chat-input" placeholder="Digite sua resposta..." autocomplete="off" class="w-full h-full bg-transparent border-none outline-none text-[13px] text-slate-100 placeholder-slate-500 px-1 py-0 leading-normal flex items-center">
+                <!-- MODO 1: Campo de Texto Normal (Textarea Auto-expansível sem Borda) -->
+                <form id="chat-input-form" onsubmit="sendMessage(event)" style="outline: none !important; border: none !important; box-shadow: none !important;" class="w-full flex items-center my-auto transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] relative">
+                  
+                  <!-- Botão de Opções (Menu de Recursos 🎛️) com Menu Dropdown de Ações -->
+                  <div class="relative shrink-0 mr-2 my-auto">
+                    <button type="button" id="btn-chat-options" onclick="toggleChatOptionsDropdown(event)" data-tooltip="Opções & Respostas Rápidas" style="background-color: var(--color-card, #1e293b) !important; border: 1px solid var(--border-color, rgba(255,255,255,0.15)) !important; color: var(--color-foreground, #f8fafc) !important;" class="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-95 cursor-pointer shadow-md group">
+                      <!-- Ícone de Menu Grid de Opções (Layout Grid 🎛️) -->
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="transition-transform duration-200 group-hover:scale-105"><rect width="7" height="7" x="3" y="3" rx="1.5"/><rect width="7" height="7" x="14" y="3" rx="1.5"/><rect width="7" height="7" x="14" y="14" rx="1.5"/><rect width="7" height="7" x="3" y="14" rx="1.5"/></svg>
+                    </button>
+
+                    <!-- Card Popover de Opções (Abre para CIMA e Adapta-se ao Tema Ativo) -->
+                    <div id="chat-options-dropdown" style="background-color: var(--color-background, #0f172a) !important; border: 2px solid var(--border-color, #334155) !important; border-radius: 16px !important; color: var(--color-foreground, #f8fafc) !important; box-shadow: 0 20px 50px rgba(0,0,0,0.85) !important;" class="absolute bottom-full mb-3 left-0 z-50 hidden min-w-[260px] p-2.5 flex flex-col gap-2 transition-all duration-200 transform scale-95 opacity-0 origin-bottom-left select-none">
+                      
+                      <!-- Cabeçalho do Card Popover -->
+                      <div style="border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.1)) !important;" class="px-2.5 pb-2 flex items-center justify-between">
+                        <span class="text-[11px] font-bold opacity-90">Opções de Atendimento</span>
+                        <span style="background-color: var(--color-card, #1e293b) !important; border: 1px solid var(--border-color, rgba(255,255,255,0.1)) !important;" class="text-[9px] font-bold opacity-75 px-2 py-0.5 rounded-md">Menu</span>
+                      </div>
+
+                      <!-- Opção 1: Resposta Rápida -->
+                      <button type="button" onclick="selectChatOption('quick_reply')" style="background-color: var(--color-card, #1e293b) !important; border: 1px solid var(--border-color, rgba(255,255,255,0.1)) !important; border-radius: 12px !important;" class="w-full flex items-center justify-between p-2.5 text-xs font-semibold hover:border-amber-500/60 transition-all cursor-pointer group/item">
+                        <div class="flex items-center gap-3">
+                          <div style="background-color: rgba(245,158,11,0.15) !important; border: 1px solid rgba(245,158,11,0.4) !important;" class="w-8 h-8 rounded-xl text-amber-400 flex items-center justify-center shrink-0 shadow-sm group-hover/item:scale-105 transition-transform">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                          </div>
+                          <div class="flex flex-col text-left">
+                            <span class="font-bold text-xs group-hover/item:text-amber-300">Resposta Rápida</span>
+                            <span class="text-[10px] opacity-70 font-normal">Modelos pré-definidos</span>
+                          </div>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50 group-hover/item:text-amber-400 group-hover/item:translate-x-0.5 transition-all"><path d="m9 18 6-6-6-6"/></svg>
+                      </button>
+
+                      <!-- Opção 2: Mensagem Interna -->
+                      <button type="button" onclick="selectChatOption('internal_note')" style="background-color: var(--color-card, #1e293b) !important; border: 1px solid var(--border-color, rgba(255,255,255,0.1)) !important; border-radius: 12px !important;" class="w-full flex items-center justify-between p-2.5 text-xs font-semibold hover:border-indigo-500/60 transition-all cursor-pointer group/item">
+                        <div class="flex items-center gap-3">
+                          <div id="icon-internal-option" style="background-color: rgba(99,102,241,0.15) !important; border: 1px solid rgba(99,102,241,0.4) !important;" class="w-8 h-8 rounded-xl text-indigo-400 flex items-center justify-center shrink-0 shadow-sm group-hover/item:scale-105 transition-transform">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          </div>
+                          <div class="flex flex-col text-left">
+                            <span id="label-internal-option" class="font-bold text-xs group-hover/item:text-indigo-300">Mensagem Interna</span>
+                            <span class="text-[10px] opacity-70 font-normal">Nota privada para a equipe</span>
+                          </div>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50 group-hover/item:text-indigo-400 group-hover/item:translate-x-0.5 transition-all"><path d="m9 18 6-6-6-6"/></svg>
+                      </button>
+
+                    </div>
+                  </div>
+
+                  <!-- Badge Indicadora do Modo Nota Interna (Oculta por padrão) -->
+                  <div id="internal-note-badge" class="hidden flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-bold shrink-0 mr-2 animate-pulse select-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span>NOTA INTERNA</span>
+                  </div>
+
+                  <textarea id="chat-input" rows="1" placeholder="Digite sua resposta..." autocomplete="off" style="outline: none !important; border: none !important; box-shadow: none !important; -webkit-tap-highlight-color: transparent !important;" class="w-full bg-transparent border-0 outline-none ring-0 text-[13px] text-slate-100 placeholder-slate-500 px-1 py-0 leading-normal resize-none max-h-[135px] custom-scrollbar min-h-[20px] block my-auto transition-[height] duration-400 ease-[cubic-bezier(0.25,1,0.5,1)]"></textarea>
                   <button type="submit" class="hidden"></button>
                 </form>
 
                 <!-- MODO 2: Gravando Áudio (Oculto por padrão) -->
                 <div id="input-mode-recording" class="absolute inset-0 flex items-center justify-between opacity-0 pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] transform translate-y-2">
                   <div class="flex items-center gap-2.5 shrink-0">
-                    <div class="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]"></div>
-                    <span class="text-xs font-bold text-red-400 tracking-wider">Gravando...</span>
+                    <div id="recording-pulse-dot" class="w-3 h-3 rounded-full bg-amber-400 animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.6)]"></div>
+                    <span id="recording-status-label" class="text-xs font-bold text-amber-400 tracking-wider">Iniciando...</span>
                     <span id="recording-timer" class="font-mono text-xs text-slate-200 font-bold bg-slate-900/80 px-2 py-0.5 rounded-md border border-white/10">00:00</span>
                   </div>
                   <!-- Visualizador de Onda Real de Voz por toda a barra (Web Audio API) -->
@@ -270,13 +330,13 @@
                   <!-- Timer de Duração (00:00 / 00:00) -->
                   <span id="preview-audio-timer" class="font-mono text-xs font-bold text-slate-200 tracking-tight shrink-0 select-none">00:00 / 00:00</span>
 
-                  <!-- Barra de Progresso Interativa Estilizada com Indicador de Cabeça (Playhead Pin) -->
-                  <div class="flex-1 flex items-center relative cursor-pointer py-2 group" onclick="seekAudioPreview(event)" id="preview-progress-container">
+                  <!-- Barra de Progresso Interativa Estilizada com Indicador de Cabeça (Playhead Pin - Drag & Scrub) -->
+                  <div class="flex-1 flex items-center relative cursor-pointer py-2 group select-none" id="preview-progress-container">
                     <div class="w-full h-2 bg-white/10 rounded-full relative">
-                      <!-- Linha de Preenchimento Ativo -->
-                      <div id="preview-progress-bar" class="h-full rounded-full transition-all duration-75 w-0" style="background: var(--accent-gradient); box-shadow: 0 0 12px var(--color-primary-theme);"></div>
-                      <!-- Pino Indicador da Cabeça de Reprodução (Glow Playhead Pin) -->
-                      <div id="preview-progress-pin" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-red-500 shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all duration-75 left-0 pointer-events-none z-10"></div>
+                      <!-- Linha de Preenchimento Ativo (Suave sem lag de transição CSS) -->
+                      <div id="preview-progress-bar" class="h-full rounded-full w-0" style="background: var(--accent-gradient); box-shadow: 0 0 12px var(--color-primary-theme);"></div>
+                      <!-- Pino Indicador da Cabeça de Reprodução (Playhead Pin a 60 FPS) -->
+                      <div id="preview-progress-pin" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white border-2 border-red-500 shadow-[0_0_10px_rgba(255,255,255,0.9)] left-0 pointer-events-none z-10"></div>
                     </div>
                   </div>
 
@@ -301,26 +361,27 @@
                   </button>
                 </div>
 
-                <!-- BOTÕES MODO GRAVANDO (Descartar + Parar) -->
+                <!-- BOTÕES MODO GRAVANDO (Pausar + Finalizar) -->
                 <div id="buttons-mode-recording" class="hidden flex items-center gap-1.5 transition-all duration-200">
-                  <!-- Descartar Gravação -->
-                  <button type="button" onclick="cancelAudioRecording()" data-tooltip="Descartar Gravação" class="w-8 h-8 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 flex items-center justify-center transition-all active:scale-95 cursor-pointer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <!-- Pausar / Retomar Gravação (Amarelado / Amber) -->
+                  <button type="button" onclick="togglePauseAudioRecording()" data-tooltip="Pausar / Retomar Gravação" class="w-8 h-8 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500 hover:text-slate-950 text-amber-400 flex items-center justify-center transition-all duration-200 active:scale-95 cursor-pointer shadow-sm">
+                    <svg id="icon-recording-pause" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    <svg id="icon-recording-resume" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="hidden ml-0.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                   </button>
-                  <!-- Parar Gravação e Ouvir -->
-                  <button type="button" onclick="finishAudioRecordingAndPreview()" data-tooltip="Parar e Escutar Áudio" class="w-8 h-8 rounded-xl bg-red-500 hover:bg-red-400 text-white flex items-center justify-center transition-all active:scale-95 shadow-md shadow-red-500/20 cursor-pointer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                  <!-- Finalizar Gravação (Vermelho Destacado) -->
+                  <button type="button" onclick="finishAudioRecordingAndPreview()" data-tooltip="Finalizar Gravação" class="w-8 h-8 rounded-xl bg-red-500 hover:bg-red-400 text-white flex items-center justify-center transition-all duration-200 active:scale-95 shadow-md shadow-red-500/25 cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                   </button>
                 </div>
 
-                <!-- BOTÕES MODO PREVIEW (Descartar + Enviar) -->
+                <!-- BOTÕES MODO PREVIEW (Excluir + Enviar - Exibidos Somente Após Finalizado) -->
                 <div id="buttons-mode-preview" class="hidden flex items-center gap-1.5 transition-all duration-200">
-                  <!-- Descartar Áudio -->
-                  <button type="button" onclick="cancelAudioRecording()" data-tooltip="Descartar Áudio" class="w-8 h-8 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 flex items-center justify-center transition-all active:scale-95 cursor-pointer">
+                  <!-- Excluir / Descartar Áudio -->
+                  <button type="button" onclick="cancelAudioRecording()" data-tooltip="Excluir Áudio" class="w-8 h-8 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 flex items-center justify-center transition-all active:scale-95 cursor-pointer">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
                   <!-- Enviar Áudio -->
-                  <button type="button" onclick="sendRecordedAudio()" data-tooltip="Enviar Áudio" class="w-8 h-8 rounded-xl bg-red-500 hover:bg-red-400 text-white flex items-center justify-center transition-all active:scale-95 shadow-md shadow-red-500/20 cursor-pointer">
+                  <button type="button" onclick="sendRecordedAudio()" data-tooltip="Enviar Áudio" class="w-8 h-8 rounded-xl btn-accent-theme flex items-center justify-center transition-all active:scale-95 shadow-md cursor-pointer">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lucide lucide-send"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                   </button>
                 </div>
@@ -338,7 +399,7 @@
     <!-- ==============================================================================
          CLIENT DETAIL DRAWER (BANDEJA LATERAL DIREITA)
          ============================================================================== -->
-    <aside id="client-info-drawer" class="w-0 border-l border-transparent bg-[#07090e]/60 flex flex-col shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-20">
+    <aside id="client-info-drawer" class="hidden w-0 border-l border-transparent bg-[#07090e]/60 flex flex-col shrink-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-20">
       <div class="w-[400px] h-full flex flex-col">
         <!-- Header -->
         <div class="h-16 border-b border-white/10 px-4 flex items-center justify-between bg-slate-950/30 shrink-0">
@@ -379,7 +440,7 @@
           <!-- Botões de Ação na Bandeja -->
           <div class="pt-2" id="client-info-drawer-actions">
             <!-- Botão de Atender (Exibido quando na Fila) -->
-            <button id="btn-client-info-drawer-take" class="w-full h-11 premium-gradient text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer flex items-center justify-center gap-2">
+            <button id="btn-client-info-drawer-take" class="w-full h-11 btn-accent-theme rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer flex items-center justify-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
               Atender Cliente
             </button>
@@ -664,7 +725,7 @@
           <button type="button" onclick="closeCustomFilterModal()" class="flex-1 h-11 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-slate-400 hover:text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 cursor-pointer">
             Cancelar
           </button>
-          <button type="submit" class="flex-1 h-11 premium-gradient text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer">
+          <button type="submit" class="flex-1 h-11 btn-accent-theme rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer">
             Salvar Filtro
           </button>
         </div>
@@ -781,6 +842,69 @@
         <!-- Imagem ou texto ampliado preenchido por JS -->
       </div>
       <p id="zoomed-avatar-name" class="text-xs text-slate-400 mt-4 font-bold uppercase tracking-wider">Nome do Cliente</p>
+    </div>
+  </div>
+
+  <!-- Modal de Respostas Rápidas (Quick Replies) -->
+  <div id="modal-quick-replies" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/60 backdrop-blur-md p-4 transition-all duration-300 opacity-0 select-none">
+    <div class="w-full max-w-lg bg-slate-900 border border-white/15 rounded-3xl shadow-2xl overflow-hidden transform scale-95 transition-all duration-300 flex flex-col max-h-[85vh]">
+      
+      <!-- Cabeçalho do Modal -->
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-slate-900/80">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-100">Respostas Rápidas</h3>
+            <p class="text-[11px] text-slate-400">Selecione uma resposta pré-definida para inserir no chat</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeQuickRepliesModal()" class="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Lista de Respostas Rápidas -->
+      <div class="p-4 overflow-y-auto space-y-2.5 custom-scrollbar max-h-[60vh]">
+        
+        <!-- Categoria: Atendimento Inicial -->
+        <div class="text-[10px] font-black uppercase tracking-wider text-amber-400/90 px-2 pt-1">👋 Atendimento Inicial</div>
+        
+        <button type="button" onclick="insertQuickReply('Olá! Seja bem-vindo(a). Como posso ajudar você hoje?')" class="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-amber-500/10 border border-white/5 hover:border-amber-500/30 transition-all cursor-pointer group">
+          <div class="text-xs font-semibold text-slate-200 group-hover:text-amber-300">Olá! Seja bem-vindo(a). Como posso ajudar você hoje?</div>
+        </button>
+
+        <button type="button" onclick="insertQuickReply('Olá! Meu nome é atendente do suporte. Em que posso ser útil?')" class="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-amber-500/10 border border-white/5 hover:border-amber-500/30 transition-all cursor-pointer group">
+          <div class="text-xs font-semibold text-slate-200 group-hover:text-amber-300">Olá! Meu nome é atendente do suporte. Em que posso ser útil?</div>
+        </button>
+
+        <!-- Categoria: Em Análise -->
+        <div class="text-[10px] font-black uppercase tracking-wider text-amber-400/90 px-2 pt-3">⏳ Em Análise / Aguarde</div>
+        
+        <button type="button" onclick="insertQuickReply('Um momento, por favor. Estou verificando seu cadastro e pedido em nosso sistema.')" class="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-amber-500/10 border border-white/5 hover:border-amber-500/30 transition-all cursor-pointer group">
+          <div class="text-xs font-semibold text-slate-200 group-hover:text-amber-300">Um momento, por favor. Estou verificando seu cadastro e pedido em nosso sistema.</div>
+        </button>
+
+        <button type="button" onclick="insertQuickReply('Agradeço a paciência! Já estou finalizando a análise da sua solicitação.')" class="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-amber-500/10 border border-white/5 hover:border-amber-500/30 transition-all cursor-pointer group">
+          <div class="text-xs font-semibold text-slate-200 group-hover:text-amber-300">Agradeço a paciência! Já estou finalizando a análise da sua solicitação.</div>
+        </button>
+
+        <!-- Categoria: Solicitação de Dados -->
+        <div class="text-[10px] font-black uppercase tracking-wider text-amber-400/90 px-2 pt-3">📄 Documentos & Comprovantes</div>
+        
+        <button type="button" onclick="insertQuickReply('Por favor, me envie a foto do documento ou comprovante para dar prosseguimento ao atendimento.')" class="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-amber-500/10 border border-white/5 hover:border-amber-500/30 transition-all cursor-pointer group">
+          <div class="text-xs font-semibold text-slate-200 group-hover:text-amber-300">Por favor, me envie a foto do documento ou comprovante para dar prosseguimento ao atendimento.</div>
+        </button>
+
+        <!-- Categoria: Encerramento -->
+        <div class="text-[10px] font-black uppercase tracking-wider text-amber-400/90 px-2 pt-3">✅ Finalização</div>
+        
+        <button type="button" onclick="insertQuickReply('Atendimento concluído com sucesso. Qualquer nova dúvida, estamos à inteira disposição! Obrigado!')" class="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-amber-500/10 border border-white/5 hover:border-amber-500/30 transition-all cursor-pointer group">
+          <div class="text-xs font-semibold text-slate-200 group-hover:text-amber-300">Atendimento concluído com sucesso. Qualquer nova dúvida, estamos à inteira disposição! Obrigado!</div>
+        </button>
+
+      </div>
     </div>
   </div>
 
