@@ -2035,7 +2035,7 @@ function setFileBankFilter(filter) {
 function loadFileBankRecent() {
   const grid = document.getElementById('file-bank-recent-grid');
   if (!grid) return;
-  grid.innerHTML = '<div class="flex items-center justify-center py-6"><div class="animate-spin w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"></div></div>';
+  grid.innerHTML = '<div class="flex items-center justify-center py-6"><div class="animate-spin w-4 h-4 border-2 rounded-full" style="border-color:color-mix(in srgb,var(--color-primary-theme,#6366f1) 30%,transparent);border-top-color:var(--color-primary-theme,#6366f1);"></div></div>';
 
   let url = '/api/files/recent?limit=8';
   if (fileBankFilter === 'current' && selectedChatJid) {
@@ -2112,7 +2112,7 @@ function loadFileBankModal() {
   const nextBtn = document.getElementById('file-bank-next');
   if (!grid) return;
 
-  grid.innerHTML = '<div class="flex items-center justify-center h-40"><div class="animate-spin w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"></div></div>';
+  grid.innerHTML = '<div class="flex items-center justify-center h-40"><div class="animate-spin w-6 h-6 border-2 rounded-full" style="border-color:color-mix(in srgb,var(--color-primary-theme,#6366f1) 30%,transparent);border-top-color:var(--color-primary-theme,#6366f1);"></div></div>';
 
   const q = document.getElementById('file-bank-search-input')?.value || '';
   const params = new URLSearchParams({ q, type: fileBankModalType, page: fileBankModalPage, limit: 20 });
