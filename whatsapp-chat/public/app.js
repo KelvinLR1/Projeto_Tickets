@@ -528,19 +528,22 @@ function checkReadOnlyBanner() {
     if (readOnlyBanner) readOnlyBanner.classList.remove('hidden');
 
     const takeBtnText = document.getElementById('btn-read-only-take-text');
+    const reopenBtn = document.getElementById('btn-read-only-reopen');
     if (inQueue) {
       if (readOnlyText) readOnlyText.textContent = "Modo de leitura (Fila de Espera). Para interagir com este cliente, assuma o atendimento.";
       if (readOnlyTakeBtn) readOnlyTakeBtn.classList.remove('hidden');
       if (takeBtnText) takeBtnText.textContent = "Atender Cliente";
+      if (reopenBtn) reopenBtn.classList.add('hidden');
     } else if (inBot) {
       if (readOnlyText) readOnlyText.textContent = "Modo de leitura (Atendimento automatizado via Bot). Para interagir com este cliente, assuma o atendimento.";
       if (readOnlyTakeBtn) readOnlyTakeBtn.classList.remove('hidden');
       if (takeBtnText) takeBtnText.textContent = "Assumir Atendimento";
+      if (reopenBtn) reopenBtn.classList.add('hidden');
     } else {
-      // Histórico / Finalizado
-      if (readOnlyText) readOnlyText.textContent = "Modo de leitura (Atendimento Finalizado).";
-      if (readOnlyTakeBtn) readOnlyTakeBtn.classList.remove('hidden');
-      if (takeBtnText) takeBtnText.textContent = "Reabrir Atendimento";
+      // Histórico / Finalizado: ocultar "Atender" e mostrar "Reabrir Chamado"
+      if (readOnlyText) readOnlyText.textContent = "Atendimento finalizado. Reabra o chamado para continuar a conversa.";
+      if (readOnlyTakeBtn) readOnlyTakeBtn.classList.add('hidden');
+      if (reopenBtn) reopenBtn.classList.remove('hidden');
     }
   }
 }
@@ -622,6 +625,20 @@ function takeChat(clienteJid) {
   if (currentDrawerJid === clienteJid) {
     openClientInfoDrawer(clienteJid, clientName);
   }
+}
+
+function reopenChat(clienteJid) {
+  if (!currentOperator.id || !clienteJid) return;
+
+  // Usa o mesmo evento take_chat — o servidor já tem a lógica de reabrir atendimentos finalizados
+  socket.emit('take_chat', { cliente_jid: clienteJid, atendente_id: currentOperator.id });
+
+  // Alterna para aba de ativos e abre a conversa
+  switchSidebarTab('active');
+  const chatObj = activeChats.find(c => c.cliente_jid === clienteJid);
+  const clientName = chatObj ? chatObj.cliente_nome : 'Cliente';
+  selectChat(clienteJid, clientName);
+
 }
 
 let isInitialDataLoaded = false;
@@ -1652,15 +1669,15 @@ function appendMessageHTML(msg) {
       const cleanText = msg.texto ? msg.texto.replace('🔒 [NOTA INTERNA] ', '') : '';
       msgDiv.className = 'flex flex-col w-full items-center my-1.5';
       msgDiv.innerHTML = `
-        <div class="w-full max-w-lg rounded-2xl p-3 bg-amber-950/40 border border-amber-500/40 text-amber-100 shadow-xl backdrop-blur-md flex flex-col gap-1 relative group">
-          <div class="flex items-center justify-between border-b border-amber-500/20 pb-1.5 mb-1">
-            <div class="flex items-center gap-1.5 text-amber-400 font-bold text-[11px] uppercase tracking-wider">
+        <div class="w-full max-w-lg rounded-2xl p-3 bg-violet-950/40 border border-violet-500/40 text-violet-100 shadow-xl backdrop-blur-md flex flex-col gap-1 relative group">
+          <div class="flex items-center justify-between border-b border-violet-500/20 pb-1.5 mb-1">
+            <div class="flex items-center gap-1.5 text-violet-400 font-bold text-[11px] uppercase tracking-wider">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <span>Nota Interna da Equipe</span>
             </div>
-            <span class="text-[10px] text-amber-400/80 font-mono">${formattedTime}</span>
+            <span class="text-[10px] text-violet-400/80 font-mono">${formattedTime}</span>
           </div>
-          <p class="whitespace-pre-wrap leading-relaxed text-xs text-amber-100/90 font-medium">${cleanText}</p>
+          <p class="whitespace-pre-wrap leading-relaxed text-xs text-violet-100/90 font-medium">${cleanText}</p>
         </div>
       `;
       messagesContainer.appendChild(msgDiv);
@@ -1827,22 +1844,32 @@ function closeChatOptionsDropdown() {
   }, 190);
 }
 
-// Fechar menu de opções ao clicar fora
+// Fechar menus ao clicar fora (fecha os dois juntos)
 window.addEventListener('click', (e) => {
   const dropdown = document.getElementById('chat-options-dropdown');
+  const filePanel = document.getElementById('file-bank-panel');
   const btn = document.getElementById('btn-chat-options');
-  if (dropdown && !dropdown.classList.contains('hidden') && !dropdown.contains(e.target) && (!btn || !btn.contains(e.target))) {
-    closeChatOptionsDropdown();
+
+  const clickedInsideMenu = (dropdown && dropdown.contains(e.target)) ||
+                            (filePanel && filePanel.contains(e.target)) ||
+                            (btn && btn.contains(e.target));
+
+  if (!clickedInsideMenu) {
+    if (dropdown && !dropdown.classList.contains('hidden')) closeChatOptionsDropdown();
+    if (filePanel && !filePanel.classList.contains('hidden')) closeFileBankPanel();
   }
 });
 
 function selectChatOption(type) {
-  closeChatOptionsDropdown();
-
   if (type === 'quick_reply') {
+    closeChatOptionsDropdown();
     openQuickRepliesModal();
   } else if (type === 'internal_note') {
+    closeChatOptionsDropdown();
     toggleInternalNoteMode();
+  } else if (type === 'file_bank') {
+    // Mantém o menu principal ABERTO e mostra o segundo card ao lado
+    openFileBankPanel();
   }
 }
 
@@ -1876,6 +1903,254 @@ function insertQuickReply(text) {
   chatInput.focus();
 }
 
+// ==============================================================================
+// 📁 BANCO DE ARQUIVOS
+// ==============================================================================
+
+let fileBankFilter = 'all'; // 'all' | 'current'
+let fileBankModalType = 'all';
+let fileBankModalPage = 1;
+let fileBankSearchTimer = null;
+
+// Helpers de tipo de arquivo
+function getFileTypeInfo(ext) {
+  const images = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+  const videos = ['mp4', 'webm', 'mov', 'avi', 'mkv'];
+  const audios = ['mp3', 'ogg', 'wav', 'aac', 'm4a', 'opus'];
+  const docs   = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'];
+  if (images.includes(ext)) return { type: 'image', color: '#22d3ee', bg: 'rgba(6,182,212,0.15)', emoji: '🖼️' };
+  if (videos.includes(ext)) return { type: 'video', color: '#a78bfa', bg: 'rgba(139,92,246,0.15)', emoji: '🎥' };
+  if (audios.includes(ext)) return { type: 'audio', color: '#34d399', bg: 'rgba(52,211,153,0.15)', emoji: '🎵' };
+  if (docs.includes(ext))   return { type: 'doc',   color: '#fb923c', bg: 'rgba(251,146,60,0.15)', emoji: '📄' };
+  return { type: 'other', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', emoji: '📎' };
+}
+
+function renderFileBankCard(file, compact = false) {
+  const info = getFileTypeInfo(file.ext);
+  const name = file.filename.replace(/^media-\d+-\d+\./, 'arquivo.');
+  const date = file.timestamp ? new Date(file.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+  const isImage = info.type === 'image';
+
+  if (compact) {
+    // Card compacto para o painel lateral (lista)
+    return `
+      <div class="file-bank-card flex items-center gap-3 p-2.5" onclick="fileBankSendFile('${file.url}', '${file.filename}')" title="${file.caption || file.filename}">
+        <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden" style="background:${info.bg};border:1px solid ${info.color}22;">
+          ${isImage
+            ? `<img src="${file.url}" class="w-full h-full object-cover rounded-lg" onerror="this.style.display='none';this.nextSibling.style.display='flex';"><div class="hidden w-full h-full items-center justify-center text-lg">${info.emoji}</div>`
+            : `<span class="text-xl">${info.emoji}</span>`
+          }
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-semibold text-slate-200 truncate">${name}</p>
+          <p class="text-[10px] text-slate-500">${date} • <span style="color:${info.color}">${file.ext.toUpperCase()}</span></p>
+        </div>
+        <button onclick="event.stopPropagation();fileBankOpenFile('${file.url}')" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all shrink-0" title="Abrir">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </button>
+      </div>`;
+  } else {
+    // Card grid para o modal
+    return `
+      <div class="file-bank-card flex flex-col" onclick="fileBankSendFile('${file.url}', '${file.filename}')" title="${file.caption || file.filename}">
+        <div class="relative w-full aspect-square flex items-center justify-center overflow-hidden" style="background:${info.bg};">
+          ${isImage
+            ? `<img src="${file.url}" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextSibling.style.display='flex';"><div class="hidden w-full h-full items-center justify-center text-4xl">${info.emoji}</div>`
+            : `<span class="text-4xl">${info.emoji}</span>`
+          }
+          <div class="absolute top-2 right-2">
+            <span class="file-bank-ext-badge" style="background:${info.bg};color:${info.color};border:1px solid ${info.color}44;">${file.ext}</span>
+          </div>
+          <button onclick="event.stopPropagation();fileBankOpenFile('${file.url}')" class="absolute bottom-2 right-2 w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-all opacity-0 group-hover:opacity-100" title="Abrir">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </button>
+        </div>
+        <div class="p-2.5">
+          <p class="text-[11px] font-semibold text-slate-200 truncate">${name}</p>
+          <p class="text-[9px] text-slate-500 mt-0.5">${date}</p>
+          ${file.caption ? `<p class="text-[10px] text-slate-400 truncate mt-0.5">${file.caption}</p>` : ''}
+        </div>
+      </div>`;
+  }
+}
+
+// Abre/fecha o arquivo no browser
+function fileBankOpenFile(url) {
+  window.open(url, '_blank');
+}
+
+// Insere o arquivo na caixa de envio como mensagem com anexo
+function fileBankSendFile(url, filename) {
+  // Fecha os paineis
+  closeFileBankPanel();
+  closeFileBankModal();
+  // Coloca o link no campo de texto para o atendente confirmar o envio
+  if (chatInput) {
+    chatInput.value = url;
+    adjustChatInputHeight();
+    chatInput.focus();
+  }
+}
+
+// ----------- PAINEL DE RECENTES -----------
+
+function openFileBankPanel() {
+  const panel = document.getElementById('file-bank-panel');
+  if (!panel) return;
+
+  const isHidden = panel.classList.contains('hidden');
+  if (isHidden) {
+    panel.classList.remove('hidden', 'animate-popover-out');
+    void panel.offsetWidth;
+    panel.classList.add('animate-popover-in');
+  } else {
+    closeFileBankPanel();
+    return;
+  }
+
+  loadFileBankRecent();
+}
+
+function closeFileBankPanel() {
+  const panel = document.getElementById('file-bank-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+
+  panel.classList.remove('animate-popover-in');
+  panel.classList.add('animate-popover-out');
+
+  setTimeout(() => {
+    panel.classList.add('hidden');
+    panel.classList.remove('animate-popover-out');
+  }, 190);
+}
+
+function setFileBankFilter(filter) {
+  fileBankFilter = filter;
+  document.querySelectorAll('.file-bank-filter-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`file-bank-filter-${filter}`);
+  if (btn) btn.classList.add('active');
+  loadFileBankRecent();
+}
+
+function loadFileBankRecent() {
+  const grid = document.getElementById('file-bank-recent-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div class="flex items-center justify-center py-6"><div class="animate-spin w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"></div></div>';
+
+  let url = '/api/files/recent?limit=8';
+  if (fileBankFilter === 'current' && selectedChatJid) {
+    url += `&cliente_jid=${encodeURIComponent(selectedChatJid)}`;
+  }
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      const files = data.files || [];
+      if (files.length === 0) {
+        grid.innerHTML = '<div class="flex flex-col items-center justify-center py-6 text-slate-500 text-[11px] gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="opacity-30"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>Nenhum arquivo encontrado</p></div>';
+        return;
+      }
+      // Lista compacta de itens
+      grid.innerHTML = files.map(f => renderFileBankCard(f, true)).join('');
+    })
+    .catch(() => {
+      grid.innerHTML = '<div class="text-center text-xs text-red-400 py-4">Erro ao carregar arquivos.</div>';
+    });
+}
+
+// ----------- MODAL DE BUSCA COMPLETA -----------
+
+function openFileBankModal() {
+  closeFileBankPanel();
+  const modal = document.getElementById('modal-file-bank');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  // Resetar estado
+  fileBankModalType = 'all';
+  fileBankModalPage = 1;
+  const input = document.getElementById('file-bank-search-input');
+  if (input) input.value = '';
+  document.querySelectorAll('.file-bank-type-btn').forEach(b => b.classList.remove('active'));
+  const allBtn = document.querySelector('.file-bank-type-btn[data-type="all"]');
+  if (allBtn) allBtn.classList.add('active');
+
+  loadFileBankModal();
+}
+
+function closeFileBankModal() {
+  const modal = document.getElementById('modal-file-bank');
+  if (modal) modal.classList.add('hidden');
+}
+
+function setFileBankTypeFilter(type) {
+  fileBankModalType = type;
+  fileBankModalPage = 1;
+  document.querySelectorAll('.file-bank-type-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.file-bank-type-btn[data-type="${type}"]`);
+  if (btn) btn.classList.add('active');
+  loadFileBankModal();
+}
+
+function onFileBankSearch() {
+  clearTimeout(fileBankSearchTimer);
+  fileBankModalPage = 1;
+  fileBankSearchTimer = setTimeout(() => loadFileBankModal(), 350);
+}
+
+function fileBankChangePage(delta) {
+  fileBankModalPage = Math.max(1, fileBankModalPage + delta);
+  loadFileBankModal();
+}
+
+function loadFileBankModal() {
+  const grid = document.getElementById('file-bank-modal-grid');
+  const total = document.getElementById('file-bank-modal-total');
+  const pagination = document.getElementById('file-bank-pagination');
+  const pageInfo = document.getElementById('file-bank-page-info');
+  const prevBtn = document.getElementById('file-bank-prev');
+  const nextBtn = document.getElementById('file-bank-next');
+  if (!grid) return;
+
+  grid.innerHTML = '<div class="flex items-center justify-center h-40"><div class="animate-spin w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"></div></div>';
+
+  const q = document.getElementById('file-bank-search-input')?.value || '';
+  const params = new URLSearchParams({ q, type: fileBankModalType, page: fileBankModalPage, limit: 20 });
+
+  fetch(`/api/files/search?${params}`)
+    .then(r => r.json())
+    .then(data => {
+      const files = data.files || [];
+      const totalCount = data.total || 0;
+      const totalPages = Math.ceil(totalCount / 20);
+
+      if (total) total.textContent = `${totalCount} arquivo${totalCount !== 1 ? 's' : ''} encontrado${totalCount !== 1 ? 's' : ''}`;
+
+      if (files.length === 0) {
+        grid.innerHTML = '<div class="flex flex-col items-center justify-center h-40 gap-3 text-slate-500 text-xs"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="opacity-30"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><p>Nenhum arquivo encontrado</p></div>';
+        if (pagination) pagination.classList.add('hidden');
+        return;
+      }
+
+      // Grid responsivo: 2 cols em telas pequenas, 3 em médias, 4 em grandes
+      grid.innerHTML = `<div class="grid grid-cols-3 sm:grid-cols-4 gap-3">${files.map(f => renderFileBankCard(f, false)).join('')}</div>`;
+
+      // Paginação
+      if (totalPages > 1) {
+        if (pagination) pagination.classList.remove('hidden');
+        if (pageInfo) pageInfo.textContent = `Página ${fileBankModalPage} de ${totalPages} (${totalCount} arquivos)`;
+        if (prevBtn) prevBtn.disabled = fileBankModalPage <= 1;
+        if (nextBtn) nextBtn.disabled = fileBankModalPage >= totalPages;
+      } else {
+        if (pagination) pagination.classList.add('hidden');
+      }
+    })
+    .catch(() => {
+      grid.innerHTML = '<div class="text-center text-xs text-red-400 py-8">Erro ao buscar arquivos.</div>';
+    });
+}
+
+
 function toggleInternalNoteMode() {
   isInternalNoteMode = !isInternalNoteMode;
   const container = document.getElementById('chat-input-container');
@@ -1887,14 +2162,14 @@ function toggleInternalNoteMode() {
   const existingBanner = document.getElementById('internal-mode-banner');
 
   if (isInternalNoteMode) {
-    // Footer: fundo âmbar forte + borda dourada
+    // Footer: fundo violeta escuro + borda púrpura
     if (footer) {
-      footer.style.cssText += '; background: linear-gradient(to top, rgba(120,53,15,0.6) 0%, rgba(92,40,5,0.3) 100%) !important; border-top: 2px solid rgba(245,158,11,0.8) !important;';
+      footer.style.cssText += '; background: linear-gradient(to top, rgba(76,29,149,0.55) 0%, rgba(59,7,100,0.3) 100%) !important; border-top: 2px solid rgba(167,139,250,0.8) !important;';
     }
 
-    // Container do input: glow âmbar
+    // Container do input: glow violeta
     if (container) {
-      container.style.cssText += '; border: 1.5px solid rgba(245,158,11,0.8) !important; background-color: rgba(120,53,15,0.4) !important; box-shadow: 0 0 32px rgba(245,158,11,0.35), inset 0 0 0 1px rgba(245,158,11,0.3) !important;';
+      container.style.cssText += '; border: 1.5px solid rgba(167,139,250,0.8) !important; background-color: rgba(76,29,149,0.35) !important; box-shadow: 0 0 32px rgba(167,139,250,0.3), inset 0 0 0 1px rgba(167,139,250,0.25) !important;';
     }
 
     // Banner de aviso: flutua acima do input com z-index ABAIXO do dropdown de opções
@@ -1902,7 +2177,7 @@ function toggleInternalNoteMode() {
       const banner = document.createElement('div');
       banner.id = 'internal-mode-banner';
       // z-index: 15 — fica acima do footer mas ABAIXO do dropdown de opções (z-50 = 50)
-      banner.style.cssText = 'position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; background:rgba(120,53,15,0.92); backdrop-filter:blur(10px); border:1px solid rgba(245,158,11,0.6); border-radius:8px; padding:4px 14px; font-size:9px; font-weight:900; color:#fbbf24; letter-spacing:0.08em; text-transform:uppercase; z-index:15; pointer-events:none; white-space:nowrap; box-shadow:0 -2px 16px rgba(245,158,11,0.25);';
+      banner.style.cssText = 'position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; background:rgba(59,7,100,0.92); backdrop-filter:blur(10px); border:1px solid rgba(167,139,250,0.6); border-radius:8px; padding:4px 14px; font-size:9px; font-weight:900; color:#c4b5fd; letter-spacing:0.08em; text-transform:uppercase; z-index:15; pointer-events:none; white-space:nowrap; box-shadow:0 -2px 16px rgba(167,139,250,0.2);';
       banner.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Nota Interna — não será enviada ao cliente';
       container.appendChild(banner);
     }
@@ -1910,7 +2185,7 @@ function toggleInternalNoteMode() {
     if (badge) badge.classList.remove('hidden');
     if (chatInput) {
       chatInput.placeholder = '🔒 Nota interna — visível apenas para atendentes...';
-      chatInput.style.color = '#fcd34d';
+      chatInput.style.color = '#c4b5fd';
     }
   } else {
     // Reverte tudo

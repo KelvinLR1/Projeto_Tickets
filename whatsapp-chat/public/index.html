@@ -235,11 +235,17 @@
           <div id="chat-read-only-banner" class="hidden absolute inset-0 backdrop-blur-md flex items-center justify-between px-6 z-20">
             <div class="flex items-center gap-2.5">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="animate-pulse"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <p class="text-xs font-semibold">Modo de leitura. Para interagir com este cliente, assuma o atendimento.</p>
+              <p class="text-xs font-semibold" id="chat-read-only-text">Modo de leitura. Para interagir com este cliente, assuma o atendimento.</p>
             </div>
-            <button id="btn-read-only-take" onclick="takeChat(selectedChatJid)" class="flex items-center justify-center px-5 h-9 btn-accent-theme text-[11px] font-bold rounded-xl transition-all duration-200 active:scale-95 cursor-pointer">
-              Atender Cliente
-            </button>
+            <div class="flex items-center gap-2">
+              <button id="btn-read-only-take" onclick="takeChat(selectedChatJid)" class="flex items-center justify-center gap-1.5 px-5 h-9 btn-accent-theme text-[11px] font-bold rounded-xl transition-all duration-200 active:scale-95 cursor-pointer">
+                <span id="btn-read-only-take-text">Atender Cliente</span>
+              </button>
+              <button id="btn-read-only-reopen" onclick="reopenChat(selectedChatJid)" class="hidden flex items-center justify-center gap-1.5 px-5 h-9 text-[11px] font-bold rounded-xl transition-all duration-200 active:scale-95 cursor-pointer bg-emerald-500/15 hover:bg-emerald-500 border border-emerald-500/30 hover:border-transparent text-emerald-400 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                Reabrir Chamado
+              </button>
+            </div>
           </div>
           
           <!-- Banner de Resposta (Escondido por padrão) -->
@@ -313,7 +319,67 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50 group-hover/item:text-indigo-400 group-hover/item:translate-x-0.5 transition-all"><path d="m9 18 6-6-6-6"/></svg>
                       </button>
 
+                      <!-- Opção 3: Banco de Arquivos -->
+                      <button type="button" onclick="selectChatOption('file_bank')" style="background-color: var(--color-card, #1e293b) !important; border: 1px solid var(--border-color, rgba(255,255,255,0.1)) !important; border-radius: 12px !important;" class="w-full flex items-center justify-between p-2.5 text-xs font-semibold hover:border-cyan-500/60 transition-all cursor-pointer group/item">
+                        <div class="flex items-center gap-3">
+                          <div style="background-color: rgba(6,182,212,0.15) !important; border: 1px solid rgba(6,182,212,0.4) !important;" class="w-8 h-8 rounded-xl text-cyan-400 flex items-center justify-center shrink-0 shadow-sm group-hover/item:scale-105 transition-transform">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+                          </div>
+                          <div class="flex flex-col text-left">
+                            <span class="font-bold text-xs group-hover/item:text-cyan-300">Banco de Arquivos</span>
+                            <span class="text-[10px] opacity-70 font-normal">Arquivos enviados recentemente</span>
+                          </div>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50 group-hover/item:text-cyan-400 group-hover/item:translate-x-0.5 transition-all"><path d="m9 18 6-6-6-6"/></svg>
+                      </button>
+
                     </div>
+
+                    <!-- 📁 Banco de Arquivos — Segundo Card (Submenu) -->
+                    <div id="file-bank-panel"
+                      style="
+                        background-color: var(--color-background, #0f172a) !important;
+                        border: 2px solid rgba(6,182,212,0.45) !important;
+                        border-radius: 16px !important;
+                        color: var(--color-foreground, #f8fafc) !important;
+                        box-shadow: 0 20px 50px rgba(0,0,0,0.85), 0 0 30px rgba(6,182,212,0.08) !important;
+                        min-width: 280px;
+                        max-width: 300px;
+                      "
+                      class="absolute bottom-full mb-3 left-[calc(100%+10px)] z-50 hidden p-2.5 flex flex-col gap-0 origin-bottom-left select-none">
+
+                      <!-- Header do segundo card -->
+                      <div style="border-bottom: 1px solid rgba(6,182,212,0.15) !important;" class="px-2.5 pb-2.5 mb-2 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <div style="background:rgba(6,182,212,0.15);border:1px solid rgba(6,182,212,0.35);border-radius:10px;" class="w-6 h-6 flex items-center justify-center shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                          </div>
+                          <span class="text-[11px] font-bold" style="color:#22d3ee;">Enviados Recentemente</span>
+                        </div>
+                        <button onclick="closeFileBankPanel()" class="w-5 h-5 flex items-center justify-center rounded-md opacity-40 hover:opacity-100 transition-opacity text-slate-400 hover:text-white">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+
+                      <!-- Lista de arquivos recentes -->
+                      <div id="file-bank-recent-grid" class="flex flex-col gap-1" style="max-height: 260px; overflow-y: auto;">
+                        <div class="flex items-center justify-center py-8 text-slate-500 text-xs">
+                          <div class="animate-spin w-4 h-4 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"></div>
+                        </div>
+                      </div>
+
+                      <!-- Separador + botão Ver Todos -->
+                      <div style="border-top: 1px solid rgba(255,255,255,0.06);" class="mt-2 pt-2">
+                        <button onclick="openFileBankModal()" style="background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.3);border-radius:10px;color:#22d3ee;" class="w-full flex items-center justify-between px-3 py-2.5 text-[11px] font-bold transition-all hover:bg-cyan-500/20 cursor-pointer">
+                          <div class="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            Ver Todos os Arquivos
+                          </div>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="opacity-60"><path d="m9 18 6-6-6-6"/></svg>
+                        </button>
+                      </div>
+                    </div>
+
                   </div>
 
                   <!-- Badge Indicadora do Modo Nota Interna (Oculta por padrão) -->
@@ -931,10 +997,66 @@
   <!-- Container de Notificações Toast (Flutuante) -->
   <div id="toast-container"></div>
 
-  <!-- Script do Socket.io Client -->
+
+  <!-- ========================================================================== -->
+  <!-- 📁 BANCO DE ARQUIVOS — Modal de Busca Completa                             -->
+  <!-- ========================================================================== -->
+  <div id="modal-file-bank" class="hidden fixed inset-0 z-[300] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-md" onclick="closeFileBankModal()"></div>
+    <div class="relative w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl overflow-hidden" style="background:linear-gradient(160deg,#0d1526 0%,#0a1020 100%);border:1px solid rgba(6,182,212,0.25);box-shadow:0 30px 80px rgba(0,0,0,0.8);">
+
+      <!-- Header do Modal -->
+      <div class="flex items-center justify-between px-6 py-4 border-b shrink-0" style="border-color:rgba(6,182,212,0.15);">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:rgba(6,182,212,0.15);border:1px solid rgba(6,182,212,0.35);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <div>
+            <p class="text-sm font-bold text-white">Buscar Arquivos</p>
+            <p id="file-bank-modal-total" class="text-[10px] text-slate-400">Todos os arquivos enviados</p>
+          </div>
+        </div>
+        <button onclick="closeFileBankModal()" class="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all active:scale-90">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Barra de pesquisa + filtros de tipo -->
+      <div class="px-6 py-3 border-b shrink-0 space-y-3" style="border-color:rgba(255,255,255,0.05);">
+        <!-- Campo de busca -->
+        <div class="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="file-bank-search-input" type="text" placeholder="Buscar por nome, legenda ou contato..." oninput="onFileBankSearch()" class="w-full pl-9 pr-4 h-10 rounded-xl text-sm bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 transition-all">
+        </div>
+        <!-- Filtros de tipo -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <button onclick="setFileBankTypeFilter('all')" data-type="all" class="file-bank-type-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all">Todos</button>
+          <button onclick="setFileBankTypeFilter('image')" data-type="image" class="file-bank-type-btn px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all">🖼 Imagens</button>
+          <button onclick="setFileBankTypeFilter('video')" data-type="video" class="file-bank-type-btn px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all">🎬 Vídeos</button>
+          <button onclick="setFileBankTypeFilter('audio')" data-type="audio" class="file-bank-type-btn px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all">🎵 Áudios</button>
+          <button onclick="setFileBankTypeFilter('doc')" data-type="doc" class="file-bank-type-btn px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all">📄 Documentos</button>
+        </div>
+      </div>
+
+      <!-- Grid de resultados -->
+      <div id="file-bank-modal-grid" class="flex-1 overflow-y-auto p-5 custom-scrollbar">
+        <div class="flex items-center justify-center h-40 text-slate-500 text-xs">Carregando...</div>
+      </div>
+
+      <!-- Paginação -->
+      <div id="file-bank-pagination" class="hidden px-6 py-3 border-t flex items-center justify-between text-xs shrink-0" style="border-color:rgba(255,255,255,0.05);">
+        <span id="file-bank-page-info" class="text-slate-400"></span>
+        <div class="flex items-center gap-2">
+          <button id="file-bank-prev" onclick="fileBankChangePage(-1)" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed">← Anterior</button>
+          <button id="file-bank-next" onclick="fileBankChangePage(1)" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed">Próximo →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   
   <!-- Lógica Javascript -->
-  <script src="app.js?v=4.2"></script>
+  <script src="app.js?v=4.3"></script>
 </body>
 </html>

@@ -75,6 +75,108 @@ app.post('/api/upload', upload.array('attachments', 10), (req, res) => {
   res.json({ status: 'success', files: uploadedFiles });
 });
 
+// ==============================================================================
+// 📁 BANCO DE ARQUIVOS — Listagem e Busca de Arquivos Enviados
+// ==============================================================================
+
+// Retorna os arquivos enviados mais recentes (padrão: 12)
+app.get('/api/files/recent', (req, res) => {
+  const limit = parseInt(req.query.limit) || 12;
+  const clienteJid = req.query.cliente_jid || null; // opcional: filtrar por conversa
+
+  let query = `
+    SELECT id, cliente_jid, remetente, texto, timestamp
+    FROM tabela_mensagens
+    WHERE texto LIKE '[ANEXO]%'
+  `;
+  const params = [];
+
+  if (clienteJid) {
+    query += ` AND cliente_jid = ?`;
+    params.push(clienteJid);
+  }
+
+  query += ` ORDER BY timestamp DESC LIMIT ?`;
+  params.push(limit);
+
+  db.all(query, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const files = rows.map(row => {
+      const match = row.texto.match(/\[ANEXO\]\s*(\/uploads\/[^\s\n]+)/);
+      const url = match ? match[1] : null;
+      const caption = row.texto.replace(/\[ANEXO\]\s*\/uploads\/[^\s\n]+\s*/g, '').trim();
+      const filename = url ? url.split('/').pop() : '';
+      const ext = filename.split('.').pop().toLowerCase();
+      return {
+        id: row.id,
+        url,
+        filename,
+        ext,
+        caption,
+        cliente_jid: row.cliente_jid,
+        remetente: row.remetente,
+        timestamp: row.timestamp
+      };
+    }).filter(f => f.url);
+
+    res.json({ files });
+  });
+});
+
+// Busca arquivos com filtro de texto e tipo
+app.get('/api/files/search', (req, res) => {
+  const { q = '', type = 'all', page = 1, limit = 20 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  // Tipos agrupados
+  const typeFilters = {
+    image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'],
+    video: ['mp4', 'webm', 'mov', 'avi', 'mkv'],
+    audio: ['mp3', 'ogg', 'wav', 'aac', 'm4a', 'opus'],
+    doc: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv']
+  };
+
+  db.all(
+    `SELECT id, cliente_jid, remetente, texto, timestamp
+     FROM tabela_mensagens
+     WHERE texto LIKE '[ANEXO]%'
+     ORDER BY timestamp DESC`,
+    [],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      let files = rows.map(row => {
+        const match = row.texto.match(/\[ANEXO\]\s*(\/uploads\/[^\s\n]+)/);
+        const url = match ? match[1] : null;
+        const caption = row.texto.replace(/\[ANEXO\]\s*\/uploads\/[^\s\n]+\s*/g, '').trim();
+        const filename = url ? url.split('/').pop() : '';
+        const ext = filename.split('.').pop().toLowerCase();
+        return { id: row.id, url, filename, ext, caption, cliente_jid: row.cliente_jid, remetente: row.remetente, timestamp: row.timestamp };
+      }).filter(f => f.url);
+
+      // Filtro por tipo
+      if (type !== 'all' && typeFilters[type]) {
+        files = files.filter(f => typeFilters[type].includes(f.ext));
+      }
+
+      // Filtro por texto (nome do arquivo ou legenda)
+      if (q.trim()) {
+        const search = q.trim().toLowerCase();
+        files = files.filter(f =>
+          f.filename.toLowerCase().includes(search) ||
+          f.caption.toLowerCase().includes(search) ||
+          f.cliente_jid.toLowerCase().includes(search)
+        );
+      }
+
+      const total = files.length;
+      const paginated = files.slice(offset, offset + parseInt(limit));
+      res.json({ files: paginated, total, page: parseInt(page), limit: parseInt(limit) });
+    }
+  );
+});
+
 app.post('/api/disconnect', async (req, res) => {
   try {
     console.log('🔌 Solicitação de desconexão recebida via API...');
