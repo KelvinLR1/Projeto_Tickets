@@ -265,15 +265,21 @@ const tabIndicator = document.getElementById('tab-indicator');
 const tabsContainer = document.getElementById('tabs-container');
 
 function updateTabIndicator(activeBtn) {
-  if (!tabIndicator || !activeBtn || !tabsContainer) return;
-  const containerRect = tabsContainer.getBoundingClientRect();
+  const indicator = document.getElementById('tab-indicator');
+  const container = document.getElementById('tabs-container');
+  if (!indicator || !activeBtn || !container) return;
+
+  const containerRect = container.getBoundingClientRect();
   const btnRect = activeBtn.getBoundingClientRect();
   
   const relativeLeft = btnRect.left - containerRect.left;
   const width = btnRect.width;
   
-  tabIndicator.style.left = `${relativeLeft}px`;
-  tabIndicator.style.width = `${width}px`;
+  if (width > 0) {
+    indicator.style.left = `${relativeLeft}px`;
+    indicator.style.width = `${width}px`;
+    indicator.classList.remove('opacity-0', 'hidden');
+  }
 }
 
 function updateActiveFilterIndicator(activeBtn) {
@@ -295,11 +301,13 @@ function updateActiveFilterIndicator(activeBtn) {
   const height = btnRect.height;
   const relativeTop = btnRect.top - containerRect.top;
   
-  indicator.style.left = `${relativeLeft}px`;
-  indicator.style.width = `${width}px`;
-  indicator.style.top = `${relativeTop}px`;
-  indicator.style.height = `${height}px`;
-  indicator.classList.remove('opacity-0');
+  if (width > 0) {
+    indicator.style.left = `${relativeLeft}px`;
+    indicator.style.width = `${width}px`;
+    indicator.style.top = `${relativeTop}px`;
+    indicator.style.height = `${height}px`;
+    indicator.classList.remove('opacity-0');
+  }
 }
 
 function switchSidebarTab(tab) {
@@ -493,15 +501,46 @@ socket.on('queue_list', (rows) => {
 });
 
 function checkReadOnlyBanner() {
-  if (selectedChatJid) {
-    const isActive = activeChats.some(c => c.cliente_jid === selectedChatJid);
-    const readOnlyBanner = document.getElementById('chat-read-only-banner');
-    if (readOnlyBanner) {
-      if (isActive) {
-        readOnlyBanner.classList.add('hidden');
-      } else {
-        readOnlyBanner.classList.remove('hidden');
-      }
+  if (!selectedChatJid) return;
+
+  const headerActions = document.getElementById('chat-header-actions');
+  const inputWrapper = document.getElementById('chat-input-wrapper');
+  const inputContainer = document.getElementById('chat-input-container');
+  const readOnlyBanner = document.getElementById('chat-read-only-banner');
+  const readOnlyText = document.getElementById('chat-read-only-text');
+  const readOnlyTakeBtn = document.getElementById('btn-read-only-take');
+
+  const isActive = activeChats.some(c => c.cliente_jid === selectedChatJid);
+  const inQueue = queueChats.some(c => c.cliente_jid === selectedChatJid);
+  const inBot = botChats.some(c => c.cliente_jid === selectedChatJid);
+
+  if (isActive) {
+    // Atendimento Ativo: exibe ações do cabeçalho e campo de resposta; oculta o banner de modo leitura
+    if (headerActions) headerActions.classList.remove('hidden');
+    if (inputWrapper) inputWrapper.classList.remove('hidden');
+    if (inputContainer) inputContainer.classList.remove('hidden');
+    if (readOnlyBanner) readOnlyBanner.classList.add('hidden');
+  } else {
+    // Atendimento Não Ativo (Fila, Bot, Histórico): oculta ações do cabeçalho e caixa de entrada; exibe modo leitura
+    if (headerActions) headerActions.classList.add('hidden');
+    if (inputWrapper) inputWrapper.classList.add('hidden');
+    if (inputContainer) inputContainer.classList.add('hidden');
+    if (readOnlyBanner) readOnlyBanner.classList.remove('hidden');
+
+    const takeBtnText = document.getElementById('btn-read-only-take-text');
+    if (inQueue) {
+      if (readOnlyText) readOnlyText.textContent = "Modo de leitura (Fila de Espera). Para interagir com este cliente, assuma o atendimento.";
+      if (readOnlyTakeBtn) readOnlyTakeBtn.classList.remove('hidden');
+      if (takeBtnText) takeBtnText.textContent = "Atender Cliente";
+    } else if (inBot) {
+      if (readOnlyText) readOnlyText.textContent = "Modo de leitura (Atendimento automatizado via Bot). Para interagir com este cliente, assuma o atendimento.";
+      if (readOnlyTakeBtn) readOnlyTakeBtn.classList.remove('hidden');
+      if (takeBtnText) takeBtnText.textContent = "Assumir Atendimento";
+    } else {
+      // Histórico / Finalizado
+      if (readOnlyText) readOnlyText.textContent = "Modo de leitura (Atendimento Finalizado).";
+      if (readOnlyTakeBtn) readOnlyTakeBtn.classList.remove('hidden');
+      if (takeBtnText) takeBtnText.textContent = "Reabrir Atendimento";
     }
   }
 }
@@ -585,6 +624,25 @@ function takeChat(clienteJid) {
   }
 }
 
+let isInitialDataLoaded = false;
+
+function dismissInitLoader() {
+  if (isInitialDataLoaded) return;
+  isInitialDataLoaded = true;
+
+  requestAnimationFrame(() => {
+    const mainEl = document.getElementById('whatsapp-app-main');
+    if (mainEl) {
+      mainEl.classList.remove('opacity-0');
+    }
+    const loader = document.getElementById('whatsapp-init-loader');
+    if (loader) {
+      loader.classList.add('opacity-0', 'pointer-events-none');
+      setTimeout(() => loader.remove(), 350);
+    }
+  });
+}
+
 // Recebe Lista de Conversas Ativas
 socket.on('active_chats_list', (rows) => {
   activeChats = rows;
@@ -592,6 +650,7 @@ socket.on('active_chats_list', (rows) => {
   renderActiveChats();
   checkReadOnlyBanner();
   refreshClientInfoDrawerIfOpen();
+  dismissInitLoader();
 });
 
 // Recebe Lista de Conversas do Histórico
@@ -1491,14 +1550,15 @@ function selectChat(jid, name) {
   // 2. Atualizar visual dos cards na sidebar de forma fluida (sem recriar DOM)
   updateActiveCardSelection(jid);
 
-  // 2. Animar transição de saída da área de chat se já houver uma conversa aberta
+  // 3. Animar transição de saída da área de chat se já houver uma conversa aberta
   if (isChanging && activeChatArea && !activeChatArea.classList.contains('hidden')) {
+    activeChatArea.classList.remove('chat-switch-in');
     activeChatArea.classList.add('chat-switch-out');
   }
 
   setTimeout(() => {
     emptyChatState.classList.add('hidden');
-    activeChatArea.classList.remove('hidden', 'opacity-0');
+    activeChatArea.classList.remove('hidden');
     
     chatClientName.textContent = name;
     chatClientJid.textContent = jid.split('@')[0];
@@ -1539,15 +1599,11 @@ socket.on('chat_history', ({ cliente_jid, messages }) => {
   
   scrollToBottom();
 
-  // Executa animação de entrada do novo chat selecionado
+  // Executa animação de entrada graciosa e fluida do novo chat selecionado
   if (activeChatArea) {
     activeChatArea.classList.remove('chat-switch-out');
-    activeChatArea.classList.remove('chat-switch-in');
-    void activeChatArea.offsetWidth; // Force reflow
+    void activeChatArea.offsetWidth; // Force reflow para reinício do keyframe
     activeChatArea.classList.add('chat-switch-in');
-    setTimeout(() => {
-      activeChatArea.classList.remove('chat-switch-in');
-    }, 300);
   }
 });
 
@@ -1638,9 +1694,46 @@ function appendMessageHTML(msg) {
       `;
     }
 
-    // Renderizador de conteúdo (áudio de voz vs texto)
+    // Renderizador de conteúdo (anexo, áudio de voz vs texto)
     let contentHTML = `<p class="whitespace-pre-wrap leading-relaxed">${textToShow}</p>`;
-    if (msg.texto && (msg.texto.startsWith('data:audio/') || (msg.texto.startsWith('http') && (msg.texto.endsWith('.mp3') || msg.texto.endsWith('.ogg') || msg.texto.endsWith('.m4a') || msg.texto.endsWith('.webm'))))) {
+    
+    if (textToShow && textToShow.startsWith('[ANEXO] ')) {
+      // Parser para [ANEXO] url \n legenda
+      const parts = textToShow.substring(8).split('\n');
+      const url = parts[0].trim();
+      const caption = parts.slice(1).join('\n').trim();
+      
+      const ext = url.split('.').pop().toLowerCase();
+      const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+      const isVideo = ['mp4', 'webm', 'ogg'].includes(ext);
+      
+      let mediaHtml = '';
+      if (isImage) {
+        mediaHtml = `<img src="${url}" class="max-w-[240px] md:max-w-xs max-h-64 rounded-lg object-contain cursor-pointer shadow-md mb-1 hover:brightness-110 transition-all" onclick="window.open('${url}', '_blank')" />`;
+      } else if (isVideo) {
+        mediaHtml = `<video src="${url}" controls class="max-w-[240px] md:max-w-xs max-h-64 rounded-lg shadow-md mb-1"></video>`;
+      } else {
+        const filename = url.split('/').pop();
+        mediaHtml = `
+          <a href="${url}" target="_blank" download class="flex items-center gap-2 p-2.5 rounded-lg bg-black/20 hover:bg-black/30 border border-white/10 transition-all text-slate-200 mb-1 no-underline max-w-[240px] md:max-w-xs cursor-pointer group/file">
+            <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 group-hover/file:scale-105 transition-transform">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div class="flex flex-col overflow-hidden w-full">
+              <span class="text-xs font-bold truncate group-hover/file:text-white transition-colors">${filename}</span>
+              <span class="text-[9px] opacity-70 uppercase tracking-wide">Documento</span>
+            </div>
+          </a>
+        `;
+      }
+      
+      contentHTML = `
+        <div class="flex flex-col">
+          ${mediaHtml}
+          ${caption ? `<p class="whitespace-pre-wrap leading-relaxed text-[13px] mt-1.5">${caption}</p>` : ''}
+        </div>
+      `;
+    } else if (msg.texto && (msg.texto.startsWith('data:audio/') || (msg.texto.startsWith('http') && (msg.texto.endsWith('.mp3') || msg.texto.endsWith('.ogg') || msg.texto.endsWith('.m4a') || msg.texto.endsWith('.webm'))))) {
       contentHTML = `
         <div class="flex flex-col gap-1.5 my-1 min-w-[220px]">
           <div class="flex items-center gap-1.5 opacity-80">
@@ -1669,25 +1762,32 @@ function appendMessageHTML(msg) {
 let activeContextMessage = null;
 let replyingToMessage = null;
 
+function cancelReply() {
+  replyingToMessage = null;
+  // Se futuramente houver um banner de UI de resposta, ele será escondido aqui.
+}
+
 // Ajusta dinamicamente a altura do textarea para expandir e contrair suavemente a cada linha
 function adjustChatInputHeight() {
   if (!chatInput) return;
 
-  // 1. Desativa temporariamente a transição CSS para medir a altura sem interferência da animação
-  chatInput.style.setProperty('transition', 'none', 'important');
+  const container = document.getElementById('chat-input-container');
 
-  // 2. Colapsa o campo para 'auto' para obter o scrollHeight real instantâneo
+  // 1. Reseta a altura para 'auto' para permitir que o navegador meça o scrollHeight real de todas as linhas
   chatInput.style.height = 'auto';
+
+  // 2. Obtém a altura real do conteúdo
   const realScrollHeight = chatInput.scrollHeight;
-  const targetHeight = Math.min(Math.max(realScrollHeight, 20), 135);
+  const targetHeight = Math.min(Math.max(realScrollHeight, 20), 160);
 
-  // 3. Força um reflow síncrono no browser
-  void chatInput.offsetHeight;
-
-  // 4. Reativa a transição CSS suave e aplica a nova altura (expandindo ou contraindo)
-  chatInput.style.removeProperty('transition');
+  // 3. Aplica a nova altura ao textarea
   chatInput.style.height = `${targetHeight}px`;
-  chatInput.style.overflowY = realScrollHeight > 135 ? 'auto' : 'hidden';
+  chatInput.style.overflowY = realScrollHeight > 160 ? 'auto' : 'hidden';
+
+  // 4. Expande o contêiner flutuante para cima acompanhando o número de linhas
+  if (container) {
+    container.style.minHeight = `${targetHeight + 24}px`;
+  }
 }
 
 // ------------------------------------------------------------------------------
@@ -1698,14 +1798,15 @@ let isInternalNoteMode = false;
 function toggleChatOptionsDropdown(e) {
   if (e) e.stopPropagation();
   const dropdown = document.getElementById('chat-options-dropdown');
+  const btn = document.getElementById('btn-chat-options');
   if (!dropdown) return;
 
   const isHidden = dropdown.classList.contains('hidden');
   if (isHidden) {
-    dropdown.classList.remove('hidden');
-    void dropdown.offsetWidth;
-    dropdown.classList.remove('opacity-0', 'scale-95');
-    dropdown.classList.add('opacity-100', 'scale-100');
+    dropdown.classList.remove('hidden', 'animate-popover-out');
+    void dropdown.offsetWidth; // Force reflow for keyframe restart
+    dropdown.classList.add('animate-popover-in');
+    if (btn) btn.classList.add('btn-options-active');
   } else {
     closeChatOptionsDropdown();
   }
@@ -1713,13 +1814,17 @@ function toggleChatOptionsDropdown(e) {
 
 function closeChatOptionsDropdown() {
   const dropdown = document.getElementById('chat-options-dropdown');
+  const btn = document.getElementById('btn-chat-options');
   if (!dropdown || dropdown.classList.contains('hidden')) return;
 
-  dropdown.classList.remove('opacity-100', 'scale-100');
-  dropdown.classList.add('opacity-0', 'scale-95');
+  dropdown.classList.remove('animate-popover-in');
+  dropdown.classList.add('animate-popover-out');
+  if (btn) btn.classList.remove('btn-options-active');
+
   setTimeout(() => {
     dropdown.classList.add('hidden');
-  }, 200);
+    dropdown.classList.remove('animate-popover-out');
+  }, 190);
 }
 
 // Fechar menu de opções ao clicar fora
@@ -1774,29 +1879,72 @@ function insertQuickReply(text) {
 function toggleInternalNoteMode() {
   isInternalNoteMode = !isInternalNoteMode;
   const container = document.getElementById('chat-input-container');
+  const footer = document.getElementById('chat-input-footer');
   const badge = document.getElementById('internal-note-badge');
   const btnOptions = document.getElementById('btn-chat-options');
 
+  // Remove ou cria o banner de aviso visual
+  const existingBanner = document.getElementById('internal-mode-banner');
+
   if (isInternalNoteMode) {
-    if (container) container.classList.add('border-indigo-500/60', 'bg-indigo-950/30', 'shadow-[0_0_20px_rgba(99,102,241,0.2)]');
+    // Footer: fundo âmbar forte + borda dourada
+    if (footer) {
+      footer.style.cssText += '; background: linear-gradient(to top, rgba(120,53,15,0.6) 0%, rgba(92,40,5,0.3) 100%) !important; border-top: 2px solid rgba(245,158,11,0.8) !important;';
+    }
+
+    // Container do input: glow âmbar
+    if (container) {
+      container.style.cssText += '; border: 1.5px solid rgba(245,158,11,0.8) !important; background-color: rgba(120,53,15,0.4) !important; box-shadow: 0 0 32px rgba(245,158,11,0.35), inset 0 0 0 1px rgba(245,158,11,0.3) !important;';
+    }
+
+    // Banner de aviso: flutua acima do input com z-index ABAIXO do dropdown de opções
+    if (!existingBanner && container) {
+      const banner = document.createElement('div');
+      banner.id = 'internal-mode-banner';
+      // z-index: 15 — fica acima do footer mas ABAIXO do dropdown de opções (z-50 = 50)
+      banner.style.cssText = 'position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; background:rgba(120,53,15,0.92); backdrop-filter:blur(10px); border:1px solid rgba(245,158,11,0.6); border-radius:8px; padding:4px 14px; font-size:9px; font-weight:900; color:#fbbf24; letter-spacing:0.08em; text-transform:uppercase; z-index:15; pointer-events:none; white-space:nowrap; box-shadow:0 -2px 16px rgba(245,158,11,0.25);';
+      banner.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Nota Interna — não será enviada ao cliente';
+      container.appendChild(banner);
+    }
+
     if (badge) badge.classList.remove('hidden');
-    if (btnOptions) btnOptions.classList.add('bg-indigo-500/20', 'text-indigo-400', 'border-indigo-500/40');
-    if (chatInput) chatInput.placeholder = 'Digite uma nota interna (visível apenas para atendentes)...';
-    showToast('Modo Mensagem Interna ativado.', 'Nota Interna', 'info');
+    if (chatInput) {
+      chatInput.placeholder = '🔒 Nota interna — visível apenas para atendentes...';
+      chatInput.style.color = '#fcd34d';
+    }
   } else {
-    if (container) container.classList.remove('border-indigo-500/60', 'bg-indigo-950/30', 'shadow-[0_0_20px_rgba(99,102,241,0.2)]');
+    // Reverte tudo
+    if (footer) {
+      footer.style.background = '';
+      footer.style.backgroundImage = '';
+      footer.style.borderTop = '';
+      footer.style.cssText = footer.style.cssText.replace(/background[^;]*;?/g, '').replace(/border-top[^;]*;?/g, '');
+    }
+    if (container) {
+      container.style.border = '';
+      container.style.boxShadow = '';
+      container.style.cssText = container.style.cssText.replace(/border[^;]*;?/g, '').replace(/box-shadow[^;]*;?/g, '').replace(/background-color[^;]*;?/g, '');
+    }
+    if (existingBanner) existingBanner.remove();
     if (badge) badge.classList.add('hidden');
-    if (btnOptions) btnOptions.classList.remove('bg-indigo-500/20', 'text-indigo-400', 'border-indigo-500/40');
-    if (chatInput) chatInput.placeholder = 'Digite sua resposta...';
-    showToast('Modo Mensagem do Cliente ativado.', 'Modo Padrão', 'info');
+    if (chatInput) {
+      chatInput.placeholder = 'Digite sua resposta...';
+      chatInput.style.color = '';
+    }
   }
+
+  // Recalcula a altura imediatamente para refletir no novo modo
+  adjustChatInputHeight();
 }
 
+// Variável global para armazenar anexos
+let selectedAttachments = [];
+
 // Envia mensagem pelo input do chat
-function sendMessage(e) {
+async function sendMessage(e) {
   if (e) e.preventDefault();
-  let text = chatInput.value.trim();
-  if (!text || !selectedChatJid) return;
+  let text = chatInput ? chatInput.value.trim() : '';
+  if ((!text && selectedAttachments.length === 0) || !selectedChatJid) return;
 
   const isInternal = isInternalNoteMode;
 
@@ -1810,14 +1958,43 @@ function sendMessage(e) {
     text = `🔒 [NOTA INTERNA] ${text}`;
   }
 
+  let uploadedAttachments = [];
+  
+  if (selectedAttachments.length > 0) {
+    const formData = new FormData();
+    selectedAttachments.forEach(file => {
+      formData.append('attachments', file);
+    });
+
+    try {
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        uploadedAttachments = data.files;
+      }
+    } catch (err) {
+      console.error('Erro ao fazer upload dos anexos:', err);
+      showToast('Erro ao enviar anexos. Tente novamente.', 'Upload Falhou', 'error');
+      return;
+    }
+  }
+
   socket.emit('send_message', {
     cliente_jid: selectedChatJid,
     texto: text,
     atendente_id: currentOperator.id,
-    is_internal: isInternal
+    is_internal: isInternal,
+    attachments: uploadedAttachments
   });
 
-  chatInput.value = '';
+  if (chatInput) chatInput.value = '';
+  
+  selectedAttachments = [];
+  renderAttachmentPreview();
+
   if (isInternalNoteMode) {
     toggleInternalNoteMode();
   } else {
@@ -2505,424 +2682,6 @@ socket.on('error_message', (msg) => {
 // Listener de exclusão de mensagem do SQLite
 socket.on('message_deleted', ({ message_id, cliente_jid }) => {
   if (selectedChatJid === cliente_jid) {
-    const element = document.querySelector(`[data-message-id="${message_id}"]`);
-    if (element) {
-      element.remove();
-    }
-  }
-});
-
-// ==============================================================================
-// 📋 LÓGICA DO MENU DE CONTEXTO E MODAL DE ENCAMINHAMENTO
-// ==============================================================================
-const contextMenu = document.getElementById('message-context-menu');
-const contextMainView = document.getElementById('context-main-view');
-const contextEmojiView = document.getElementById('context-emoji-view');
-const contextEmojiGrid = document.getElementById('context-emoji-grid');
-const forwardModal = document.getElementById('forward-modal');
-const forwardChatsList = document.getElementById('forward-chats-list');
-const inputForwardPhone = document.getElementById('input-forward-phone');
-
-// Menu de contexto dos cards de chat ativos
-const chatContextMenu = document.getElementById('chat-context-menu');
-let activeChatContextJid = null;
-
-// Interceptar clique com o botão direito nos cards de chat ativos
-activeContainer.addEventListener('contextmenu', (e) => {
-  const card = e.target.closest('.glass-card');
-  if (!card) return;
-
-  e.preventDefault();
-
-  const clientJid = card.getAttribute('data-client-jid');
-  if (!clientJid) return;
-
-  activeChatContextJid = clientJid;
-  showChatContextMenu(e.clientX, e.clientY);
-});
-
-// Interceptar clique com o botão direito nas mensagens do chat
-messagesContainer.addEventListener('contextmenu', (e) => {
-  const bubble = e.target.closest('.msg-bubble');
-  if (!bubble) return;
-
-  e.preventDefault();
-
-  // Impedir abertura do menu de contexto se o atendimento não estiver ativo com o atendente atual
-  const isActiveChat = activeChats.some(c => c.cliente_jid === selectedChatJid);
-  if (!isActiveChat) return;
-
-  const msgDiv = bubble.closest('[data-message-id]');
-  if (!msgDiv) return;
-
-  const messageId = msgDiv.getAttribute('data-message-id');
-  const paragraph = bubble.querySelector('p');
-  const messageText = paragraph ? paragraph.textContent : '';
-  const messageSender = bubble.classList.contains('msg-client') ? 'cliente' : (bubble.classList.contains('msg-attendant') ? 'atendente' : 'sistema');
-
-  if (messageSender === 'sistema') return; // impede ações em mensagens de sistema
-
-  // Achar mensagem correspondente na memória local do chat
-  const msgIdNum = parseInt(messageId, 10);
-  const foundMsg = currentChatMessages.find(m => m.id === msgIdNum);
-
-  activeContextMessage = {
-    id: messageId,
-    text: messageText,
-    sender: messageSender,
-    fullMsg: foundMsg
-  };
-
-  // Exibir ou ocultar a opção de excluir baseado no remetente (apenas atendente pode excluir suas próprias mensagens)
-  const deleteBtn = document.getElementById('context-delete-btn');
-  const deleteDivider = document.getElementById('context-delete-divider');
-  if (deleteBtn && deleteDivider) {
-    if (messageSender === 'atendente') {
-      deleteBtn.classList.remove('hidden');
-      deleteDivider.classList.remove('hidden');
-    } else {
-      deleteBtn.classList.add('hidden');
-      deleteDivider.classList.add('hidden');
-    }
-  }
-
-  showContextMenu(e.clientX, e.clientY);
-});
-
-const popularEmojis = [
-  '👍', '👎', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏', '🎉', '✨', '💡',
-  '😀', '😍', '😊', '😉', '😎', '🥳', '🤔', '🤫', '🥺', '😭', '😡', '🤯',
-  '😴', '🤮', '🤢', '🤡', '💩', '👻', '💀', '👽', '🤖', '👑', '💯', '✔️',
-  '❌', '⚠️', '🔔', '💬', '✉️', '📞', '📌', '📍', '🔍', '⚙️', '🔒', '🔑',
-  '🚀', '✈️', '🚗', '🛵', '🚲', '🏠', '🏢', '💼', '💻', '📱', '⌚', '💵',
-  '🎁', '🎈', '🎨', '🎬', '🎧', '🎵', '⚽', '🏆', '⭐', '🌈', '☀️', '❄️'
-];
-
-function renderRecentReactions() {
-  const container = document.getElementById('context-recent-reactions');
-  if (!container) return;
-  
-  let recent = localStorage.getItem('tf_recent_reactions');
-  recent = recent ? JSON.parse(recent) : ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-  
-  container.innerHTML = recent.map(emoji => `
-    <button onclick="handleContextReact('${emoji}')">${emoji}</button>
-  `).join('');
-}
-
-function recordReactionUsage(emoji) {
-  let recent = localStorage.getItem('tf_recent_reactions');
-  recent = recent ? JSON.parse(recent) : ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-  
-  recent = recent.filter(e => e !== emoji);
-  recent.unshift(emoji);
-  recent = recent.slice(0, 6);
-  
-  localStorage.setItem('tf_recent_reactions', JSON.stringify(recent));
-  renderRecentReactions();
-}
-
-function initEmojiGrid() {
-  if (!contextEmojiGrid) return;
-  contextEmojiGrid.innerHTML = popularEmojis.map(emoji => `
-    <button onclick="handleContextReact('${emoji}')">${emoji}</button>
-  `).join('');
-}
-
-function showContextMenu(x, y) {
-  if (!contextMenu) return;
-
-  // Resetar para visão principal do menu
-  if (contextMainView) contextMainView.classList.remove('hidden');
-  if (contextEmojiView) contextEmojiView.classList.add('hidden');
-  
-  renderRecentReactions();
-
-  contextMenu.style.left = `${x}px`;
-  contextMenu.style.top = `${y}px`;
-  contextMenu.classList.remove('hidden');
-
-  // Ajusta a posição caso ultrapasse o limite inferior/direito da tela
-  const rect = contextMenu.getBoundingClientRect();
-  if (rect.bottom > window.innerHeight) {
-    contextMenu.style.top = `${y - rect.height}px`;
-  }
-  if (rect.right > window.innerWidth) {
-    contextMenu.style.left = `${x - rect.width}px`;
-  }
-
-  document.addEventListener('click', closeContextMenu);
-}
-
-function closeContextMenu() {
-  if (contextMenu) contextMenu.classList.add('hidden');
-  document.removeEventListener('click', closeContextMenu);
-}
-
-// Lógica de exibição e ações do menu de contexto de chat
-function showChatContextMenu(x, y) {
-  if (!chatContextMenu) return;
-
-  chatContextMenu.style.left = `${x}px`;
-  chatContextMenu.style.top = `${y}px`;
-  chatContextMenu.classList.remove('hidden');
-
-  // Ajusta a posição caso ultrapasse o limite inferior/direito da tela
-  const rect = chatContextMenu.getBoundingClientRect();
-  if (rect.bottom > window.innerHeight) {
-    chatContextMenu.style.top = `${y - rect.height}px`;
-  }
-  if (rect.right > window.innerWidth) {
-    chatContextMenu.style.left = `${x - rect.width}px`;
-  }
-
-  document.addEventListener('click', closeChatContextMenu);
-}
-
-function closeChatContextMenu() {
-  if (chatContextMenu) chatContextMenu.classList.add('hidden');
-  document.removeEventListener('click', closeChatContextMenu);
-}
-
-function handleChatContextMarkUnread(e) {
-  e.stopPropagation();
-  closeChatContextMenu();
-  if (!activeChatContextJid || !currentOperator) return;
-
-  socket.emit('mark_unread', { 
-    cliente_jid: activeChatContextJid, 
-    atendente_id: currentOperator.id 
-  });
-}
-
-function handleChatContextFinishSilently(e) {
-  e.stopPropagation();
-  closeChatContextMenu();
-  if (!activeChatContextJid || !currentOperator) return;
-
-  socket.emit('finish_chat_silently', { 
-    cliente_jid: activeChatContextJid, 
-    atendente_id: currentOperator.id 
-  });
-}
-
-// Ação: Dados da Mensagem
-function handleContextInfo() {
-  if (!activeContextMessage || !activeContextMessage.fullMsg) return;
-  const msg = activeContextMessage.fullMsg;
-  
-  const content = document.getElementById('message-info-content');
-  if (!content) return;
-  
-  const senderType = msg.remetente === 'cliente' ? 'Cliente' : (msg.remetente === 'sistema' ? 'Sistema' : 'Atendente');
-  const date = new Date(msg.timestamp);
-  const formattedDate = isNaN(date.getTime()) ? msg.timestamp : date.toLocaleString('pt-BR');
-  
-  content.innerHTML = `
-    <div class="space-y-3 bg-white/5 p-4 rounded-2xl border border-white/5">
-      <p><strong>ID da Mensagem:</strong> <span class="font-mono text-accent-theme">${msg.id}</span></p>
-      <p><strong>Remetente:</strong> ${senderType} (${msg.remetente})</p>
-      <p><strong>Destinatário (JID):</strong> <span class="font-mono">${msg.cliente_jid}</span></p>
-      <p><strong>Data/Hora de Envio:</strong> ${formattedDate}</p>
-      <p><strong>Reação Atual:</strong> ${msg.reacao || 'Nenhuma'}</p>
-      <div class="border-t border-white/5 pt-2 mt-2">
-        <p class="font-bold mb-1">Conteúdo da Mensagem:</p>
-        <p class="whitespace-pre-wrap bg-black/20 p-2.5 rounded-xl border border-white/5 max-h-32 overflow-y-auto font-mono text-[11px]">${msg.texto}</p>
-      </div>
-    </div>
-  `;
-  
-  closeContextMenu();
-  const infoModal = document.getElementById('message-info-modal');
-  if (infoModal) infoModal.classList.remove('hidden');
-}
-
-function closeMessageInfoModal() {
-  const infoModal = document.getElementById('message-info-modal');
-  if (infoModal) infoModal.classList.add('hidden');
-}
-
-// Ação: Responder
-function handleContextReply() {
-  if (!activeContextMessage) return;
-
-  replyingToMessage = activeContextMessage;
-
-  const previewContainer = document.getElementById('reply-preview-container');
-  const previewTitle = document.getElementById('reply-preview-title');
-  const previewText = document.getElementById('reply-preview-text');
-
-  if (previewContainer && previewTitle && previewText) {
-    previewTitle.textContent = replyingToMessage.sender === 'cliente'
-      ? `Respondendo a ${selectedChatName}`
-      : 'Respondendo a Você';
-    
-    previewText.textContent = replyingToMessage.text;
-    previewContainer.classList.remove('hidden');
-  }
-
-  closeContextMenu();
-  if (chatInput) chatInput.focus();
-}
-
-function cancelReply() {
-  replyingToMessage = null;
-  const previewContainer = document.getElementById('reply-preview-container');
-  if (previewContainer) {
-    previewContainer.classList.add('hidden');
-  }
-}
-
-// Ação: Copiar
-function handleContextCopy() {
-  if (!activeContextMessage) return;
-  navigator.clipboard.writeText(activeContextMessage.text)
-    .then(() => {
-      alert('Mensagem copiada para a área de transferência!');
-    })
-    .catch(err => {
-      console.error('Erro ao copiar mensagem:', err);
-    });
-  closeContextMenu();
-}
-
-// Ação: Reagir
-function handleContextReact(emoji) {
-  if (!activeContextMessage) return;
-  
-  socket.emit('react_message', {
-    message_id: activeContextMessage.id,
-    reacao: emoji,
-    atendente_id: currentOperator.id,
-    cliente_jid: selectedChatJid
-  });
-
-  recordReactionUsage(emoji);
-  closeContextMenu();
-}
-
-// Ação: Reagir via menu (abre o seletor expandido de emojis)
-function handleContextReactMenu(e) {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-  if (contextMainView) contextMainView.classList.add('hidden');
-  if (contextEmojiView) contextEmojiView.classList.remove('hidden');
-}
-
-// Retorna para visualização principal do menu
-function showContextMainView(e) {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-  if (contextEmojiView) contextEmojiView.classList.add('hidden');
-  if (contextMainView) contextMainView.classList.remove('hidden');
-}
-
-// Remover Reação
-window.removeReaction = function(messageId) {
-  const isActiveChat = activeChats.some(c => c.cliente_jid === selectedChatJid);
-  if (!isActiveChat) return;
-
-  socket.emit('react_message', {
-    message_id: messageId,
-    reacao: null,
-    atendente_id: currentOperator.id,
-    cliente_jid: selectedChatJid
-  });
-};
-
-// Ação: Encaminhar
-function handleContextForward() {
-  if (!activeContextMessage || !forwardModal) return;
-
-  if (activeChats.length === 0) {
-    forwardChatsList.innerHTML = '<p class="text-xs text-slate-500 text-center py-4">Nenhum atendimento ativo disponível</p>';
-  } else {
-    forwardChatsList.innerHTML = activeChats.map(chat => `
-      <div class="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
-        <div class="leading-tight text-left flex-1 min-w-0 pr-3">
-          <p class="text-xs font-semibold text-slate-200 truncate">${chat.cliente_nome}</p>
-          <p class="text-[9px] text-slate-500 font-mono mt-0.5 truncate">${chat.cliente_jid.split('@')[0]}</p>
-        </div>
-        <button onclick="submitForwardToJid('${chat.cliente_jid}', '${chat.cliente_nome}')" class="px-3.5 py-1.5 btn-accent-theme rounded-lg text-[10px] font-bold uppercase transition-all active:scale-95 shadow-md">
-          Encaminhar
-        </button>
-      </div>
-    `).join('');
-  }
-
-  if (inputForwardPhone) inputForwardPhone.value = '';
-  forwardModal.classList.remove('hidden');
-}
-
-function closeForwardModal() {
-  if (forwardModal) forwardModal.classList.add('hidden');
-}
-
-function submitForwardToJid(jid, name) {
-  if (!activeContextMessage) return;
-
-  socket.emit('send_message', {
-    cliente_jid: jid,
-    texto: `_Mensagem encaminhada:_\n\n${activeContextMessage.text}`,
-    atendente_id: currentOperator.id
-  });
-
-  closeForwardModal();
-  alert(`Mensagem encaminhada para ${name}!`);
-}
-
-function submitForwardToPhone() {
-  if (!activeContextMessage || !inputForwardPhone) return;
-  const phone = inputForwardPhone.value.trim();
-  if (!phone) return;
-
-  let jid = phone;
-  if (!jid.includes('@')) {
-    jid = `${jid}@c.us`;
-  }
-
-  socket.emit('send_message', {
-    cliente_jid: jid,
-    texto: `_Mensagem encaminhada:_\n\n${activeContextMessage.text}`,
-    atendente_id: currentOperator.id
-  });
-
-  closeForwardModal();
-  alert(`Mensagem encaminhada para o número ${phone}!`);
-}
-
-// Ação: Apagar (excluir)
-async function handleContextDelete() {
-  if (!activeContextMessage) return;
-  const confirmed = await showCustomConfirm(
-    'Apagar Mensagem?',
-    'Tem certeza que deseja apagar esta mensagem? Ela será removida permanentemente do histórico local.',
-    'danger'
-  );
-  if (confirmed) {
-    socket.emit('delete_message', {
-      message_id: activeContextMessage.id,
-      atendente_id: currentOperator.id,
-      cliente_jid: selectedChatJid
-    });
-    closeContextMenu();
-  }
-}
-
-// Listener de reação de mensagem do socket
-socket.on('message_reacted', ({ message_id, reacao, cliente_jid }) => {
-  // Atualizar o array local
-  const msgIdNum = parseInt(message_id, 10);
-  const msg = currentChatMessages.find(m => m.id === msgIdNum);
-  if (msg) {
-    msg.reacao = reacao;
-  }
-
-  if (selectedChatJid === cliente_jid) {
     // Atualizar visualmente o balão na tela
     const element = document.querySelector(`[data-message-id="${message_id}"]`);
     if (element) {
@@ -2954,6 +2713,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initOperator();
   initEmojiGrid();
   setupAudioPreviewEvents();
+  initAttachmentHandlers();
 
   if (chatInput) {
     chatInput.addEventListener('input', adjustChatInputHeight);
@@ -2971,11 +2731,49 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initialize sliding indicators
+  // Função global super-robusta para atualizar os indicadores
+  window.forceUpdateIndicators = () => {
+    // Busca os botões diretamente no DOM para ignorar qualquer cache de variável
+    const activeBtn = document.getElementById(currentSidebarTab === 'active' ? 'tab-active' : `tab-${currentSidebarTab}`);
+    const activeFilterBtn = document.getElementById(activeFilterType === 'all' ? 'btn-active-filter-all' : `btn-active-filter-${activeFilterType}`);
+    
+    if (activeBtn) updateTabIndicator(activeBtn);
+    if (activeFilterBtn) updateActiveFilterIndicator(activeFilterBtn);
+  };
+
+  // Garante atualização agressiva nos primeiros segundos usando setInterval,
+  // útil se a tela estiver num iframe (onde requestAnimationFrame pode não disparar).
+  let initPollCount = 0;
+  const initPollInterval = setInterval(() => {
+    window.forceUpdateIndicators();
+    initPollCount++;
+    if (initPollCount > 30) clearInterval(initPollInterval); // Tenta por 7.5 segundos
+  }, 250);
+
+  // Garante que o indicador se ajuste perfeitamente após o carregamento de fontes
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => window.forceUpdateIndicators());
+  }
+
+  // Observa mudanças de layout (ex: scrollbars aparecendo, painéis redimensionando)
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => requestAnimationFrame(window.forceUpdateIndicators));
+    if (tabActiveBtn) ro.observe(tabActiveBtn);
+    if (btnActiveFilterAll) ro.observe(btnActiveFilterAll);
+    const tabsContainerEl = document.getElementById('tabs-container');
+    if (tabsContainerEl) ro.observe(tabsContainerEl);
+  }
+
+  setTimeout(window.forceUpdateIndicators, 100);
+  setTimeout(window.forceUpdateIndicators, 500);
+  setTimeout(window.forceUpdateIndicators, 1500);
+  window.addEventListener('load', window.forceUpdateIndicators);
+
+  // Encerra o loader após os dados ativos serem renderizados via socket (ou por timeout de segurança)
   setTimeout(() => {
-    updateTabIndicator(tabActiveBtn);
-    updateActiveFilterIndicator(btnActiveFilterAll);
-  }, 150);
+    dismissInitLoader();
+    window.forceUpdateIndicators();
+  }, 1200);
 
   // Update indicators position on window resize
   window.addEventListener('resize', () => {
@@ -3038,5 +2836,113 @@ function showCustomConfirm(title, message, type = 'danger') {
     confirmBtn.addEventListener('click', handleConfirm);
 
     modal.classList.remove('hidden');
+  });
+}
+
+// ==============================================================================
+// 📎 ANEXOS (IMAGENS, VÍDEOS, ARQUIVOS) E DRAG AND DROP
+// ==============================================================================
+
+function initAttachmentHandlers() {
+  const attachmentInput = document.getElementById('chat-attachment-input');
+  if (attachmentInput) {
+    attachmentInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        selectedAttachments = [...selectedAttachments, ...Array.from(e.target.files)];
+        renderAttachmentPreview();
+        if (chatInput) chatInput.focus();
+      }
+      e.target.value = '';
+    });
+  }
+
+  // Lógica de Drag and Drop (Arrastar e Soltar)
+  const chatArea = document.getElementById('active-chat-area');
+  const overlay = document.getElementById('drag-drop-overlay');
+
+  if (chatArea && overlay) {
+    let dragCounter = 0; // Previne flickers ao arrastar sobre filhos
+
+    chatArea.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      overlay.classList.remove('opacity-0', 'pointer-events-none');
+    });
+
+    chatArea.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter === 0) {
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+      }
+    });
+
+    chatArea.addEventListener('dragover', (e) => {
+      e.preventDefault(); // Necessário para permitir o drop
+    });
+
+    chatArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      overlay.classList.add('opacity-0', 'pointer-events-none');
+      
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        selectedAttachments = [...selectedAttachments, ...Array.from(e.dataTransfer.files)];
+        renderAttachmentPreview();
+        if (chatInput) chatInput.focus();
+      }
+    });
+  }
+}
+
+function renderAttachmentPreview() {
+  const container = document.getElementById('attachment-preview-container');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (selectedAttachments.length === 0) {
+    container.classList.remove('show');
+    container.classList.add('hidden', 'opacity-0', 'translate-y-4', 'pointer-events-none');
+    return;
+  }
+
+  container.classList.remove('hidden', 'opacity-0', 'translate-y-4', 'pointer-events-none');
+  container.classList.add('show');
+
+  selectedAttachments.forEach((file, index) => {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'attachment-preview-item';
+
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+
+    if (isImage) {
+      const url = URL.createObjectURL(file);
+      itemEl.innerHTML = `<img src="${url}" alt="Preview" onload="URL.revokeObjectURL(this.src)" />`;
+    } else if (isVideo) {
+      const url = URL.createObjectURL(file);
+      itemEl.innerHTML = `<video src="${url}" muted autoplay loop></video>`;
+    } else {
+      // Documento Genérico
+      itemEl.innerHTML = `
+        <div class="flex flex-col items-center justify-center p-1 text-center">
+          <svg class="file-icon mb-1" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="text-[8px] font-bold text-slate-300 truncate w-full px-1" title="${file.name}">${file.name}</span>
+        </div>
+      `;
+    }
+
+    const removeBtn = document.createElement('div');
+    removeBtn.className = 'attachment-preview-remove';
+    removeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    removeBtn.onclick = (e) => {
+      e.stopPropagation();
+      selectedAttachments.splice(index, 1);
+      renderAttachmentPreview();
+    };
+
+    itemEl.appendChild(removeBtn);
+    container.appendChild(itemEl);
   });
 }

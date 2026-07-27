@@ -14,24 +14,25 @@ type WhatsAppChannel = {
     sector_id?: number | null;
 };
 
-function buildIframeUrl(channel: WhatsAppChannel, user: any, sessionToken: number, theme: string): string {
+function buildIframeUrl(channel: WhatsAppChannel, user: any, theme: string): string {
     const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
     const base = `http://${hostname}:${channel.port}`;
-    if (!user) return base;
+    if (!user) return `${base}?theme=${theme}`;
     const encodedId = encodeURIComponent(user.username);
     const encodedName = encodeURIComponent(user.full_name || user.username);
     const sectorsJson = user.sectors ? JSON.stringify(user.sectors) : '[]';
     const encodedSectors = encodeURIComponent(sectorsJson);
-    return `${base}?operator_id=${encodedId}&operator_name=${encodedName}&sectors=${encodedSectors}&_t=${sessionToken}&theme=${theme}`;
+    return `${base}?operator_id=${encodedId}&operator_name=${encodedName}&sectors=${encodedSectors}&theme=${theme}`;
 }
+
+const DEFAULT_CHANNEL: WhatsAppChannel = { id: 'default', name: 'WhatsApp', port: 5000, color: '#8b5cf6' };
 
 export default function WhatsAppPage() {
     const { user } = useAuth();
     const { theme } = useTheme();
-    const sessionToken = useMemo(() => new Date().getTime(), []);
-    const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+    const [channels, setChannels] = useState<WhatsAppChannel[]>([DEFAULT_CHANNEL]);
+    const [loading, setLoading] = useState(false);
+    const [activeChannelId, setActiveChannelId] = useState<string | null>('default');
     const [reloadKeys, setReloadKeys] = useState<Record<string, number>>({});
 
     // Estado indicando se o atendente está em atendimento ativo ou pausado
@@ -50,20 +51,19 @@ export default function WhatsAppPage() {
     }, [isAttending]);
 
     const fetchChannels = useCallback(async () => {
-        setLoading(true);
         try {
             const res = await fetch('/api/whatsapp/channels');
             if (res.ok) {
                 const data: WhatsAppChannel[] = await res.json();
-                setChannels(data);
-                if (data.length > 0 && !activeChannelId) {
-                    setActiveChannelId(data[0].id);
+                if (data && data.length > 0) {
+                    setChannels(data);
+                    if (!data.some(c => c.id === activeChannelId)) {
+                        setActiveChannelId(data[0].id);
+                    }
                 }
             }
         } catch {
-            setChannels([]);
-        } finally {
-            setLoading(false);
+            // Permanece com o canal padrão
         }
     }, [activeChannelId]);
 
@@ -242,7 +242,7 @@ export default function WhatsAppPage() {
             {/* Iframe Area — render all iframes, show only active one */}
             <div className="flex-1 relative overflow-hidden">
                 {channels.map(channel => {
-                    const iframeUrl = buildIframeUrl(channel, user, sessionToken, theme);
+                    const iframeUrl = buildIframeUrl(channel, user, theme);
                     const isActive = channel.id === (activeChannelId ?? channels[0]?.id);
                     return (
                         <div
@@ -252,7 +252,7 @@ export default function WhatsAppPage() {
                             <iframe
                                 key={reloadKeys[channel.id] ?? 0}
                                 src={iframeUrl}
-                                className="w-full h-full border-none"
+                                className="w-full h-full border-none bg-transparent"
                                 allow="camera; microphone; clipboard-read; clipboard-write"
                                 title={`WhatsApp — ${channel.name}`}
                             />

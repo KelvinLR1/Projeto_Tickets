@@ -166,6 +166,10 @@
   --border-color: var(--custom-border, rgba(255, 255, 255, 0.1));
 }
 
+html {
+  background-color: var(--color-background) !important;
+}
+
 body {
   font-family: var(--font-family);
   background: transparent !important; /* Herda o background do Next.js */
@@ -647,6 +651,68 @@ aside > div:last-child {
 /* Cor de nome ativo em cartões */
 .glass-card.active p {
   color: var(--color-primary-theme) !important;
+}
+
+/* ==============================================================================
+   ANEXOS: PREVIEW CONTAINER & ITEMS
+   ============================================================================== */
+
+#attachment-preview-container.show {
+  display: flex !important;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.attachment-preview-item {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background-color: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.attachment-preview-item img,
+.attachment-preview-item video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-preview-item .file-icon {
+  color: #94a3b8;
+}
+
+.attachment-preview-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  background-color: rgba(0,0,0,0.7);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.2);
+  backdrop-filter: blur(4px);
+  opacity: 0.8;
+  transition: all 0.2s;
+}
+
+.attachment-preview-remove:hover {
+  opacity: 1;
+  background-color: #ef4444;
+  transform: scale(1.1);
 }
 
 /* ==============================================================================
@@ -1136,26 +1202,113 @@ aside > div:last-child {
    ✨ ANIMAÇÕES DE TROCA DE CONVERSA ATIVA
    ============================================================================== */
 
-/* Animação de Saída de Troca do Painel de Chat */
+/* Animação de Saída de Troca do Painel de Chat (Saída 100% Suave) */
 .chat-switch-out {
-  opacity: 0.2 !important;
-  transform: translateY(6px) scale(0.992) !important;
-  transition: opacity 0.15s ease-out, transform 0.15s ease-out !important;
+  opacity: 0 !important;
+  transform: translateY(8px) scale(0.985) !important;
+  transition: opacity 0.12s cubic-bezier(0.4, 0, 1, 1), transform 0.12s cubic-bezier(0.4, 0, 1, 1) !important;
 }
 
-/* Animação de Entrada do Novo Chat */
+/* Animação de Entrada do Novo Chat (Entrada de Mola Fluida) */
 .chat-switch-in {
-  animation: chat-switch-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: chat-switch-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 
 @keyframes chat-switch-enter {
   0% {
-    opacity: 0.2;
-    transform: translateY(-8px) scale(0.995);
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-1.5px) scale(1.001);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+/* ==============================================================================
+   LOADER INICIAL TEMÁTICO (INTEGRAÇÃO DINÂMICA COM O TEMA ATIVO)
+   ============================================================================== */
+.whatsapp-init-loader-bg {
+  background-color: var(--color-background) !important;
+}
+
+.loader-spinner-ring {
+  border-top-color: var(--color-primary-theme) !important;
+}
+
+.loader-icon-theme {
+  color: var(--color-accent-theme) !important;
+}
+
+.loader-title-theme {
+  color: var(--color-foreground) !important;
+}
+
+.loader-subtitle-theme {
+  color: var(--color-text-muted) !important;
+}
+
+/* ==============================================================================
+   🎛️ ANIMAÇÕES FLUIDAS PARA POPOVER DE OPÇÕES DO CHAT
+   ============================================================================== */
+@keyframes popoverIn {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes popoverOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+  }
+}
+
+.animate-popover-in {
+  animation: popoverIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.animate-popover-out {
+  animation: popoverOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+/* Estado ativo do botão de opções (Rotação 45º + Brilho Temático) */
+#btn-chat-options {
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+#btn-chat-options svg,
+#icon-chat-options-svg {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.3s ease !important;
+  transform-origin: center center !important;
+}
+
+.btn-options-active {
+  border-color: var(--color-primary-theme, #f59e0b) !important;
+  background-color: var(--color-card, #1e293b) !important;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.25) !important;
+}
+
+.btn-options-active svg,
+.btn-options-active #icon-chat-options-svg {
+  transform: rotate(45deg) scale(1.1) !important;
+  color: var(--color-primary-theme, #f59e0b) !important;
 }
 

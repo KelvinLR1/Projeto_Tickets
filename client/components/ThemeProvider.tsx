@@ -26,7 +26,20 @@ const THEMES: Theme[] = ['dark', 'light', 'cyberpunk', 'matrix', 'antigravity', 
  * Provider que gerencia a troca dinâmica de temas visuais.
  */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const [theme, setThemeState] = useState<Theme>('dark');
+    const [theme, setThemeState] = useState<Theme>(() => {
+        if (typeof window !== 'undefined') {
+            const config = localStorage.getItem('system_config');
+            if (config) {
+                try {
+                    const parsed = JSON.parse(config);
+                    if (parsed.theme) return parsed.theme as Theme;
+                } catch (e) {
+                    console.error("[ThemeProvider] Erro ao carregar tema inicial:", e);
+                }
+            }
+        }
+        return 'dark';
+    });
     const [mounted, setMounted] = useState(false);
 
     /**
@@ -47,22 +60,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
 
     /**
-     * Efeito inicial: carrega o tema salvo no localStorage ao montar o componente.
+     * Efeito inicial: garante a aplicação do tema no <html> e escuta alterações de armazenamento.
      */
     useEffect(() => {
         setMounted(true);
-
-        // Busca a configuração guardada (que contém o tema, porta da API, etc.)
-        const config = localStorage.getItem('system_config');
-        if (config) {
-            try {
-                const parsed = JSON.parse(config);
-                const savedTheme = parsed.theme;
-                if (savedTheme) applyTheme(savedTheme as Theme);
-            } catch (e) {
-                console.error("[ThemeProvider] Erro ao carregar tema inicial:", e);
-            }
-        }
+        applyTheme(theme);
 
         /**
          * Sincroniza o tema entre diferentes abas do navegador.

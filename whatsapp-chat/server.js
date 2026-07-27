@@ -6,6 +6,26 @@ const path = require('path');
 const fs = require('fs');
 const qrcode = require('qrcode');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const multer = require('multer');
+
+// Garante que a pasta de uploads exista
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Configuração do Multer para armazenamento local
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'media-' + uniqueSuffix + ext);
+  }
+});
+const upload = multer({ storage: storage });
 
 // Configurações principais
 const PORT = process.env.PORT || 5000;
@@ -36,6 +56,23 @@ app.use(express.json());
 // Rotas de API para o Painel Geral / Configurações
 app.get('/api/status', (req, res) => {
   res.json({ status: whatsappStatus, qr: qrCodeImage });
+});
+
+// Endpoint de Upload de Múltiplos Arquivos
+app.post('/api/upload', upload.array('attachments', 10), (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+  }
+
+  const uploadedFiles = req.files.map(file => ({
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    url: `/uploads/${file.filename}`, // Caminho relativo acessível via Express Static
+    path: file.path // Caminho absoluto para uso no backend (MessageMedia)
+  }));
+
+  res.json({ status: 'success', files: uploadedFiles });
 });
 
 app.post('/api/disconnect', async (req, res) => {
@@ -323,9 +360,27 @@ wwebClient.on('message', async (msg) => {
   if (msg.from.includes('@g.us') || msg.isStatus) return;
 
   const clienteJid = msg.from;
-  const texto = msg.body;
+  let texto = msg.body;
   
   try {
+    // Processamento de Mídia Recebida
+    if (msg.hasMedia) {
+      const media = await msg.downloadMedia();
+      if (media) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = media.mimetype ? '.' + media.mimetype.split('/')[1].split(';')[0] : '.bin';
+        const filename = 'media-' + uniqueSuffix + ext;
+        const filepath = path.join(uploadDir, filename);
+        
+        fs.writeFileSync(filepath, media.data, 'base64');
+        
+        const fileUrl = `/uploads/${filename}`;
+        // Adiciona a legenda se houver, caso contrário, envia apenas o anexo
+        texto = `[ANEXO] ${fileUrl} \n${texto ? texto : ''}`;
+        console.log(`📎 Anexo recebido e salvo: ${filename}`);
+      }
+    }
+
     const contact = await msg.getContact();
     const clienteNome = contact.pushname || contact.name || clienteJid.split('@')[0];
     let profilePicUrl = null;
@@ -516,10 +571,10 @@ io.on('connection', (socket) => {
   });
 
   // 3. FLUXO B: ENVIO DE MENSAGEM (Atendente -> Servidor -> WhatsApp)
-  socket.on('send_message', async ({ cliente_jid, texto, atendente_id }) => {
-    if (!cliente_jid || !texto || !atendente_id) return;
+  socket.on('send_message', async ({ cliente_jid, texto, atendente_id, attachments }) => {
+    if (!cliente_jid || (!texto && (!attachments || attachments.length === 0)) || !atendente_id) return;
 
-    console.log(`📤 Enviando mensagem de [${atendente_id}] para [${cliente_jid}]: "${texto}"`);
+    console.log(`📤 Enviando mensagem de [${atendente_id}] para [${cliente_jid}]: "${texto}" (Anexos: ${attachments ? attachments.length : 0})`);
     checkManualTakeover(cliente_jid, atendente_id);
 
     try {
@@ -583,7 +638,36 @@ io.on('connection', (socket) => {
         return;
       }
 
-      if (texto.startsWith('data:audio/')) {
+      if (attachments && attachments.length > 0) {
+        // Envio de Anexos
+        for (let i = 0; i < attachments.length; i++) {
+          const file = attachments[i];
+          const media = MessageMedia.fromFilePath(file.path);
+          // O texto digitado vira legenda (caption) apenas do primeiro arquivo enviado
+          const options = (i === 0 && texto) ? { caption: texto } : {};
+          
+          await wwebClient.sendMessage(cliente_jid, media, options);
+          
+          // Salva o registro de envio do anexo no banco de dados local
+          // Concatenamos a URL da imagem com o texto para renderização simples
+          const anexoTexto = `[ANEXO] ${file.url} \n${(i === 0 && texto) ? texto : ''}`;
+          db.run(
+            `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+            [cliente_jid, atendente_id, anexoTexto],
+            function (err) {
+              if (err) console.error('Erro ao salvar anexo no bd:', err.message);
+              io.to(atendente_id).emit('new_message', {
+                id: this.lastID,
+                cliente_jid: cliente_jid,
+                remetente: atendente_id,
+                texto: anexoTexto,
+                timestamp: new Date().toISOString()
+              });
+            }
+          );
+        }
+      } else if (texto.startsWith('data:audio/')) {
+        // Fluxo de Áudio de Voz gravado no app
         const matches = texto.match(/^data:(audio\/[a-zA-Z0-9\-]+);base64,(.+)$/);
         if (matches) {
           const mimeType = matches[1];
@@ -593,32 +677,29 @@ io.on('connection', (socket) => {
         } else {
           await wwebClient.sendMessage(cliente_jid, texto);
         }
-      } else {
-        await wwebClient.sendMessage(cliente_jid, texto);
-      }
-
-      // Salva no banco de dados local
-      db.run(
-        `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-        [cliente_jid, atendente_id, texto],
-        function (err) {
-          if (err) {
-            console.error('Erro ao salvar mensagem enviada:', err.message);
-            return;
+        
+        // Salva áudio no db
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+          [cliente_jid, atendente_id, texto],
+          function (err) {
+            if (err) console.error('Erro salvar áudio:', err.message);
+            io.to(atendente_id).emit('new_message', { id: this.lastID, cliente_jid, remetente: atendente_id, texto, timestamp: new Date().toISOString() });
           }
-
-          const novaMsg = {
-            id: this.lastID,
-            cliente_jid: cliente_jid,
-            remetente: atendente_id,
-            texto: texto,
-            timestamp: new Date().toISOString()
-          };
-
-          // Envia de volta para o atendente para atualizar a tela dele
-          io.to(atendente_id).emit('new_message', novaMsg);
-        }
-      );
+        );
+      } else {
+        // Envio de texto normal
+        await wwebClient.sendMessage(cliente_jid, texto);
+        
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
+          [cliente_jid, atendente_id, texto],
+          function (err) {
+            if (err) console.error('Erro salvar txt:', err.message);
+            io.to(atendente_id).emit('new_message', { id: this.lastID, cliente_jid, remetente: atendente_id, texto, timestamp: new Date().toISOString() });
+          }
+        );
+      }
 
     } catch (err) {
       console.error('❌ Erro ao enviar mensagem pelo WhatsApp:', err.message);
