@@ -1,5 +1,30 @@
 /* style.css */
 
+html, body {
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+#active-chat-area {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+#chat-messages-container {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+#chat-input-footer {
+  flex-shrink: 0 !important;
+}
+
 /* ==============================================================================
    VARIÁVEIS DE DESIGN SYSTEM (TEMA HARMONIZADO COM O PORTAL)
    ============================================================================== */
@@ -450,7 +475,7 @@ textarea#chat-input:focus-visible {
    BALÕES DE MENSAGEM (CHAT BUBBLES COERENTES COM TICKETFLOW)
    ============================================================================== */
 .msg-bubble {
-  max-width: 60%;
+  max-width: 75%;
   padding: 10px 14px;
   border-radius: 16px;
   font-size: 13px;
@@ -459,6 +484,118 @@ textarea#chat-input:focus-visible {
   word-wrap: break-word;
   box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.25);
   animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Balões de Mensagem de Voz Ampliados e Estilizados */
+.msg-voice-container {
+  width: 320px;
+  max-width: 100%;
+}
+
+@media (min-width: 640px) {
+  .msg-voice-container {
+    width: 360px;
+  }
+}
+
+.msg-voice-container audio {
+  width: 100% !important;
+  height: 36px !important;
+  border-radius: 12px;
+}
+
+/* Badge de Reação de Emoji Aumentado e Premium (Posicionado no Canto Externo sem Obstruir o Horário) */
+.msg-reaction-badge {
+  position: absolute !important;
+  bottom: -12px !important;
+  right: -10px !important;
+  min-width: 28px !important;
+  height: 28px !important;
+  padding: 2px 6px !important;
+  border-radius: 99px !important;
+  font-size: 15px !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: color-mix(in srgb, var(--color-background, #0f172a) 92%, var(--color-card)) !important;
+  border: 1.5px solid var(--border-color, rgba(255, 255, 255, 0.25)) !important;
+  color: var(--color-foreground, #ffffff) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+  cursor: pointer !important;
+  z-index: 25 !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease !important;
+  user-select: none !important;
+}
+
+.msg-reaction-badge:hover {
+  transform: scale(1.25) !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 0 15px color-mix(in srgb, var(--color-primary-theme) 50%, transparent) !important;
+}
+
+/* Popover de Reações Integrado ao Sistema de Temas (100% Opaco Sólido & Dinâmico) */
+.reaction-popover-card {
+  background-color: var(--color-card) !important;
+  color: var(--color-foreground) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.35), 0 0 20px color-mix(in srgb, var(--color-primary-theme) 20%, transparent) !important;
+  opacity: 1 !important;
+}
+
+.reaction-popover-header {
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.reaction-tab-active {
+  background: var(--color-primary-theme) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary-theme) 40%, transparent) !important;
+}
+
+.reaction-tab-inactive {
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent) !important;
+  color: var(--color-foreground) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.reaction-tab-inactive:hover {
+  background: color-mix(in srgb, var(--color-foreground) 16%, transparent) !important;
+}
+
+.reaction-user-item {
+  background: color-mix(in srgb, var(--color-foreground) 4%, transparent) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-foreground) !important;
+  transition: all 0.2s ease;
+}
+
+.reaction-user-item:hover {
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+}
+
+.reaction-user-avatar {
+  background: var(--accent-gradient, var(--color-primary-theme)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary-theme) 35%, transparent) !important;
+}
+
+.reaction-user-remove {
+  color: var(--color-primary-theme) !important;
+}
+
+/* Integração do Campo de Entrada ao Histórico de Mensagens (Estilo WhatsApp Web - Sem Divisória) */
+#chat-input-footer {
+  border: none !important;
+  border-top: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#chat-input-container {
+  background-color: var(--color-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-foreground) !important;
 }
 
 .msg-client {
@@ -500,13 +637,25 @@ textarea#chat-input:focus-visible {
   text-align: center;
 }
 
-/* Timestamps da Mensagem */
+.msg-bubble p {
+  display: inline;
+  word-break: break-word;
+}
+
+/* Timestamps da Mensagem (Estilo WhatsApp Web - Inline/Float com o Texto) */
 .msg-time {
-  font-size: 9px;
+  font-size: 9.5px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--color-text-muted) !important;
-  margin-top: 4px;
-  text-align: right;
-  display: block;
+  float: right !important;
+  margin-left: 10px !important;
+  margin-top: 3px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  user-select: none !important;
+  vertical-align: bottom;
 }
 
 /* ==============================================================================
@@ -796,14 +945,87 @@ aside > div:last-child {
   color: #f87171 !important;
 }
 
-#reply-preview-container {
-  background: color-mix(in srgb, var(--color-foreground) 2.5%, transparent) !important;
-  border-color: var(--border-color) !important;
+/* ============================================================
+   ✨ ANIMAÇÕES & DESIGN PREMIUM DE RESPOSTA A MENSAGEM
+   ============================================================ */
+
+@keyframes replyBannerIn {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.95);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.008);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-#reply-preview-container .text-slate-300 {
+@keyframes replyBannerOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}
+
+@keyframes messageReplyHighlight {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary-theme, #6366f1) 80%, transparent);
+    transform: scale(1);
+  }
+  30% {
+    box-shadow: 0 0 25px 4px color-mix(in srgb, var(--color-primary-theme, #6366f1) 60%, transparent);
+    transform: scale(1.02);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    transform: scale(1);
+  }
+}
+
+.animate-reply-in {
+  animation: replyBannerIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.animate-reply-out {
+  animation: replyBannerOut 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.message-reply-highlight {
+  animation: messageReplyHighlight 0.8s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme, #6366f1) 60%, transparent) !important;
+}
+
+#reply-preview-container {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.96) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
+  backdrop-filter: blur(16px) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #6366f1) 35%, rgba(255, 255, 255, 0.15)) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.45) !important;
+  position: relative !important;
+  z-index: 20 !important;
+  flex-shrink: 0 !important;
+  overflow: hidden;
+}
+
+#chat-input-container {
+  background-color: var(--color-card) !important;
+  border: 1px solid var(--border-color) !important;
   color: var(--color-foreground) !important;
-  opacity: 0.85;
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+#reply-preview-bar {
+  background: linear-gradient(180deg, var(--color-primary-theme, #6366f1) 0%, #a855f7 100%) !important;
+  box-shadow: 0 0 10px var(--color-primary-theme, #6366f1) !important;
 }
 
 /* Badge de Reação das Mensagens (Estilo WhatsApp) */
@@ -1198,6 +1420,45 @@ aside > div:last-child {
   transform: translateX(-50%) translateY(0) scale(1);
 }
 
+/* Opções de tooltip posicionados nos cantos (evita corte nas bordas da tela) */
+[data-tooltip-pos="top-left"]::after {
+  left: 0;
+  transform: translateY(4px) scale(0.95);
+}
+
+[data-tooltip-pos="top-left"]::before {
+  left: 16px;
+  transform: translateX(-50%) translateY(4px);
+}
+
+[data-tooltip-pos="top-left"]:hover::after {
+  transform: translateY(0) scale(1);
+}
+
+[data-tooltip-pos="top-left"]:hover::before {
+  transform: translateX(-50%) translateY(0);
+}
+
+[data-tooltip-pos="top-right"]::after {
+  left: auto;
+  right: 0;
+  transform: translateY(4px) scale(0.95);
+}
+
+[data-tooltip-pos="top-right"]::before {
+  left: auto;
+  right: 16px;
+  transform: translateX(50%) translateY(4px);
+}
+
+[data-tooltip-pos="top-right"]:hover::after {
+  transform: translateY(0) scale(1);
+}
+
+[data-tooltip-pos="top-right"]:hover::before {
+  transform: translateX(50%) translateY(0);
+}
+
 /* ==============================================================================
    ✨ ANIMAÇÕES DE TROCA DE CONVERSA ATIVA
    ============================================================================== */
@@ -1313,6 +1574,27 @@ aside > div:last-child {
 }
 
 /* ============================================================
+   🔒 MENSAGEM INTERNA — Estilos de Alto Contraste
+   ============================================================ */
+#chat-input-container.internal-mode #chat-input {
+  color: #ffffff !important;
+}
+
+#chat-input-container.internal-mode #chat-input::placeholder {
+  color: #e9d5ff !important;
+  opacity: 0.9 !important;
+}
+
+#internal-mode-banner,
+#internal-mode-banner span,
+#internal-mode-banner svg,
+#internal-note-badge,
+#internal-note-badge span,
+#internal-note-badge svg {
+  color: #ffffff !important;
+}
+
+/* ============================================================
    📁 BANCO DE ARQUIVOS — Estilos
    ============================================================ */
 
@@ -1385,4 +1667,67 @@ aside > div:last-child {
   border-radius: 6px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+/* ============================================================
+   ✨ ANIMAÇÕES SUAVES DE ENTRADA E SAÍDA DE MODAL (DADOS DA MENSAGEM)
+   ============================================================ */
+@keyframes modalBackdropIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes modalBackdropOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes modalContentIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.93) translateY(16px);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.01) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modalContentOut {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+}
+
+.animate-modal-backdrop-in {
+  animation: modalBackdropIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.animate-modal-backdrop-out {
+  animation: modalBackdropOut 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.animate-modal-content-in {
+  animation: modalContentIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.animate-modal-content-out {
+  animation: modalContentOut 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }

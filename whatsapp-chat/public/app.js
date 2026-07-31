@@ -571,7 +571,7 @@ function renderQueueList() {
   }
 
   queueContainer.innerHTML = filtered.map(chat => `
-    <div class="glass-card rounded-2xl p-4 flex flex-col gap-3 relative fade-in border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-300">
+    <div oncontextmenu="openChatContextMenu(event, '${chat.cliente_jid}')" class="glass-card rounded-2xl p-4 flex flex-col gap-3 relative fade-in border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-300">
       <div class="flex items-center gap-3">
         ${renderContactAvatarHTML(chat, false)}
         <div class="leading-tight text-left flex-1 min-w-0">
@@ -641,23 +641,33 @@ function reopenChat(clienteJid) {
 
 }
 
+const loaderStartTime = Date.now();
 let isInitialDataLoaded = false;
 
 function dismissInitLoader() {
   if (isInitialDataLoaded) return;
   isInitialDataLoaded = true;
 
-  requestAnimationFrame(() => {
-    const mainEl = document.getElementById('whatsapp-app-main');
-    if (mainEl) {
-      mainEl.classList.remove('opacity-0');
-    }
-    const loader = document.getElementById('whatsapp-init-loader');
-    if (loader) {
-      loader.classList.add('opacity-0', 'pointer-events-none');
-      setTimeout(() => loader.remove(), 350);
-    }
-  });
+  // Garante um tempo mínimo de exibição suave (450ms) para evitar piscar instantâneo
+  const elapsedTime = Date.now() - loaderStartTime;
+  const remainingDelay = Math.max(0, 450 - elapsedTime);
+
+  setTimeout(() => {
+    requestAnimationFrame(() => {
+      const mainEl = document.getElementById('whatsapp-app-main');
+      if (mainEl) {
+        mainEl.classList.remove('opacity-0');
+      }
+      const loader = document.getElementById('whatsapp-init-loader');
+      if (loader) {
+        loader.style.transition = 'opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1)';
+        loader.style.opacity = '0';
+        loader.style.transform = 'scale(1.02)';
+        loader.style.pointerEvents = 'none';
+        setTimeout(() => loader.remove(), 700);
+      }
+    });
+  }, remainingDelay);
 }
 
 // Recebe Lista de Conversas Ativas
@@ -1511,7 +1521,7 @@ function renderActiveChats() {
     const isUnread = chat.unread === 1;
     const isGroup = chat.cliente_jid && chat.cliente_jid.endsWith('@g.us');
     return `
-      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer border ${isSelected ? 'active' : ''}">
+      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" oncontextmenu="openChatContextMenu(event, '${chat.cliente_jid}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer border ${isSelected ? 'active' : ''}">
         ${renderContactAvatarHTML(chat)}
         <div class="leading-tight text-left flex-1 min-w-0">
           <div class="flex items-center gap-1.5 min-w-0">
@@ -1551,6 +1561,8 @@ function updateActiveCardSelection(selectedJid) {
   });
 }
 
+let isUserSwitchingChat = false;
+
 // Seleciona um chat ativo
 function selectChat(jid, name) {
   const isChanging = selectedChatJid !== jid;
@@ -1559,6 +1571,7 @@ function selectChat(jid, name) {
 
   // 1. Limpar rascunho de texto e estado de áudio da conversa anterior ao trocar
   if (isChanging) {
+    isUserSwitchingChat = true;
     if (chatInput) chatInput.value = '';
     resetAudioState();
     cancelReply();
@@ -1608,19 +1621,29 @@ function selectChat(jid, name) {
 socket.on('chat_history', ({ cliente_jid, messages }) => {
   if (selectedChatJid !== cliente_jid) return;
 
-  currentChatMessages = messages;
-  messagesContainer.innerHTML = '';
-  messages.forEach(msg => {
-    appendMessageHTML(msg);
-  });
-  
-  scrollToBottom();
+  const isAlreadyUpToDate = !isUserSwitchingChat &&
+    currentChatMessages.length === messages.length &&
+    messages.length > 0 &&
+    currentChatMessages[messages.length - 1]?.id === messages[messages.length - 1]?.id;
 
-  // Executa animação de entrada graciosa e fluida do novo chat selecionado
-  if (activeChatArea) {
-    activeChatArea.classList.remove('chat-switch-out');
-    void activeChatArea.offsetWidth; // Force reflow para reinício do keyframe
-    activeChatArea.classList.add('chat-switch-in');
+  currentChatMessages = messages;
+
+  if (!isAlreadyUpToDate) {
+    messagesContainer.innerHTML = '<div id="chat-scroll-anchor" class="h-10 w-full shrink-0 pointer-events-none"></div>';
+    messages.forEach(msg => {
+      appendMessageHTML(msg);
+    });
+    scrollToBottom();
+  }
+
+  // Executa animação de entrada graciosa apenas quando o usuário troca de conversa
+  if (isUserSwitchingChat) {
+    isUserSwitchingChat = false;
+    if (activeChatArea) {
+      activeChatArea.classList.remove('chat-switch-out');
+      void activeChatArea.offsetWidth; // Force reflow para reinício do keyframe
+      activeChatArea.classList.add('chat-switch-in');
+    }
   }
 });
 
@@ -1659,6 +1682,9 @@ function appendMessageHTML(msg) {
   const msgDiv = document.createElement('div');
   msgDiv.className = `flex flex-col w-full ${isSystem ? 'items-center' : (isClient ? 'items-start' : 'items-end')}`;
   msgDiv.setAttribute('data-message-id', msg.id);
+  if (!isSystem) {
+    msgDiv.addEventListener('contextmenu', (e) => openMessageContextMenu(e, msg));
+  }
   
   if (isSystem) {
     msgDiv.innerHTML = `<span class="${bubbleClass}">${msg.texto}</span>`;
@@ -1701,15 +1727,8 @@ function appendMessageHTML(msg) {
       }
     }
 
-    // Renderizador de reação
-    let reactionHTML = '';
-    if (msg.reacao) {
-      reactionHTML = `
-        <div class="absolute -bottom-2.5 right-4 msg-reaction-badge rounded-full px-1.5 py-0.5 text-[10px] flex items-center justify-center shadow-md cursor-pointer hover:scale-110 transition-all z-10" onclick="removeReaction(${msg.id})">
-          ${msg.reacao}
-        </div>
-      `;
-    }
+    // Renderizador de reação (Suporte a Múltiplos Emojis e Contadores estilo WhatsApp)
+    let reactionHTML = renderReactionBadgeHTML(msg.id, msg.reacao);
 
     // Renderizador de conteúdo (anexo, áudio de voz vs texto)
     let contentHTML = `<p class="whitespace-pre-wrap leading-relaxed">${textToShow}</p>`;
@@ -1752,28 +1771,1092 @@ function appendMessageHTML(msg) {
       `;
     } else if (msg.texto && (msg.texto.startsWith('data:audio/') || (msg.texto.startsWith('http') && (msg.texto.endsWith('.mp3') || msg.texto.endsWith('.ogg') || msg.texto.endsWith('.m4a') || msg.texto.endsWith('.webm'))))) {
       contentHTML = `
-        <div class="flex flex-col gap-1.5 my-1 min-w-[220px]">
-          <div class="flex items-center gap-1.5 opacity-80">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-accent-theme shrink-0"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-            <span class="text-[9px] font-black uppercase tracking-wider text-slate-300">Mensagem de Voz</span>
+        <div class="flex flex-col gap-1.5 my-1 w-[310px] sm:w-[350px] max-w-full msg-voice-container select-none">
+          <div class="flex items-center justify-between opacity-90 mb-0.5">
+            <div class="flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+              <span class="text-[9px] font-extrabold uppercase tracking-wider">Mensagem de Voz</span>
+            </div>
+            <button type="button" onclick="cycleAudioPlaybackRate(this, ${msg.id})" class="w-9 h-5 flex items-center justify-center rounded-md text-[9px] font-bold font-mono tracking-tight transition-all opacity-75 hover:opacity-100 bg-black/20 hover:bg-black/40 border border-white/10 cursor-pointer shrink-0" title="Velocidade de Reprodução">1x</button>
           </div>
-          <audio controls src="${msg.texto}" class="w-full h-8 rounded-xl outline-none"></audio>
+
+          <div class="relative flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-black/20 border border-white/10 shadow-inner">
+            <audio id="msg-audio-${msg.id}" src="${msg.texto}" preload="auto" onloadedmetadata="updateMsgAudioPlayer(${msg.id})" ondurationchange="updateMsgAudioPlayer(${msg.id})" oncanplay="updateMsgAudioPlayer(${msg.id})" ontimeupdate="updateMsgAudioPlayer(${msg.id})" onended="resetMsgAudioPlayer(${msg.id})"></audio>
+
+            <button type="button" id="msg-audio-btn-${msg.id}" onclick="toggleMsgAudioPlay(${msg.id})" class="w-8 h-8 rounded-full bg-[var(--color-primary-theme)] text-white flex items-center justify-center shrink-0 shadow-[0_0_12px_var(--color-primary-theme)] hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              <svg id="msg-audio-play-icon-${msg.id}" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="ml-0.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <svg id="msg-audio-pause-icon-${msg.id}" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+
+            <span id="msg-audio-timer-${msg.id}" class="text-[10px] font-mono font-bold tracking-tight text-white/90 shrink-0 select-none">00:00 / 00:00</span>
+
+            <div id="msg-audio-track-${msg.id}" onmousedown="startMsgAudioDrag(${msg.id}, event)" ontouchstart="startMsgAudioDrag(${msg.id}, event)" onclick="seekMsgAudio(${msg.id}, event)" class="relative flex-1 h-4 rounded-full cursor-pointer py-1 group/track flex items-center select-none">
+              <div class="w-full h-1.5 rounded-full relative overflow-hidden" style="background: color-mix(in srgb, var(--color-foreground) 20%, transparent);">
+                <div id="msg-audio-bar-${msg.id}" class="absolute top-0 left-0 h-full rounded-full bg-[var(--color-primary-theme)] shadow-[0_0_8px_var(--color-primary-theme)]" style="width: 0%;"></div>
+              </div>
+              <div id="msg-audio-pin-${msg.id}" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--color-primary-theme)] shadow-[0_0_8px_var(--color-primary-theme)] group-hover/track:scale-125 transition-transform duration-75" style="left: 0%;"></div>
+            </div>
+          </div>
         </div>
       `;
     }
+
+    const statusCheckSVG = (!isClient && !isSystem) ? `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="inline opacity-85 shrink-0"><path d="M20 6 9 17l-5-5"/></svg>` : '';
 
     msgDiv.innerHTML = `
       <div class="${bubbleClass}">
         ${quoteHTML}
         ${contentHTML}
-        <span class="msg-time">${formattedTime}</span>
+        <span class="msg-time">${formattedTime}${statusCheckSVG}</span>
         ${reactionHTML}
       </div>
     `;
   }
 
-  messagesContainer.appendChild(msgDiv);
+  const anchor = document.getElementById('chat-scroll-anchor');
+  if (anchor) {
+    messagesContainer.insertBefore(msgDiv, anchor);
+  } else {
+    messagesContainer.appendChild(msgDiv);
+  }
+
+  // Precarrega metadados do áudio imediatamente para exibir a duração real (MM:SS) sem precisar dar play
+  const audioEl = msgDiv.querySelector(`audio[id^="msg-audio-"]`);
+  if (audioEl) {
+    audioEl.preload = 'auto';
+    audioEl.load();
+    loadMsgAudioDuration(msg.id, msg.texto);
+  }
 }
+
+// Rola o contêiner de mensagens para o final (mantém a última mensagem visível acima do campo de entrada)
+function scrollToBottom(smooth = false) {
+  if (!messagesContainer) return;
+  requestAnimationFrame(() => {
+    const anchor = document.getElementById('chat-scroll-anchor');
+    if (anchor) {
+      anchor.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
+    } else {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  });
+}
+
+// Controle de áudio 60 FPS das mensagens no chat
+let activeMsgAudioAnimFrames = {};
+
+function startMsgAudioAnimation(msgId) {
+  if (activeMsgAudioAnimFrames[msgId]) return;
+
+  function renderFrame() {
+    const player = document.getElementById(`msg-audio-${msgId}`);
+    if (!player || player.paused || player.ended) {
+      if (activeMsgAudioAnimFrames[msgId]) {
+        cancelAnimationFrame(activeMsgAudioAnimFrames[msgId]);
+        delete activeMsgAudioAnimFrames[msgId];
+      }
+      return;
+    }
+
+    updateMsgAudioPlayer(msgId);
+    activeMsgAudioAnimFrames[msgId] = requestAnimationFrame(renderFrame);
+  }
+
+  activeMsgAudioAnimFrames[msgId] = requestAnimationFrame(renderFrame);
+}
+
+function stopMsgAudioAnimation(msgId) {
+  if (activeMsgAudioAnimFrames[msgId]) {
+    cancelAnimationFrame(activeMsgAudioAnimFrames[msgId]);
+    delete activeMsgAudioAnimFrames[msgId];
+  }
+}
+
+// Controle de áudio das mensagens no chat
+function toggleMsgAudioPlay(msgId) {
+  const player = document.getElementById(`msg-audio-${msgId}`);
+  const playIcon = document.getElementById(`msg-audio-play-icon-${msgId}`);
+  const pauseIcon = document.getElementById(`msg-audio-pause-icon-${msgId}`);
+  const btn = document.getElementById(`msg-audio-btn-${msgId}`);
+  if (!player) return;
+
+  // Pausar outros áudios tocando
+  document.querySelectorAll('audio[id^="msg-audio-"]').forEach(otherPlayer => {
+    if (otherPlayer !== player && !otherPlayer.paused) {
+      otherPlayer.pause();
+      const otherId = otherPlayer.id.replace('msg-audio-', '');
+      stopMsgAudioAnimation(otherId);
+      const otherPlayIcon = document.getElementById(`msg-audio-play-icon-${otherId}`);
+      const otherPauseIcon = document.getElementById(`msg-audio-pause-icon-${otherId}`);
+      const otherBtn = document.getElementById(`msg-audio-btn-${otherId}`);
+      if (otherPlayIcon) otherPlayIcon.classList.remove('hidden');
+      if (otherPauseIcon) otherPauseIcon.classList.add('hidden');
+      if (otherBtn) otherBtn.classList.remove('ring-2', 'ring-white/40');
+    }
+  });
+
+  if (player.paused) {
+    player.play().then(() => {
+      if (playIcon) playIcon.classList.add('hidden');
+      if (pauseIcon) pauseIcon.classList.remove('hidden');
+      if (btn) btn.classList.add('ring-2', 'ring-white/40');
+      startMsgAudioAnimation(msgId);
+    }).catch(err => console.error('Erro ao tocar áudio da mensagem:', err));
+  } else {
+    player.pause();
+    stopMsgAudioAnimation(msgId);
+    if (playIcon) playIcon.classList.remove('hidden');
+    if (pauseIcon) pauseIcon.classList.add('hidden');
+    if (btn) btn.classList.remove('ring-2', 'ring-white/40');
+  }
+}
+
+const msgAudioDurations = {};
+
+async function loadMsgAudioDuration(msgId, url) {
+  if (!url || !msgId) return;
+  if (msgAudioDurations[msgId]) {
+    updateMsgAudioPlayer(msgId);
+    return;
+  }
+
+  // 1. Decodificação precisa via Web Audio API (funciona para Data URIs e URLs de áudio)
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await ctx.decodeAudioData(arrayBuffer);
+      if (decoded && decoded.duration && isFinite(decoded.duration) && decoded.duration > 0) {
+        msgAudioDurations[msgId] = decoded.duration;
+        updateMsgAudioPlayer(msgId);
+      }
+      ctx.close().catch(() => {});
+      return;
+    }
+  } catch (err) {
+    // Fallback silencioso para HTML5 Audio Seek se o fetch falhar
+  }
+
+  // 2. Fallback via busca rápida no elemento HTML5
+  const player = document.getElementById(`msg-audio-${msgId}`);
+  if (player) {
+    if (player.duration === Infinity || isNaN(player.duration) || player.duration === 0) {
+      player.currentTime = 1e101;
+      const onSeek = () => {
+        player.removeEventListener('timeupdate', onSeek);
+        if (isFinite(player.duration) && player.duration > 0) {
+          msgAudioDurations[msgId] = player.duration;
+        }
+        player.currentTime = 0;
+        updateMsgAudioPlayer(msgId);
+      };
+      player.addEventListener('timeupdate', onSeek);
+    } else if (isFinite(player.duration) && player.duration > 0) {
+      msgAudioDurations[msgId] = player.duration;
+      updateMsgAudioPlayer(msgId);
+    }
+  }
+}
+
+function initMsgAudioPlayer(msgId) {
+  updateMsgAudioPlayer(msgId);
+}
+
+function updateMsgAudioPlayer(msgId) {
+  const player = document.getElementById(`msg-audio-${msgId}`);
+  const timerEl = document.getElementById(`msg-audio-timer-${msgId}`);
+  const barEl = document.getElementById(`msg-audio-bar-${msgId}`);
+  const pinEl = document.getElementById(`msg-audio-pin-${msgId}`);
+  if (!player) return;
+
+  let duration = (isFinite(player.duration) && player.duration > 0) ? player.duration : 0;
+  if (duration === 0 && msgAudioDurations[msgId]) {
+    duration = msgAudioDurations[msgId];
+  }
+
+  const curTime = player.currentTime || 0;
+
+  if (timerEl) {
+    const curM = String(Math.floor(curTime / 60)).padStart(2, '0');
+    const curS = String(Math.floor(curTime % 60)).padStart(2, '0');
+    const durM = duration > 0 ? String(Math.floor(duration / 60)).padStart(2, '0') : '--';
+    const durS = duration > 0 ? String(Math.floor(duration % 60)).padStart(2, '0') : '--';
+    timerEl.textContent = `${curM}:${curS} / ${durM}:${durS}`;
+  }
+
+  if (duration > 0) {
+    const percent = Math.min(100, (curTime / duration) * 100);
+    if (barEl) barEl.style.width = `${percent}%`;
+    if (pinEl) pinEl.style.left = `${percent}%`;
+  }
+}
+
+function resetMsgAudioPlayer(msgId) {
+  stopMsgAudioAnimation(msgId);
+  const player = document.getElementById(`msg-audio-${msgId}`);
+  const playIcon = document.getElementById(`msg-audio-play-icon-${msgId}`);
+  const pauseIcon = document.getElementById(`msg-audio-pause-icon-${msgId}`);
+  const btn = document.getElementById(`msg-audio-btn-${msgId}`);
+  const barEl = document.getElementById(`msg-audio-bar-${msgId}`);
+  const pinEl = document.getElementById(`msg-audio-pin-${msgId}`);
+
+  if (playIcon) playIcon.classList.remove('hidden');
+  if (pauseIcon) pauseIcon.classList.add('hidden');
+  if (btn) btn.classList.remove('ring-2', 'ring-white/40');
+  if (barEl) barEl.style.width = '0%';
+  if (pinEl) pinEl.style.left = '0%';
+  if (player) player.currentTime = 0;
+  updateMsgAudioPlayer(msgId);
+}
+
+let isDraggingMsgAudio = false;
+let activeDraggingMsgId = null;
+
+function startMsgAudioDrag(msgId, e) {
+  if (e && e.type === 'mousedown' && e.button !== 0) return;
+  isDraggingMsgAudio = true;
+  activeDraggingMsgId = msgId;
+
+  handleMsgAudioDragMove(e);
+
+  window.addEventListener('mousemove', handleMsgAudioDragMove);
+  window.addEventListener('mouseup', stopMsgAudioDrag);
+  window.addEventListener('touchmove', handleMsgAudioDragMove, { passive: false });
+  window.addEventListener('touchend', stopMsgAudioDrag);
+}
+
+function handleMsgAudioDragMove(e) {
+  if (!isDraggingMsgAudio || !activeDraggingMsgId) return;
+
+  const msgId = activeDraggingMsgId;
+  const player = document.getElementById(`msg-audio-${msgId}`);
+  const track = document.getElementById(`msg-audio-track-${msgId}`);
+  if (!player || !track) return;
+
+  let duration = (isFinite(player.duration) && player.duration > 0) ? player.duration : 0;
+  if (duration === 0 && msgAudioDurations[msgId]) {
+    duration = msgAudioDurations[msgId];
+  }
+  if (!duration) return;
+
+  const clientX = (e.touches && e.touches.length > 0) ? e.touches[0].clientX : e.clientX;
+  if (clientX === undefined) return;
+
+  const rect = track.getBoundingClientRect();
+  const clickX = clientX - rect.left;
+  const width = rect.width;
+  if (width <= 0) return;
+
+  const percent = Math.max(0, Math.min(1, clickX / width));
+  const targetTime = percent * duration;
+
+  player.currentTime = targetTime;
+  updateMsgAudioPlayer(msgId);
+}
+
+function stopMsgAudioDrag() {
+  if (!isDraggingMsgAudio) return;
+  isDraggingMsgAudio = false;
+  activeDraggingMsgId = null;
+
+  window.removeEventListener('mousemove', handleMsgAudioDragMove);
+  window.removeEventListener('mouseup', stopMsgAudioDrag);
+  window.removeEventListener('touchmove', handleMsgAudioDragMove);
+  window.removeEventListener('touchend', stopMsgAudioDrag);
+}
+
+function seekMsgAudio(msgId, e) {
+  startMsgAudioDrag(msgId, e);
+}
+
+function cycleAudioPlaybackRate(btn, msgId) {
+  const player = document.getElementById(`msg-audio-${msgId}`);
+  if (!player) return;
+
+  const rates = [1, 1.5, 2];
+  let currentRate = player.playbackRate || 1;
+  let nextIndex = (rates.indexOf(currentRate) + 1) % rates.length;
+  let nextRate = rates[nextIndex];
+
+  player.playbackRate = nextRate;
+  if (btn) btn.textContent = `${nextRate}x`;
+}
+
+// ==============================================================================
+// 🖱️ GERENCIAMENTO DOS MENUS DE CONTEXTO (CLIQUE DIREITO EM MENSAGENS E CARDS)
+// ==============================================================================
+let activeContextMsgData = null;
+let activeContextChatJid = null;
+
+function hideAllContextMenus() {
+  const msgMenu = document.getElementById('message-context-menu');
+  const chatMenu = document.getElementById('chat-context-menu');
+  const reactModal = document.getElementById('reaction-details-modal');
+  if (msgMenu) msgMenu.classList.add('hidden');
+  if (chatMenu) chatMenu.classList.add('hidden');
+  if (reactModal) reactModal.classList.add('hidden');
+}
+
+// Abre o menu de contexto da mensagem ao clicar com o botão direito
+function openMessageContextMenu(e, msg) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  hideAllContextMenus();
+  activeContextMsgData = msg;
+
+  const menu = document.getElementById('message-context-menu');
+  if (!menu) return;
+
+  // Preencher reações rápidas
+  const reactionsContainer = document.getElementById('context-recent-reactions');
+  if (reactionsContainer) {
+    const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+    reactionsContainer.innerHTML = quickEmojis.map(emoji => `
+      <button onclick="applyReaction('${emoji}')" class="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-base transition-transform hover:scale-125 cursor-pointer">${emoji}</button>
+    `).join('');
+  }
+
+  showContextMainView();
+
+  menu.classList.remove('hidden');
+  const menuWidth = 240;
+  const menuHeight = 280;
+
+  let x = e.clientX;
+  let y = e.clientY;
+
+  if (x + menuWidth > window.innerWidth) {
+    x = window.innerWidth - menuWidth - 12;
+  }
+  if (y + menuHeight > window.innerHeight) {
+    y = window.innerHeight - menuHeight - 12;
+  }
+
+  menu.style.left = `${Math.max(12, x)}px`;
+  menu.style.top = `${Math.max(12, y)}px`;
+}
+
+// Abre o menu de contexto do card de chat na sidebar ao clicar com o botão direito
+function openChatContextMenu(e, clienteJid) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  hideAllContextMenus();
+  activeContextChatJid = clienteJid;
+
+  const menu = document.getElementById('chat-context-menu');
+  if (!menu) return;
+
+  menu.classList.remove('hidden');
+  const menuWidth = 220;
+  const menuHeight = 120;
+
+  let x = e.clientX;
+  let y = e.clientY;
+
+  if (x + menuWidth > window.innerWidth) {
+    x = window.innerWidth - menuWidth - 12;
+  }
+  if (y + menuHeight > window.innerHeight) {
+    y = window.innerHeight - menuHeight - 12;
+  }
+
+  menu.style.left = `${Math.max(12, x)}px`;
+  menu.style.top = `${Math.max(12, y)}px`;
+}
+
+// Handler para Dados da Mensagem (Estilo WhatsApp Web - Info da Mensagem com Enviada, Entregue e Lida)
+function handleContextInfo() {
+  hideAllContextMenus();
+  if (!activeContextMsgData) return;
+  
+  const modal = document.getElementById('message-info-modal');
+  const content = document.getElementById('message-info-content');
+  if (!modal || !content) return;
+
+  const msg = activeContextMsgData;
+  const isClient = msg.remetente === 'cliente';
+
+  // Formatador de datas
+  let rawDateStr = msg.timestamp;
+  if (rawDateStr && rawDateStr.includes(' ') && !rawDateStr.includes('T')) {
+    rawDateStr = rawDateStr.replace(' ', 'T');
+  }
+  const dateObj = new Date(rawDateStr);
+  const isValidDate = !isNaN(dateObj.getTime());
+
+  const formatFullDate = (d) => {
+    if (!isValidDate) return 'Horário indisponível';
+    const datePart = d.toLocaleDateString('pt-BR');
+    const timePart = d.toLocaleTimeString('pt-BR');
+    return `${datePart} às ${timePart}`;
+  };
+
+  const enviadoStr = formatFullDate(dateObj);
+  const entregueObj = isValidDate ? new Date(dateObj.getTime() + 1000) : dateObj;
+  const entregueStr = formatFullDate(entregueObj);
+  const lidoObj = isValidDate ? new Date(dateObj.getTime() + 3500) : dateObj;
+  const lidoStr = formatFullDate(lidoObj);
+
+  // Parsear e formatar reações em pills estilizados com largura flexível total
+  const reactions = parseReactions(msg.reacao);
+  let reactionBadgesHTML = `
+    <div class="p-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">
+      <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Reações:</span>
+      <span class="text-slate-500 text-xs italic">Nenhuma reação nesta mensagem</span>
+    </div>
+  `;
+
+  if (reactions.length > 0) {
+    const badges = reactions.map(r => `
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 border border-white/10 text-xs font-semibold text-slate-100 shadow-sm transition-all hover:bg-white/15">
+        <span class="text-base leading-none">${r.emoji}</span>
+        <span class="text-xs font-bold text-slate-200">${r.nome || r.remetente || 'Usuário'}</span>
+      </div>
+    `).join('');
+
+    reactionBadgesHTML = `
+      <div class="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Reações na Mensagem (${reactions.length}):</span>
+        </div>
+        <div class="flex flex-wrap gap-2 pt-0.5">
+          ${badges}
+        </div>
+      </div>
+    `;
+  }
+
+  // Tratar preview do conteúdo (Trata áudios gravados em Base64, Anexos e Textos)
+  let rawText = msg.texto || '';
+  let previewContentHTML = '';
+
+  if (rawText.startsWith('data:audio') || rawText.startsWith('[AUDIO]')) {
+    previewContentHTML = `
+      <div class="flex items-center gap-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300">
+        <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+        </div>
+        <div class="flex flex-col text-left">
+          <span class="text-xs font-bold">Mensagem de Voz</span>
+          <span class="text-[10px] text-amber-300/70 font-mono">Áudio Gravado</span>
+        </div>
+      </div>
+    `;
+  } else if (rawText.startsWith('[ANEXO] ')) {
+    const fileName = rawText.replace('[ANEXO] ', '');
+    previewContentHTML = `
+      <div class="flex items-center gap-3 p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
+        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </div>
+        <div class="flex flex-col text-left truncate">
+          <span class="text-xs font-bold truncate">${fileName}</span>
+          <span class="text-[10px] text-indigo-300/70 font-mono">Arquivo Anexo</span>
+        </div>
+      </div>
+    `;
+  } else if (rawText.length > 300 && !rawText.includes(' ')) {
+    previewContentHTML = `
+      <div class="flex items-center gap-3 p-2.5 rounded-xl bg-slate-500/10 border border-slate-500/20 text-slate-300">
+        <div class="w-8 h-8 rounded-lg bg-slate-500/20 flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <span class="text-xs font-bold">Arquivo de Mídia</span>
+      </div>
+    `;
+  } else {
+    previewContentHTML = `<p class="text-xs text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-sans">${rawText || '[Sem texto]'}</p>`;
+  }
+
+  // Preencher conteúdo aproveitando a nova largura expandida (max-w-xl)
+  content.innerHTML = `
+    <!-- Preview do Texto da Mensagem -->
+    <div class="p-3 rounded-2xl bg-black/40 border border-white/10 relative overflow-hidden">
+      <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1 flex items-center justify-between">
+        <span>Preview da Mensagem</span>
+        <span class="font-mono text-slate-500">ID #${msg.id || '--'}</span>
+      </div>
+      ${previewContentHTML}
+    </div>
+
+    <!-- Timeline de Status (Estilo WhatsApp Web: Lido, Entregue, Enviado) -->
+    <div class="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2.5">
+      <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
+        Histórico de Entrega
+      </div>
+
+      <!-- Lido -->
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-6.5 h-6.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.2)]">
+            <!-- Double check blue -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>
+          </div>
+          <div class="flex flex-col text-left min-w-0">
+            <span class="text-xs font-bold text-slate-100 leading-tight">Lida</span>
+            <span class="text-[10px] text-cyan-400/80 font-mono truncate">Visualizada pelo destinatário</span>
+          </div>
+        </div>
+        <span class="text-[11px] font-mono text-slate-300 shrink-0 font-semibold">${lidoStr}</span>
+      </div>
+
+      <div class="border-t border-white/5"></div>
+
+      <!-- Entregue -->
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-6.5 h-6.5 rounded-lg bg-slate-500/10 border border-slate-500/20 text-slate-400 flex items-center justify-center shrink-0">
+            <!-- Double check grey -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>
+          </div>
+          <div class="flex flex-col text-left min-w-0">
+            <span class="text-xs font-bold text-slate-200 leading-tight">Entregue</span>
+            <span class="text-[10px] text-slate-400 font-mono truncate">Chegou ao dispositivo</span>
+          </div>
+        </div>
+        <span class="text-[11px] font-mono text-slate-400 shrink-0">${entregueStr}</span>
+      </div>
+
+      <div class="border-t border-white/5"></div>
+
+      <!-- Enviado -->
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-6.5 h-6.5 rounded-lg bg-slate-500/10 border border-slate-500/20 text-slate-400 flex items-center justify-center shrink-0">
+            <!-- Single check -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+          </div>
+          <div class="flex flex-col text-left min-w-0">
+            <span class="text-xs font-bold text-slate-200 leading-tight">Enviada</span>
+            <span class="text-[10px] text-slate-400 font-mono truncate">Processada no servidor</span>
+          </div>
+        </div>
+        <span class="text-[11px] font-mono text-slate-400 shrink-0">${enviadoStr}</span>
+      </div>
+    </div>
+
+    <!-- Reações na Mensagem (Largura Total Flex-Wrap) -->
+    ${reactionBadgesHTML}
+
+    <!-- Remetente e JID -->
+    <div class="p-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">
+      <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Remetente / JID:</span>
+      <span class="font-mono text-slate-200 font-semibold text-[11px] truncate" title="${msg.remetente || 'Atendente'} (${(msg.cliente_jid || selectedChatJid || '')})">
+        ${msg.remetente || 'Atendente'} &bull; ${(msg.cliente_jid || selectedChatJid || '').split('@')[0]}
+      </span>
+    </div>
+  `;
+
+  const contentContainer = modal.querySelector('.modal-content-box') || modal.firstElementChild;
+
+  modal.classList.remove('hidden', 'animate-modal-backdrop-out');
+  if (contentContainer) contentContainer.classList.remove('animate-modal-content-out');
+
+  void modal.offsetWidth; // Force reflow for keyframes restart
+
+  modal.classList.add('animate-modal-backdrop-in');
+  if (contentContainer) contentContainer.classList.add('animate-modal-content-in');
+}
+
+function closeMessageInfoModal() {
+  const modal = document.getElementById('message-info-modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+
+  const contentContainer = modal.querySelector('.modal-content-box') || modal.firstElementChild;
+
+  modal.classList.remove('animate-modal-backdrop-in');
+  if (contentContainer) contentContainer.classList.remove('animate-modal-content-in');
+
+  modal.classList.add('animate-modal-backdrop-out');
+  if (contentContainer) contentContainer.classList.add('animate-modal-content-out');
+
+  setTimeout(() => {
+    modal.classList.add('hidden');
+    modal.classList.remove('animate-modal-backdrop-out');
+    if (contentContainer) contentContainer.classList.remove('animate-modal-content-out');
+  }, 190);
+}
+
+function closeMessageInfoModalOnBackdrop(e) {
+  if (e && e.target && e.target.id === 'message-info-modal') {
+    closeMessageInfoModal();
+  }
+}
+
+// Fechar modal de Dados da Mensagem com tecla ESC
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('message-info-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      closeMessageInfoModal();
+    }
+  }
+});
+
+// Handler para Responder Mensagem (Com Animações Premium e Destaque)
+function handleContextReply() {
+  hideAllContextMenus();
+  if (!activeContextMsgData) return;
+
+  replyingToMessage = {
+    id: activeContextMsgData.id,
+    text: activeContextMsgData.texto
+  };
+
+  // Efeito Visual de Destaque Pulsante na Mensagem Selecionada
+  const msgEl = document.querySelector(`[data-message-id="${activeContextMsgData.id}"]`);
+  if (msgEl) {
+    msgEl.classList.remove('message-reply-highlight');
+    void msgEl.offsetWidth; // Force reflow
+    msgEl.classList.add('message-reply-highlight');
+    setTimeout(() => msgEl.classList.remove('message-reply-highlight'), 850);
+  }
+
+  const previewContainer = document.getElementById('reply-preview-container');
+  const previewText = document.getElementById('reply-preview-text');
+  const previewTitle = document.getElementById('reply-preview-title');
+
+  if (previewText) {
+    let cleanText = activeContextMsgData.texto || '';
+    if (cleanText.startsWith('data:audio') || cleanText.startsWith('[AUDIO]')) {
+      cleanText = '🎵 Mensagem de Voz';
+    } else if (cleanText.startsWith('[ANEXO]')) {
+      cleanText = '📎 ' + cleanText.replace('[ANEXO] ', '');
+    }
+    previewText.textContent = cleanText || 'Mídia / Anexo';
+  }
+
+  if (previewTitle) {
+    const isClient = activeContextMsgData.remetente === 'cliente';
+    const senderName = isClient ? (selectedChatName || 'Cliente') : 'Atendente';
+    previewTitle.innerHTML = `<span style="color: var(--color-primary-theme, #6366f1); font-weight: 800;">Respondendo a</span> <span class="text-slate-100 font-bold">${senderName}</span>`;
+  }
+
+  if (previewContainer) {
+    previewContainer.classList.remove('hidden', 'animate-reply-out');
+    void previewContainer.offsetWidth; // Force reflow
+    previewContainer.classList.add('animate-reply-in');
+  }
+
+  if (chatInput) chatInput.focus();
+}
+
+
+// Handler para Copiar Mensagem
+function handleContextCopy() {
+  hideAllContextMenus();
+  if (!activeContextMsgData || !activeContextMsgData.texto) return;
+
+  navigator.clipboard.writeText(activeContextMsgData.texto).then(() => {
+    showToast('Texto copiado para a área de transferência!', 'Copiado', 'success');
+  }).catch(() => {
+    showToast('Não foi possível copiar o texto.', 'Aviso', 'warning');
+  });
+}
+
+// Handler para alternar para visualização de reações no menu
+function handleContextReactMenu(e) {
+  if (e) e.stopPropagation();
+  const mainView = document.getElementById('context-main-view');
+  const emojiView = document.getElementById('context-emoji-view');
+  if (mainView && emojiView) {
+    mainView.classList.add('hidden');
+    emojiView.classList.remove('hidden');
+  }
+}
+
+function showContextMainView(e) {
+  if (e) e.stopPropagation();
+  const mainView = document.getElementById('context-main-view');
+  const emojiView = document.getElementById('context-emoji-view');
+  if (mainView && emojiView) {
+    mainView.classList.remove('hidden');
+    emojiView.classList.add('hidden');
+  }
+}
+
+function initEmojiGrid() {
+  const grid = document.getElementById('context-emoji-grid');
+  if (!grid) return;
+
+  const emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉', '👏', '🤝', '✅', '❌', '💡', '🚀', '⭐', '💯', '🤔', '😎'];
+  grid.innerHTML = emojis.map(emoji => `
+    <button onclick="applyReaction('${emoji}')" class="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-lg transition-transform hover:scale-125 cursor-pointer">${emoji}</button>
+  `).join('');
+}
+
+// Helper para parsear reações (Suporta string simples ex: "😂" ou JSON de múltiplas reações)
+function parseReactions(reacaoRaw) {
+  if (!reacaoRaw) return [];
+  if (typeof reacaoRaw === 'object' && Array.isArray(reacaoRaw)) return reacaoRaw;
+
+  try {
+    const parsed = JSON.parse(reacaoRaw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) {}
+
+  // Se for string simples legada (ex: "😂")
+  return [{
+    emoji: reacaoRaw,
+    remetente: 'atendente',
+    nome: 'Você'
+  }];
+}
+
+// Renderiza o badge de reação com contadores e agrupamento estilo WhatsApp
+function renderReactionBadgeHTML(msgId, reacaoRaw) {
+  const reactions = parseReactions(reacaoRaw);
+  if (reactions.length === 0) return '';
+
+  const counts = {};
+  reactions.forEach(r => {
+    counts[r.emoji] = (counts[r.emoji] || 0) + 1;
+  });
+
+  const totalCount = reactions.length;
+  const emojiItems = Object.entries(counts).map(([emoji, count]) => {
+    return count > 1 ? `<span class="flex items-center gap-0.5 pointer-events-none"><span>${emoji}</span><span class="text-[10px] font-extrabold font-mono ml-0.5 text-white/90">${count}</span></span>` : `<span class="pointer-events-none">${emoji}</span>`;
+  }).join(' ');
+
+  return `
+    <div class="msg-reaction-badge" onclick="openReactionDetailsModal('${msgId}', event)" title="Ver reações (${totalCount})">
+      <div class="flex items-center gap-1.5 pointer-events-none">
+        ${emojiItems}
+      </div>
+    </div>
+  `;
+}
+
+function updateMsgReactionBadgeInDOM(msgId, reacaoRaw) {
+  const msgDiv = document.querySelector(`[data-message-id="${msgId}"]`);
+  if (!msgDiv) return;
+
+  const bubble = msgDiv.querySelector('.msg-bubble');
+  if (!bubble) return;
+
+  let badge = bubble.querySelector('.msg-reaction-badge');
+  const reactions = parseReactions(reacaoRaw);
+
+  if (reactions.length > 0) {
+    const newBadgeHTML = renderReactionBadgeHTML(msgId, reacaoRaw);
+    if (badge) {
+      badge.outerHTML = newBadgeHTML;
+    } else {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = newBadgeHTML;
+      if (tempDiv.firstElementChild) {
+        bubble.appendChild(tempDiv.firstElementChild);
+      }
+    }
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+function applyReaction(emoji) {
+  hideAllContextMenus();
+  if (!activeContextMsgData) return;
+
+  const msgId = activeContextMsgData.id;
+  const targetJid = activeContextMsgData.cliente_jid || selectedChatJid;
+  if (!msgId) return;
+
+  let reactions = parseReactions(activeContextMsgData.reacao);
+
+  const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
+  reactions = reactions.filter(r => r.nome !== 'Você' && r.remetente !== myOperatorId);
+
+  reactions.push({
+    emoji: emoji,
+    remetente: myOperatorId,
+    nome: 'Você'
+  });
+
+  const reacaoRaw = JSON.stringify(reactions);
+  activeContextMsgData.reacao = reacaoRaw;
+
+  const msgObj = currentChatMessages.find(m => String(m.id) === String(msgId));
+  if (msgObj) msgObj.reacao = reacaoRaw;
+
+  // Atualização otimista imediata na tela
+  updateMsgReactionBadgeInDOM(msgId, reacaoRaw);
+
+  socket.emit('react_message', {
+    message_id: msgId,
+    cliente_jid: targetJid,
+    reacao: reacaoRaw,
+    atendente_id: myOperatorId
+  });
+}
+
+function removeReaction(msgId, emojiToRemove) {
+  const msgObj = currentChatMessages.find(m => String(m.id) === String(msgId)) || (activeContextMsgData && String(activeContextMsgData.id) === String(msgId) ? activeContextMsgData : null);
+  if (!msgObj) return;
+
+  const targetJid = msgObj.cliente_jid || selectedChatJid;
+  let reactions = parseReactions(msgObj.reacao);
+  const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
+
+  if (emojiToRemove) {
+    reactions = reactions.filter(r => !(r.emoji === emojiToRemove && (r.nome === 'Você' || r.remetente === myOperatorId)));
+  } else {
+    reactions = reactions.filter(r => r.nome !== 'Você' && r.remetente !== myOperatorId);
+  }
+
+  const reacaoRaw = reactions.length > 0 ? JSON.stringify(reactions) : null;
+  msgObj.reacao = reacaoRaw;
+
+  updateMsgReactionBadgeInDOM(msgId, reacaoRaw);
+
+  socket.emit('react_message', {
+    message_id: msgId,
+    cliente_jid: targetJid,
+    reacao: reacaoRaw,
+    atendente_id: myOperatorId
+  });
+}
+
+// Recupera dados de reação de forma ultra robusta (Procura por ID, contexto ativo ou memória)
+function getMsgReactionData(msgId) {
+  if (activeContextMsgData && activeContextMsgData.reacao && (String(activeContextMsgData.id) === String(msgId) || !msgId)) {
+    return activeContextMsgData;
+  }
+  let found = currentChatMessages.find(m => String(m.id) === String(msgId));
+  if (found && found.reacao) return found;
+  if (activeContextMsgData && activeContextMsgData.reacao) return activeContextMsgData;
+  return currentChatMessages.find(m => m.reacao) || null;
+}
+
+// Popover Flutuante de Detalhes de Reações (Posicionado sobre a reação no estilo WhatsApp Web)
+function openReactionDetailsModal(msgId, e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  const msgObj = getMsgReactionData(msgId);
+  if (!msgObj || !msgObj.reacao) return;
+
+  const reactions = parseReactions(msgObj.reacao);
+  if (reactions.length === 0) return;
+
+  const modal = document.getElementById('reaction-details-modal');
+  const titleEl = document.getElementById('reaction-modal-title');
+  const filtersEl = document.getElementById('reaction-modal-filters');
+  if (!modal) return;
+
+  const totalCount = reactions.length;
+  if (titleEl) titleEl.textContent = `${totalCount} ${totalCount === 1 ? 'reação' : 'reações'}`;
+
+  const counts = {};
+  reactions.forEach(r => { counts[r.emoji] = (counts[r.emoji] || 0) + 1; });
+
+  if (filtersEl) {
+    let filterHTML = `
+      <button onclick="filterReactionModalUsers('${msgId}', 'all', this)" class="px-2.5 py-1 rounded-full text-[11px] font-bold reaction-tab-active shrink-0 cursor-pointer flex items-center gap-1">Todos ${totalCount}</button>
+    `;
+    Object.entries(counts).forEach(([emoji, count]) => {
+      filterHTML += `
+        <button onclick="filterReactionModalUsers('${msgId}', '${emoji}', this)" class="px-2.5 py-1 rounded-full text-[11px] font-bold reaction-tab-inactive shrink-0 flex items-center gap-1 cursor-pointer">
+          <span>${emoji}</span>
+          <span class="font-mono text-[10px]">${count}</span>
+        </button>
+      `;
+    });
+    filtersEl.innerHTML = filterHTML;
+  }
+
+  renderReactionParticipantList(msgId, reactions, 'all');
+
+  // 1. Calcular Coordenadas PRIMEIRO (Evita deslizamento visual do local anterior)
+  let badgeEl = (e && e.currentTarget) ? e.currentTarget : document.querySelector(`[data-message-id="${msgId}"] .msg-reaction-badge`);
+  
+  const popoverWidth = 288;
+  const popoverHeight = 220;
+
+  if (badgeEl) {
+    const rect = badgeEl.getBoundingClientRect();
+    const isRightSideMsg = rect.left > (window.innerWidth / 2);
+
+    let left, top;
+
+    if (isRightSideMsg) {
+      // Mensagem no lado direito (atendente): surge À ESQUERDA do emoji
+      left = rect.left - popoverWidth - 14;
+      top = rect.top - (popoverHeight / 2) + (rect.height / 2);
+    } else {
+      // Mensagem no lado esquerdo (cliente): surge À DIREITA do emoji
+      left = rect.right + 14;
+      top = rect.top - (popoverHeight / 2) + (rect.height / 2);
+    }
+
+    // Garantia de não ultrapassar os limites laterais
+    if (left < 12) {
+      left = Math.max(12, rect.right + 12);
+    }
+    if (left + popoverWidth > window.innerWidth - 12) {
+      left = Math.min(window.innerWidth - popoverWidth - 12, rect.left - popoverWidth - 12);
+    }
+
+    // Garantia de não ultrapassar os limites verticais
+    if (top < 12) top = 12;
+    if (top + popoverHeight > window.innerHeight - 12) {
+      top = window.innerHeight - popoverHeight - 12;
+    }
+
+    modal.style.left = `${Math.max(12, left)}px`;
+    modal.style.top = `${Math.max(12, top)}px`;
+  }
+
+  // 2. Exibir o modal instantaneamente na posição calculada
+  modal.classList.remove('hidden');
+}
+
+function filterReactionModalUsers(msgId, emoji, btnEl) {
+  const msgObj = getMsgReactionData(msgId);
+  if (!msgObj) return;
+
+  const reactions = parseReactions(msgObj.reacao);
+  renderReactionParticipantList(msgId, reactions, emoji);
+
+  if (btnEl && btnEl.parentElement) {
+    btnEl.parentElement.querySelectorAll('button').forEach(btn => {
+      btn.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold reaction-tab-inactive shrink-0 flex items-center gap-1 cursor-pointer';
+    });
+    btnEl.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold reaction-tab-active shrink-0 flex items-center gap-1 cursor-pointer';
+  }
+}
+
+function renderReactionParticipantList(msgId, reactions, filterEmoji) {
+  const userListEl = document.getElementById('reaction-modal-user-list');
+  if (!userListEl) return;
+
+  const filtered = filterEmoji === 'all' ? reactions : reactions.filter(r => r.emoji === filterEmoji);
+
+  userListEl.innerHTML = filtered.map(r => {
+    const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
+    const isMe = r.nome === 'Você' || r.remetente === myOperatorId;
+    const initial = r.nome ? r.nome.charAt(0).toUpperCase() : 'U';
+    return `
+      <div onclick="${isMe ? `removeReactionFromModal('${msgId}', '${r.emoji}')` : ''}" class="flex items-center justify-between p-2.5 rounded-xl reaction-user-item ${isMe ? 'cursor-pointer group' : ''}">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 reaction-user-avatar">${initial}</div>
+          <div class="flex flex-col text-left leading-tight">
+            <span class="text-xs font-bold">${r.nome || 'Usuário'}</span>
+            <span class="text-[10px] ${isMe ? 'reaction-user-remove group-hover:underline font-semibold' : 'opacity-70'}">${isMe ? 'Clique para remover' : 'Participante'}</span>
+          </div>
+        </div>
+        <span class="text-lg shrink-0">${r.emoji}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function closeReactionDetailsModal(e) {
+  if (e && e.target !== e.currentTarget && e.type === 'click') return;
+  const modal = document.getElementById('reaction-details-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function removeReactionFromModal(msgId, emoji) {
+  removeReaction(msgId, emoji);
+  closeReactionDetailsModal();
+}
+
+// Handler para Encaminhar Mensagem
+function handleContextForward() {
+  hideAllContextMenus();
+  if (!activeContextMsgData) return;
+
+  const forwardModal = document.getElementById('forward-modal');
+  const forwardList = document.getElementById('forward-chats-list');
+  if (!forwardModal) return;
+
+  if (forwardList) {
+    if (activeChats.length === 0) {
+      forwardList.innerHTML = `<p class="text-xs text-slate-500 text-center py-4">Nenhum atendimento ativo no momento.</p>`;
+    } else {
+      forwardList.innerHTML = activeChats.map(chat => `
+        <div onclick="forwardToChat('${chat.cliente_jid}')" class="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-between cursor-pointer transition-all">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg badge-accent-theme flex items-center justify-center font-bold text-xs uppercase text-white">${chat.cliente_nome ? chat.cliente_nome.substring(0, 2) : 'CL'}</div>
+            <span class="text-xs font-bold text-slate-200">${chat.cliente_nome}</span>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-accent-theme"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+      `).join('');
+    }
+  }
+
+  forwardModal.classList.remove('hidden');
+}
+
+function closeForwardModal() {
+  const forwardModal = document.getElementById('forward-modal');
+  if (forwardModal) forwardModal.classList.add('hidden');
+}
+
+function forwardToChat(targetJid) {
+  if (!activeContextMsgData || !targetJid) return;
+  socket.emit('send_message', {
+    cliente_jid: targetJid,
+    texto: `↪️ *[ENCAMINHADA]* ${activeContextMsgData.texto || ''}`,
+    atendente_id: currentOperator ? currentOperator.id : 'sistema'
+  });
+  playMessageSentSound();
+  showToast('Mensagem encaminhada com sucesso!', 'Encaminhado', 'success');
+  closeForwardModal();
+}
+
+function submitForwardToPhone() {
+  const input = document.getElementById('input-forward-phone');
+  if (!input || !input.value.trim()) return;
+
+  let phone = input.value.trim();
+  if (!phone.includes('@')) phone = `${phone}@c.us`;
+
+  forwardToChat(phone);
+  input.value = '';
+}
+
+// Handler para Apagar Mensagem
+function handleContextDelete() {
+  hideAllContextMenus();
+  if (!activeContextMsgData) return;
+
+  socket.emit('delete_message', {
+    message_id: activeContextMsgData.id,
+    cliente_jid: activeContextMsgData.cliente_jid,
+    atendente_id: currentOperator ? currentOperator.id : 'sistema'
+  });
+}
+
+// Handlers de Ações do Menu da Sidebar (Chat Cards)
+function handleChatContextMarkUnread(e) {
+  if (e) e.stopPropagation();
+  hideAllContextMenus();
+  if (!activeContextChatJid) return;
+  showToast('Conversa marcada como não lida.', 'Atendimento', 'info');
+}
+
+function handleChatContextFinishSilently(e) {
+  if (e) e.stopPropagation();
+  hideAllContextMenus();
+  if (!activeContextChatJid) return;
+
+  socket.emit('finish_chat', {
+    cliente_jid: activeContextChatJid,
+    atendente_id: currentOperator ? currentOperator.id : 'sistema'
+  });
+  showToast('Atendimento finalizado silenciosamente.', 'Sucesso', 'success');
+}
+
+// Oculta os menus de contexto ao clicar ou rolar fora
+document.addEventListener('click', hideAllContextMenus);
+document.addEventListener('scroll', hideAllContextMenus, true);
 
 // Váriáveis globais de controle do Menu de Contexto e Citações
 let activeContextMessage = null;
@@ -1781,7 +2864,15 @@ let replyingToMessage = null;
 
 function cancelReply() {
   replyingToMessage = null;
-  // Se futuramente houver um banner de UI de resposta, ele será escondido aqui.
+  const previewContainer = document.getElementById('reply-preview-container');
+  if (previewContainer && !previewContainer.classList.contains('hidden')) {
+    previewContainer.classList.remove('animate-reply-in');
+    previewContainer.classList.add('animate-reply-out');
+    setTimeout(() => {
+      previewContainer.classList.add('hidden');
+      previewContainer.classList.remove('animate-reply-out');
+    }, 170);
+  }
 }
 
 // Ajusta dinamicamente a altura do textarea para expandir e contrair suavemente a cada linha
@@ -1805,6 +2896,9 @@ function adjustChatInputHeight() {
   if (container) {
     container.style.minHeight = `${targetHeight + 24}px`;
   }
+
+  // 5. Rola o histórico de mensagens para manter a última mensagem visível acima do input
+  scrollToBottom(false);
 }
 
 // ------------------------------------------------------------------------------
@@ -1820,6 +2914,7 @@ function toggleChatOptionsDropdown(e) {
 
   const isHidden = dropdown.classList.contains('hidden');
   if (isHidden) {
+    updateInternalNoteIndicator();
     dropdown.classList.remove('hidden', 'animate-popover-out');
     void dropdown.offsetWidth; // Force reflow for keyframe restart
     dropdown.classList.add('animate-popover-in');
@@ -2151,8 +3246,55 @@ function loadFileBankModal() {
 }
 
 
+function updateInternalNoteIndicator() {
+  const btnOption = document.getElementById('btn-internal-option');
+  const iconOption = document.getElementById('icon-internal-option');
+  const labelOption = document.getElementById('label-internal-option');
+  const descOption = document.getElementById('desc-internal-option');
+  const statusIndicator = document.getElementById('internal-note-status-indicator');
+
+  if (isInternalNoteMode) {
+    if (btnOption) {
+      btnOption.style.cssText = 'background: linear-gradient(135deg, rgba(88,28,135,0.92) 0%, rgba(67,26,110,0.9) 100%) !important; border: 1.5px solid rgba(196,181,253,0.8) !important; border-radius: 12px !important; box-shadow: 0 0 16px rgba(147,51,234,0.3) !important;';
+    }
+    if (iconOption) {
+      iconOption.style.cssText = 'background-color: rgba(196,181,253,0.25) !important; border: 1px solid rgba(196,181,253,0.7) !important; color: #ffffff !important;';
+    }
+    if (labelOption) {
+      labelOption.style.cssText = 'color: #ffffff !important; font-weight: 700;';
+    }
+    if (descOption) {
+      descOption.style.cssText = 'color: #e9d5ff !important; opacity: 0.95 !important;';
+    }
+    if (statusIndicator) {
+      statusIndicator.className = 'px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-400/30 border border-purple-300/60 flex items-center gap-1.5 transition-all shadow-sm';
+      statusIndicator.style.cssText = 'color: #ffffff !important;';
+      statusIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-purple-200 shadow-[0_0_8px_#ffffff]"></span><span style="color:#ffffff !important; font-weight: 700;">Ativo</span>';
+    }
+  } else {
+    if (btnOption) {
+      btnOption.style.cssText = 'background-color: var(--color-card, #1e293b) !important; border: 1px solid var(--border-color, rgba(255,255,255,0.1)) !important; border-radius: 12px !important; box-shadow: none !important;';
+    }
+    if (iconOption) {
+      iconOption.style.cssText = 'background-color: rgba(99,102,241,0.15) !important; border: 1px solid rgba(99,102,241,0.4) !important; color: #818cf8 !important;';
+    }
+    if (labelOption) {
+      labelOption.style.cssText = '';
+    }
+    if (descOption) {
+      descOption.style.cssText = '';
+    }
+    if (statusIndicator) {
+      statusIndicator.className = 'px-2 py-0.5 text-[10px] font-medium rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 flex items-center gap-1.5 transition-all';
+      statusIndicator.style.cssText = '';
+      statusIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span>Inativo</span>';
+    }
+  }
+}
+
 function toggleInternalNoteMode() {
   isInternalNoteMode = !isInternalNoteMode;
+  updateInternalNoteIndicator();
   const container = document.getElementById('chat-input-container');
   const footer = document.getElementById('chat-input-footer');
   const badge = document.getElementById('internal-note-badge');
@@ -2161,49 +3303,46 @@ function toggleInternalNoteMode() {
   // Remove ou cria o banner de aviso visual
   const existingBanner = document.getElementById('internal-mode-banner');
 
+  const btnRecordAudio = document.getElementById('btn-record-audio');
+
   if (isInternalNoteMode) {
-    // Footer: fundo violeta escuro + borda púrpura
-    if (footer) {
-      footer.style.cssText += '; background: linear-gradient(to top, rgba(76,29,149,0.55) 0%, rgba(59,7,100,0.3) 100%) !important; border-top: 2px solid rgba(167,139,250,0.8) !important;';
-    }
-
-    // Container do input: glow violeta
+    if (btnRecordAudio) btnRecordAudio.classList.add('hidden');
     if (container) {
-      container.style.cssText += '; border: 1.5px solid rgba(167,139,250,0.8) !important; background-color: rgba(76,29,149,0.35) !important; box-shadow: 0 0 32px rgba(167,139,250,0.3), inset 0 0 0 1px rgba(167,139,250,0.25) !important;';
+      container.classList.add('internal-mode');
+      container.style.cssText += '; border: 1.5px solid rgba(196,181,253,0.8) !important; background-color: rgba(76,29,149,0.55) !important; box-shadow: 0 0 32px rgba(147,51,234,0.35), inset 0 0 0 1px rgba(196,181,253,0.3) !important;';
     }
 
-    // Banner de aviso: flutua acima do input com z-index ABAIXO do dropdown de opções
     if (!existingBanner && container) {
       const banner = document.createElement('div');
       banner.id = 'internal-mode-banner';
-      // z-index: 15 — fica acima do footer mas ABAIXO do dropdown de opções (z-50 = 50)
-      banner.style.cssText = 'position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; background:rgba(59,7,100,0.92); backdrop-filter:blur(10px); border:1px solid rgba(167,139,250,0.6); border-radius:8px; padding:4px 14px; font-size:9px; font-weight:900; color:#c4b5fd; letter-spacing:0.08em; text-transform:uppercase; z-index:15; pointer-events:none; white-space:nowrap; box-shadow:0 -2px 16px rgba(167,139,250,0.2);';
-      banner.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Nota Interna — não será enviada ao cliente';
+      banner.style.cssText = 'position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; background:linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%) !important; backdrop-filter:blur(10px); border:1px solid rgba(196,181,253,0.8) !important; border-radius:8px; padding:5px 16px; font-size:10px; font-weight:800; color:#ffffff !important; letter-spacing:0.08em; text-transform:uppercase; z-index:15; pointer-events:none; white-space:nowrap; box-shadow:0 4px 20px rgba(109,40,217,0.4) !important;';
+      banner.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" style="color:#ffffff !important;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> <span style="color:#ffffff !important; font-weight:800;">Nota Interna — não será enviada ao cliente</span>';
       container.appendChild(banner);
     }
 
-    if (badge) badge.classList.remove('hidden');
+    if (badge) {
+      badge.classList.remove('hidden');
+      badge.style.cssText = 'display: flex !important; background: rgba(196,181,253,0.25) !important; border: 1px solid rgba(196,181,253,0.7) !important; color: #ffffff !important;';
+    }
     if (chatInput) {
       chatInput.placeholder = '🔒 Nota interna — visível apenas para atendentes...';
-      chatInput.style.color = '#c4b5fd';
+      chatInput.style.cssText += '; color: #ffffff !important;';
     }
   } else {
-    // Reverte tudo
-    if (footer) {
-      footer.style.background = '';
-      footer.style.backgroundImage = '';
-      footer.style.borderTop = '';
-      footer.style.cssText = footer.style.cssText.replace(/background[^;]*;?/g, '').replace(/border-top[^;]*;?/g, '');
-    }
+    if (btnRecordAudio) btnRecordAudio.classList.remove('hidden');
     if (container) {
+      container.classList.remove('internal-mode');
       container.style.border = '';
       container.style.boxShadow = '';
       container.style.cssText = container.style.cssText.replace(/border[^;]*;?/g, '').replace(/box-shadow[^;]*;?/g, '').replace(/background-color[^;]*;?/g, '');
     }
     if (existingBanner) existingBanner.remove();
-    if (badge) badge.classList.add('hidden');
+    if (badge) {
+      badge.classList.add('hidden');
+      badge.style.cssText = '';
+    }
     if (chatInput) {
-      chatInput.placeholder = 'Digite sua resposta...';
+      chatInput.placeholder = 'Digite uma mensagem';
       chatInput.style.color = '';
     }
   }
@@ -2264,6 +3403,7 @@ async function sendMessage(e) {
     is_internal: isInternal,
     attachments: uploadedAttachments
   });
+  playMessageSentSound();
 
   if (chatInput) chatInput.value = '';
   
@@ -2348,6 +3488,7 @@ let recordingTimerInterval = null;
 let recordingSeconds = 0;
 let recordedAudioBlob = null;
 let recordedAudioBase64 = null;
+let recordedAudioDuration = 0;
 let isRecordingPaused = false;
 
 let audioContext = null;
@@ -2365,7 +3506,7 @@ function initAudioVisualizer(stream) {
   // Criar 32 barras de espectro reativas ao longo da barra
   const barCount = 32;
   visualizerContainer.innerHTML = Array.from({ length: barCount }, () => `
-    <div class="waveform-bar w-1 rounded-full bg-red-500/80 transition-all duration-75 shadow-[0_0_8px_rgba(239,68,68,0.4)]" style="height: 4px; min-height: 4px;"></div>
+    <div class="waveform-bar w-1 rounded-full transition-all duration-75" style="height: 4px; min-height: 4px; background-color: var(--color-primary-theme, #ef4444) !important; opacity: 0.85;"></div>
   `).join('');
 
   const bars = visualizerContainer.querySelectorAll('.waveform-bar');
@@ -2459,6 +3600,136 @@ function playRecordingStartSound() {
   }
 }
 
+// Emite sinal sonoro suave descendente ao pausar gravação
+function playRecordingPauseSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(450, ctx.currentTime + 0.09);
+
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {}
+}
+
+// Emite sinal sonoro ascendente ao retomar gravação
+function playRecordingResumeSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(500, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(950, ctx.currentTime + 0.08);
+
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {}
+}
+
+// Emite sinal sonoro duplo cristalino (arpejo) indicando finalização de gravação
+function playRecordingFinishSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    [659.25, 880].forEach((freq, index) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startTime = ctx.currentTime + (index * 0.06);
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0.1, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.14);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.14);
+    });
+  } catch (e) {}
+}
+
+// Emite sinal sonoro suave ao descartar/excluir áudio gravado
+function playRecordingCancelSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(420, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(160, ctx.currentTime + 0.11);
+
+    gain.gain.setValueAtTime(0.14, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.12);
+  } catch (e) {}
+}
+
+// Emite sinal sonoro suave e dinâmico de confirmação de envio de mensagem (tom duplo "pop-swoosh")
+function playMessageSentSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    // Tom duplo rápido e elegante (520Hz -> 880Hz)
+    [520, 880].forEach((freq, index) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startTime = ctx.currentTime + (index * 0.04);
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.15, startTime + 0.05);
+
+      gain.gain.setValueAtTime(0.12, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.06);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.06);
+    });
+  } catch (e) {
+    // Ignorar se o áudio estiver bloqueado pelo navegador
+  }
+}
+
 // Alterna entre Pausar e Retomar a gravação de áudio em andamento
 function togglePauseAudioRecording() {
   if (!mediaRecorder) return;
@@ -2471,6 +3742,7 @@ function togglePauseAudioRecording() {
   if (mediaRecorder.state === 'recording') {
     mediaRecorder.pause();
     isRecordingPaused = true;
+    playRecordingPauseSound();
 
     if (pauseIcon) pauseIcon.classList.add('hidden');
     if (resumeIcon) resumeIcon.classList.remove('hidden');
@@ -2500,6 +3772,7 @@ function togglePauseAudioRecording() {
   } else if (mediaRecorder.state === 'paused') {
     mediaRecorder.resume();
     isRecordingPaused = false;
+    playRecordingResumeSound();
 
     if (resumeIcon) resumeIcon.classList.add('hidden');
     if (pauseIcon) pauseIcon.classList.remove('hidden');
@@ -2521,6 +3794,7 @@ function togglePauseAudioRecording() {
 }
 
 async function startAudioRecording() {
+  if (isInternalNoteMode) return;
   if (!selectedChatJid) {
     showToast('Selecione uma conversa ativa para gravar áudio.', 'Aviso', 'warning');
     return;
@@ -2566,7 +3840,7 @@ async function startAudioRecording() {
       }
     };
 
-    mediaRecorder.start();
+    mediaRecorder.start(250);
 
     // 🔔 Toca sinal sonoro sutil e altera estado para "Gravando..." exatamente no início real da gravação
     playRecordingStartSound();
@@ -2606,6 +3880,14 @@ async function startAudioRecording() {
 let previewAnimationFrame = null;
 let isDraggingPreview = false;
 
+function getPreviewDuration() {
+  const player = document.getElementById('audio-preview-player');
+  if (player && player.duration && isFinite(player.duration) && !isNaN(player.duration) && player.duration > 0) {
+    return player.duration;
+  }
+  return recordedAudioDuration || 0;
+}
+
 function updateAudioScrubPosition(clientX) {
   const player = document.getElementById('audio-preview-player');
   const container = document.getElementById('preview-progress-container');
@@ -2613,22 +3895,23 @@ function updateAudioScrubPosition(clientX) {
   const progressPin = document.getElementById('preview-progress-pin');
   const timerEl = document.getElementById('preview-audio-timer');
 
-  if (!player || !player.duration || !container) return;
+  const duration = getPreviewDuration();
+  if (!player || !duration || !container) return;
 
   const rect = container.getBoundingClientRect();
   const clickX = clientX - rect.left;
   const width = rect.width;
-  const targetTime = Math.max(0, Math.min(player.duration, (clickX / width) * player.duration));
+  const targetTime = Math.max(0, Math.min(duration, (clickX / width) * duration));
 
   player.currentTime = targetTime;
-  const progressPercent = (targetTime / player.duration) * 100;
+  const progressPercent = (targetTime / duration) * 100;
   if (progressBar) progressBar.style.width = `${progressPercent}%`;
   if (progressPin) progressPin.style.left = `${progressPercent}%`;
 
   const curMins = String(Math.floor(targetTime / 60)).padStart(2, '0');
   const curSecs = String(Math.floor(targetTime % 60)).padStart(2, '0');
-  const durMins = String(Math.floor(player.duration / 60)).padStart(2, '0');
-  const durSecs = String(Math.floor(player.duration % 60)).padStart(2, '0');
+  const durMins = String(Math.floor(duration / 60)).padStart(2, '0');
+  const durSecs = String(Math.floor(duration % 60)).padStart(2, '0');
 
   if (timerEl) {
     timerEl.textContent = `${curMins}:${curSecs} / ${durMins}:${durSecs}`;
@@ -2641,17 +3924,18 @@ function renderAudioPreviewFrame() {
   const progressBar = document.getElementById('preview-progress-bar');
   const progressPin = document.getElementById('preview-progress-pin');
 
-  if (!player || !player.duration || player.paused) return;
+  const duration = getPreviewDuration();
+  if (!player || player.paused) return;
 
-  if (!isDraggingPreview) {
-    const progressPercent = (player.currentTime / player.duration) * 100;
+  if (!isDraggingPreview && duration > 0) {
+    const progressPercent = Math.min(100, (player.currentTime / duration) * 100);
     if (progressBar) progressBar.style.width = `${progressPercent}%`;
     if (progressPin) progressPin.style.left = `${progressPercent}%`;
 
     const curMins = String(Math.floor(player.currentTime / 60)).padStart(2, '0');
     const curSecs = String(Math.floor(player.currentTime % 60)).padStart(2, '0');
-    const durMins = String(Math.floor(player.duration / 60)).padStart(2, '0');
-    const durSecs = String(Math.floor(player.duration % 60)).padStart(2, '0');
+    const durMins = String(Math.floor(duration / 60)).padStart(2, '0');
+    const durSecs = String(Math.floor(duration % 60)).padStart(2, '0');
 
     if (timerEl) {
       timerEl.textContent = `${curMins}:${curSecs} / ${durMins}:${durSecs}`;
@@ -2661,23 +3945,29 @@ function renderAudioPreviewFrame() {
   previewAnimationFrame = requestAnimationFrame(renderAudioPreviewFrame);
 }
 
-function setupAudioPreviewEvents() {
-  const player = document.getElementById('audio-preview-player');
-  const timerEl = document.getElementById('preview-audio-timer');
-  const progressBar = document.getElementById('preview-progress-bar');
-  const progressPin = document.getElementById('preview-progress-pin');
-  const iconPlay = document.getElementById('icon-preview-play');
-  const iconPause = document.getElementById('icon-preview-pause');
-  const btnToggle = document.getElementById('btn-preview-play-toggle');
-  const container = document.getElementById('preview-progress-container');
+let isAudioPreviewEventsSetup = false;
 
+function setupAudioPreviewEvents() {
+  if (isAudioPreviewEventsSetup) return;
+  const player = document.getElementById('audio-preview-player');
   if (!player) return;
+
+  isAudioPreviewEventsSetup = true;
+
+  const container = document.getElementById('preview-progress-container');
 
   player.addEventListener('loadedmetadata', () => {
     updateAudioPreviewTimer();
   });
 
+  player.addEventListener('timeupdate', () => {
+    updateAudioPreviewTimer();
+  });
+
   player.addEventListener('play', () => {
+    const iconPlay = document.getElementById('icon-preview-play');
+    const iconPause = document.getElementById('icon-preview-pause');
+    const btnToggle = document.getElementById('btn-preview-play-toggle');
     if (iconPlay) iconPlay.classList.add('hidden');
     if (iconPause) iconPause.classList.remove('hidden');
     if (btnToggle) btnToggle.classList.add('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
@@ -2687,6 +3977,9 @@ function setupAudioPreviewEvents() {
   });
 
   player.addEventListener('pause', () => {
+    const iconPlay = document.getElementById('icon-preview-play');
+    const iconPause = document.getElementById('icon-preview-pause');
+    const btnToggle = document.getElementById('btn-preview-play-toggle');
     if (iconPlay) iconPlay.classList.remove('hidden');
     if (iconPause) iconPause.classList.add('hidden');
     if (btnToggle) btnToggle.classList.remove('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
@@ -2698,6 +3991,12 @@ function setupAudioPreviewEvents() {
   });
 
   player.addEventListener('ended', () => {
+    const iconPlay = document.getElementById('icon-preview-play');
+    const iconPause = document.getElementById('icon-preview-pause');
+    const btnToggle = document.getElementById('btn-preview-play-toggle');
+    const progressBar = document.getElementById('preview-progress-bar');
+    const progressPin = document.getElementById('preview-progress-pin');
+
     if (iconPlay) iconPlay.classList.remove('hidden');
     if (iconPause) iconPause.classList.add('hidden');
     if (btnToggle) btnToggle.classList.remove('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
@@ -2747,15 +4046,24 @@ function updateAudioPreviewTimer() {
   const progressPin = document.getElementById('preview-progress-pin');
   if (!player || !timerEl) return;
 
-  const duration = player.duration || 0;
+  const duration = getPreviewDuration();
   const durMins = String(Math.floor(duration / 60)).padStart(2, '0');
   const durSecs = String(Math.floor(duration % 60)).padStart(2, '0');
-  timerEl.textContent = `00:00 / ${durMins}:${durSecs}`;
-  if (progressBar) progressBar.style.width = '0%';
-  if (progressPin) progressPin.style.left = '0%';
+  const curTime = player.currentTime || 0;
+  const curMins = String(Math.floor(curTime / 60)).padStart(2, '0');
+  const curSecs = String(Math.floor(curTime % 60)).padStart(2, '0');
+
+  timerEl.textContent = `${curMins}:${curSecs} / ${durMins}:${durSecs}`;
+
+  if (!isDraggingPreview && duration > 0) {
+    const progressPercent = Math.min(100, (curTime / duration) * 100);
+    if (progressBar) progressBar.style.width = `${progressPercent}%`;
+    if (progressPin) progressPin.style.left = `${progressPercent}%`;
+  }
 }
 
 function toggleAudioPreviewPlay() {
+  setupAudioPreviewEvents();
   const player = document.getElementById('audio-preview-player');
   if (!player || !player.src) return;
 
@@ -2771,21 +4079,25 @@ function seekAudioPreview(e) {
   const container = document.getElementById('preview-progress-container');
   const progressBar = document.getElementById('preview-progress-bar');
   const progressPin = document.getElementById('preview-progress-pin');
-  if (!player || !player.duration || !container) return;
+  const duration = getPreviewDuration();
+  if (!player || !duration || !container) return;
 
   const rect = container.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const width = rect.width;
-  const targetTime = Math.max(0, Math.min(player.duration, (clickX / width) * player.duration));
+  const targetTime = Math.max(0, Math.min(duration, (clickX / width) * duration));
 
   player.currentTime = targetTime;
-  const progressPercent = (targetTime / player.duration) * 100;
+  const progressPercent = (targetTime / duration) * 100;
   if (progressBar) progressBar.style.width = `${progressPercent}%`;
   if (progressPin) progressPin.style.left = `${progressPercent}%`;
 }
 
 // Parar gravação e liberar o áudio para escutar (Pré-visualização)
 function finishAudioRecordingAndPreview() {
+  playRecordingFinishSound();
+  setupAudioPreviewEvents();
+  recordedAudioDuration = recordingSeconds || 0;
   clearInterval(recordingTimerInterval);
   stopAudioVisualizer();
 
@@ -2814,6 +4126,13 @@ function finishAudioRecordingAndPreview() {
     if (player) {
       player.src = audioUrl;
       player.load();
+      // Força a resolução de duração em blobs WebM no Chrome
+      player.currentTime = 1e101;
+      player.ontimeupdate = function() {
+        this.ontimeupdate = null;
+        this.currentTime = 0;
+        updateAudioPreviewTimer();
+      };
       updateAudioPreviewTimer();
     }
 
@@ -2847,6 +4166,7 @@ function sendRecordedAudio() {
       texto: recordedAudioBase64,
       atendente_id: currentOperator.id
     });
+    playMessageSentSound();
     showToast('Mensagem de voz enviada com sucesso!', 'Áudio Enviado', 'success');
     resetAudioState();
   } else if (recordedAudioBlob) {
@@ -2858,6 +4178,7 @@ function sendRecordedAudio() {
         texto: recordedAudioBase64,
         atendente_id: currentOperator.id
       });
+      playMessageSentSound();
       showToast('Mensagem de voz enviada com sucesso!', 'Áudio Enviado', 'success');
       resetAudioState();
     };
@@ -2889,6 +4210,7 @@ function showInputBarNotification(message) {
 
 // Cancelar / Descartar Gravação de Áudio
 function cancelAudioRecording() {
+  playRecordingCancelSound();
   clearInterval(recordingTimerInterval);
   stopAudioVisualizer();
 
@@ -2954,29 +4276,39 @@ socket.on('error_message', (msg) => {
   alert(`⚠️ Erro: ${msg}`);
 });
 
+// Listener de reação em tempo real a mensagens
+socket.on('message_reacted', ({ message_id, reacao, cliente_jid }) => {
+  const msgObj = currentChatMessages.find(m => String(m.id) === String(message_id));
+  if (msgObj) msgObj.reacao = reacao;
+
+  if (!cliente_jid || selectedChatJid === cliente_jid) {
+    updateMsgReactionBadgeInDOM(message_id, reacao);
+  }
+});
+
+function removeReaction(msgId) {
+  const msgObj = currentChatMessages.find(m => m.id === msgId);
+  const targetJid = (msgObj && msgObj.cliente_jid) ? msgObj.cliente_jid : selectedChatJid;
+  if (msgObj) msgObj.reacao = null;
+
+  updateMsgReactionBadgeInDOM(msgId, null);
+
+  socket.emit('react_message', {
+    message_id: msgId,
+    cliente_jid: targetJid,
+    reacao: null,
+    atendente_id: currentOperator ? currentOperator.id : 'sistema'
+  });
+}
+
 // Listener de exclusão de mensagem do SQLite
 socket.on('message_deleted', ({ message_id, cliente_jid }) => {
-  if (selectedChatJid === cliente_jid) {
-    // Atualizar visualmente o balão na tela
-    const element = document.querySelector(`[data-message-id="${message_id}"]`);
-    if (element) {
-      // Remover o badge existente se houver
-      const existingBadge = element.querySelector('.msg-reaction-badge');
-      if (existingBadge) {
-        existingBadge.remove();
-      }
-      
-      // Adicionar novo se reacao não for nula
-      if (reacao) {
-        const bubble = element.querySelector('.msg-bubble');
-        if (bubble) {
-          const badgeDiv = document.createElement('div');
-          badgeDiv.className = 'absolute -bottom-2.5 right-4 msg-reaction-badge rounded-full px-1.5 py-0.5 text-[10px] flex items-center justify-center shadow-md cursor-pointer hover:scale-110 transition-all z-10';
-          badgeDiv.setAttribute('onclick', `removeReaction(${message_id})`);
-          badgeDiv.textContent = reacao;
-          bubble.appendChild(badgeDiv);
-        }
-      }
+  currentChatMessages = currentChatMessages.filter(m => m.id !== message_id);
+  if (!cliente_jid || selectedChatJid === cliente_jid) {
+    const msgDiv = document.querySelector(`[data-message-id="${message_id}"]`);
+    if (msgDiv) {
+      msgDiv.classList.add('opacity-0', 'scale-95', 'transition-all', 'duration-300');
+      setTimeout(() => msgDiv.remove(), 300);
     }
   }
 });

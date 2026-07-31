@@ -28,7 +28,7 @@ function buildIframeUrl(channel: WhatsAppChannel, user: any, theme: string): str
 const DEFAULT_CHANNEL: WhatsAppChannel = { id: 'default', name: 'WhatsApp', port: 5000, color: '#8b5cf6' };
 
 export default function WhatsAppPage() {
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
     const { theme } = useTheme();
     const [channels, setChannels] = useState<WhatsAppChannel[]>([DEFAULT_CHANNEL]);
     const [loading, setLoading] = useState(false);
@@ -100,12 +100,20 @@ export default function WhatsAppPage() {
         return () => clearInterval(interval);
     }, [fetchStatus]);
 
-    if (loading) {
+    const iframeUrls = useMemo(() => {
+        const urls: Record<string, string> = {};
+        channels.forEach(channel => {
+            urls[channel.id] = buildIframeUrl(channel, user, theme);
+        });
+        return urls;
+    }, [channels, user, theme]);
+
+    if (loading || authLoading) {
         return (
             <main className="h-screen flex items-center justify-center bg-background text-foreground">
                 <div className="flex flex-col items-center gap-3 text-[var(--color-text-muted)]">
                     <Loader2 className="w-8 h-8 animate-spin text-accent-theme" />
-                    <p className="text-sm font-medium">Carregando canais WhatsApp...</p>
+                    <p className="text-sm font-medium">Carregando painel de atendimento...</p>
                 </div>
             </main>
         );
@@ -242,17 +250,18 @@ export default function WhatsAppPage() {
             {/* Iframe Area — render all iframes, show only active one */}
             <div className="flex-1 relative overflow-hidden">
                 {channels.map(channel => {
-                    const iframeUrl = buildIframeUrl(channel, user, theme);
+                    const iframeUrl = iframeUrls[channel.id];
                     const isActive = channel.id === (activeChannelId ?? channels[0]?.id);
                     return (
                         <div
                             key={channel.id}
-                            className={`absolute inset-0 ${isActive ? 'block' : 'hidden'}`}
+                            className={`absolute inset-0 bg-background ${isActive ? 'block' : 'hidden'}`}
                         >
                             <iframe
                                 key={reloadKeys[channel.id] ?? 0}
                                 src={iframeUrl}
-                                className="w-full h-full border-none bg-transparent"
+                                className="w-full h-full border-none bg-transparent transition-opacity duration-300 opacity-0"
+                                onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
                                 allow="camera; microphone; clipboard-read; clipboard-write"
                                 title={`WhatsApp — ${channel.name}`}
                             />
