@@ -76,105 +76,612 @@ app.post('/api/upload', upload.array('attachments', 10), (req, res) => {
 });
 
 // ==============================================================================
-// 📁 BANCO DE ARQUIVOS — Listagem e Busca de Arquivos Enviados
+// 📁 BANCO DE ARQUIVOS — Listagem e Busca de Arquivos Enviados e Recebidos
 // ==============================================================================
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return null;
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function getLocalFileSize(url) {
+  try {
+    if (!url || !url.startsWith('/uploads/')) return null;
+    const filePath = path.join(uploadDir, path.basename(url));
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      return stats.size;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Extrai arquivos de linhas de mensagens do SQLite
+function parseFilesFromMessageRows(rows) {
+  return rows.map(row => {
+    let url = null;
+    let caption = '';
+
+    if (row.texto) {
+      const match = row.texto.match(/\[ANEXO\]\s*(\/uploads\/[^\s\n]+)/);
+      if (match) {
+        url = match[1];
+        caption = row.texto.replace(/\[ANEXO\]\s*\/uploads\/[^\s\n]+\s*/g, '').trim();
+      } else if (row.texto.startsWith('/uploads/')) {
+        url = row.texto.split(' ')[0];
+        caption = row.texto.substring(url.length).trim();
+      } else if (row.texto.startsWith('http') && row.texto.includes('/uploads/')) {
+        url = row.texto.trim();
+      }
+    }
+
+    if (!url) return null;
+
+    const filename = url.split('/').pop().split('?')[0];
+    const ext = filename.split('.').pop().toLowerCase();
+    const sizeBytes = getLocalFileSize(url);
+
+    let setores = null;
+    try {
+      if (row.setores) setores = typeof row.setores === 'string' ? JSON.parse(row.setores) : row.setores;
+    } catch (e) {}
+
+    return {
+      id: row.id,
+      url,
+      filename,
+      ext,
+      caption,
+      grupo: row.grupo || 'Geral',
+      setores: Array.isArray(setores) ? setores : null,
+      descricao: row.descricao || null,
+      size_bytes: sizeBytes,
+      size_formatted: formatBytes(sizeBytes),
+      cliente_jid: row.cliente_jid,
+      cliente_nome: row.cliente_nome || (row.cliente_jid ? row.cliente_jid.split('@')[0] : 'Contato'),
+      cliente_avatar: row.cliente_avatar || null,
+      remetente: row.remetente,
+      atendente_nome: row.atendente_nome || null,
+      timestamp: row.timestamp
+    };
+  }).filter(Boolean);
+}
 
 // Retorna os arquivos enviados mais recentes (padrão: 12)
 app.get('/api/files/recent', (req, res) => {
   const limit = parseInt(req.query.limit) || 12;
-  const clienteJid = req.query.cliente_jid || null; // opcional: filtrar por conversa
+  const clienteJid = req.query.cliente_jid || null;
 
   let query = `
-    SELECT id, cliente_jid, remetente, texto, timestamp
-    FROM tabela_mensagens
-    WHERE texto LIKE '[ANEXO]%'
+    SELECT m.id, m.cliente_jid, m.remetente, m.atendente_nome, m.texto, m.timestamp,
+           a.cliente_nome, a.cliente_avatar,
+           meta.grupo, meta.setores, meta.descricao
+    FROM tabela_mensagens m
+    LEFT JOIN tabela_atendimentos a ON m.cliente_jid = a.cliente_jid
+    LEFT JOIN tabela_arquivos_metadados meta ON (m.texto LIKE '%' || meta.url || '%' OR m.texto LIKE '%' || meta.filename || '%')
+    WHERE m.texto LIKE '%[ANEXO]%' OR m.texto LIKE '%/uploads/%'
   `;
   const params = [];
 
   if (clienteJid) {
-    query += ` AND cliente_jid = ?`;
+    query += ` AND m.cliente_jid = ?`;
     params.push(clienteJid);
   }
 
-  query += ` ORDER BY timestamp DESC LIMIT ?`;
+  query += ` ORDER BY m.timestamp DESC LIMIT ?`;
   params.push(limit);
 
   db.all(query, params, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-
-    const files = rows.map(row => {
-      const match = row.texto.match(/\[ANEXO\]\s*(\/uploads\/[^\s\n]+)/);
-      const url = match ? match[1] : null;
-      const caption = row.texto.replace(/\[ANEXO\]\s*\/uploads\/[^\s\n]+\s*/g, '').trim();
-      const filename = url ? url.split('/').pop() : '';
-      const ext = filename.split('.').pop().toLowerCase();
-      return {
-        id: row.id,
-        url,
-        filename,
-        ext,
-        caption,
-        cliente_jid: row.cliente_jid,
-        remetente: row.remetente,
-        timestamp: row.timestamp
-      };
-    }).filter(f => f.url);
-
+    const files = parseFilesFromMessageRows(rows || []);
     res.json({ files });
   });
 });
 
-// Busca arquivos com filtro de texto e tipo
-app.get('/api/files/search', (req, res) => {
-  const { q = '', type = 'all', page = 1, limit = 20 } = req.query;
+// ==============================================================================
+// 📁 BANCO DE ARQUIVOS PRÉ-SALVOS (BIBLIOTECA DE DOCUMENTOS E MÍDIAS)
+// ==============================================================================
+
+// Retorna a lista de arquivos pré-salvos no banco com contagens, filtros e paginação
+app.get(['/api/files/bank', '/api/files/search'], (req, res) => {
+  const { q = '', type = 'all', grupo = 'all', setor_id = '', page = 1, limit = 12 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
-  // Tipos agrupados
   const typeFilters = {
     image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'],
     video: ['mp4', 'webm', 'mov', 'avi', 'mkv'],
     audio: ['mp3', 'ogg', 'wav', 'aac', 'm4a', 'opus'],
-    doc: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv']
+    doc: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'zip', 'rar']
   };
 
-  db.all(
-    `SELECT id, cliente_jid, remetente, texto, timestamp
-     FROM tabela_mensagens
-     WHERE texto LIKE '[ANEXO]%'
-     ORDER BY timestamp DESC`,
-    [],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
+  db.all("SELECT * FROM tabela_banco_arquivos ORDER BY created_at DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
 
-      let files = rows.map(row => {
-        const match = row.texto.match(/\[ANEXO\]\s*(\/uploads\/[^\s\n]+)/);
-        const url = match ? match[1] : null;
-        const caption = row.texto.replace(/\[ANEXO\]\s*\/uploads\/[^\s\n]+\s*/g, '').trim();
-        const filename = url ? url.split('/').pop() : '';
-        const ext = filename.split('.').pop().toLowerCase();
-        return { id: row.id, url, filename, ext, caption, cliente_jid: row.cliente_jid, remetente: row.remetente, timestamp: row.timestamp };
-      }).filter(f => f.url);
-
-      // Filtro por tipo
-      if (type !== 'all' && typeFilters[type]) {
-        files = files.filter(f => typeFilters[type].includes(f.ext));
+    const allFiles = (rows || []).map(r => {
+      let setoresArr = null;
+      try {
+        if (r.setores) setoresArr = JSON.parse(r.setores);
+      } catch {
+        setoresArr = r.setores ? [r.setores] : null;
       }
+      return {
+        id: r.id,
+        titulo: r.titulo || r.filename,
+        filename: r.filename,
+        url: r.url,
+        mimetype: r.mimetype,
+        ext: r.ext || path.extname(r.filename || '').replace('.', '').toLowerCase(),
+        size_bytes: r.size_bytes || 0,
+        size_formatted: formatBytes(r.size_bytes || 0),
+        grupo: r.grupo || 'Geral',
+        setores: setoresArr,
+        descricao: r.descricao || '',
+        created_at: r.created_at,
+        updated_at: r.updated_at
+      };
+    });
 
-      // Filtro por texto (nome do arquivo ou legenda)
-      if (q.trim()) {
-        const search = q.trim().toLowerCase();
-        files = files.filter(f =>
-          f.filename.toLowerCase().includes(search) ||
-          f.caption.toLowerCase().includes(search) ||
-          f.cliente_jid.toLowerCase().includes(search)
-        );
-      }
+    // Contadores por tipo
+    const counts = {
+      all: allFiles.length,
+      image: allFiles.filter(f => typeFilters.image.includes(f.ext)).length,
+      video: allFiles.filter(f => typeFilters.video.includes(f.ext)).length,
+      audio: allFiles.filter(f => typeFilters.audio.includes(f.ext)).length,
+      doc: allFiles.filter(f => typeFilters.doc.includes(f.ext)).length
+    };
 
-      const total = files.length;
-      const paginated = files.slice(offset, offset + parseInt(limit));
-      res.json({ files: paginated, total, page: parseInt(page), limit: parseInt(limit) });
+    // Grupos únicos
+    const grupoMap = {};
+    allFiles.forEach(f => {
+      const g = f.grupo || 'Geral';
+      grupoMap[g] = (grupoMap[g] || 0) + 1;
+    });
+    const gruposList = Object.entries(grupoMap).map(([name, count]) => ({ name, count }));
+
+    let filtered = allFiles;
+
+    // Filtro por setor_id
+    if (setor_id && setor_id !== 'all') {
+      const targetSec = Number(setor_id);
+      filtered = filtered.filter(f => {
+        if (!f.setores || f.setores.length === 0) return true;
+        return f.setores.includes(targetSec) || f.setores.includes(String(targetSec));
+      });
     }
-  );
+
+    // Filtro por grupo
+    if (grupo && grupo !== 'all' && grupo !== 'Todos') {
+      filtered = filtered.filter(f => (f.grupo || 'Geral') === grupo);
+    }
+
+    // Filtro por tipo
+    if (type !== 'all' && typeFilters[type]) {
+      filtered = filtered.filter(f => typeFilters[type].includes(f.ext));
+    }
+
+    // Filtro de busca textual
+    if (q.trim()) {
+      const search = q.trim().toLowerCase();
+      filtered = filtered.filter(f =>
+        f.titulo.toLowerCase().includes(search) ||
+        f.filename.toLowerCase().includes(search) ||
+        f.grupo.toLowerCase().includes(search) ||
+        f.descricao.toLowerCase().includes(search)
+      );
+    }
+
+    const total = filtered.length;
+    const paginated = filtered.slice(offset, offset + parseInt(limit));
+
+    res.json({
+      files: paginated,
+      total,
+      counts,
+      grupos: gruposList,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+  });
+});
+
+// Upload de novo arquivo pré-salvo para o banco
+app.post('/api/files/bank/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhum arquivo foi enviado.' });
+  }
+
+  const file = req.file;
+  const { titulo, grupo = 'Geral', setores = null, descricao = '' } = req.body || {};
+  const fileUrl = `/uploads/${file.filename}`;
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  const finalTitulo = titulo?.trim() || file.originalname;
+
+  let setoresJson = null;
+  if (setores) {
+    if (typeof setores === 'string') {
+      try {
+        const parsed = JSON.parse(setores);
+        setoresJson = Array.isArray(parsed) && parsed.length > 0 ? JSON.stringify(parsed) : null;
+      } catch {
+        setoresJson = setores ? JSON.stringify([setores]) : null;
+      }
+    } else if (Array.isArray(setores) && setores.length > 0) {
+      setoresJson = JSON.stringify(setores);
+    }
+  }
+
+  const sql = `
+    INSERT INTO tabela_banco_arquivos (titulo, filename, url, mimetype, ext, size_bytes, grupo, setores, descricao)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(sql, [finalTitulo, file.originalname, fileUrl, file.mimetype, ext, file.size, grupo || 'Geral', setoresJson, descricao || ''], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.json({
+      status: 'success',
+      file: {
+        id: this.lastID,
+        titulo: finalTitulo,
+        filename: file.originalname,
+        url: fileUrl,
+        ext,
+        size_bytes: file.size,
+        size_formatted: formatBytes(file.size),
+        grupo: grupo || 'Geral',
+        setores: setoresJson ? JSON.parse(setoresJson) : null,
+        descricao: descricao || ''
+      }
+    });
+  });
+});
+
+// Atualiza metadados de um arquivo do banco (Título, Grupo, Setores, Descrição)
+app.post('/api/files/metadata', (req, res) => {
+  const { id, url, titulo, grupo = 'Geral', setores = null, descricao = '' } = req.body || {};
+  const setoresJson = Array.isArray(setores) && setores.length > 0 ? JSON.stringify(setores) : (setores ? String(setores) : null);
+
+  let sql = '';
+  let params = [];
+
+  if (id) {
+    sql = `
+      UPDATE tabela_banco_arquivos
+      SET titulo = COALESCE(?, titulo), grupo = ?, setores = ?, descricao = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `;
+    params = [titulo || null, grupo, setoresJson, descricao, id];
+  } else if (url) {
+    sql = `
+      UPDATE tabela_banco_arquivos
+      SET titulo = COALESCE(?, titulo), grupo = ?, setores = ?, descricao = ?, updated_at = datetime('now')
+      WHERE url = ?
+    `;
+    params = [titulo || null, grupo, setoresJson, descricao, url];
+  } else {
+    return res.status(400).json({ error: 'ID ou URL é obrigatório.' });
+  }
+
+  db.run(sql, params, function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ status: 'success', message: 'Arquivo atualizado com sucesso.' });
+  });
+});
+
+// Retorna estatísticas de armazenamento dos arquivos pré-salvos no banco
+app.get('/api/files/stats', (req, res) => {
+  const typeFilters = {
+    image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'],
+    video: ['mp4', 'webm', 'mov', 'avi', 'mkv'],
+    audio: ['mp3', 'ogg', 'wav', 'aac', 'm4a', 'opus'],
+    doc: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'zip', 'rar']
+  };
+
+  db.all("SELECT ext, size_bytes FROM tabela_banco_arquivos", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    let totalBytes = 0;
+    let totalCount = (rows || []).length;
+    const catStats = {
+      image: { count: 0, bytes: 0, formatted: '0 B' },
+      video: { count: 0, bytes: 0, formatted: '0 B' },
+      audio: { count: 0, bytes: 0, formatted: '0 B' },
+      doc: { count: 0, bytes: 0, formatted: '0 B' },
+      other: { count: 0, bytes: 0, formatted: '0 B' }
+    };
+
+    (rows || []).forEach(r => {
+      const sz = r.size_bytes || 0;
+      totalBytes += sz;
+      const ext = (r.ext || '').toLowerCase();
+
+      let cat = 'other';
+      if (typeFilters.image.includes(ext)) cat = 'image';
+      else if (typeFilters.video.includes(ext)) cat = 'video';
+      else if (typeFilters.audio.includes(ext)) cat = 'audio';
+      else if (typeFilters.doc.includes(ext)) cat = 'doc';
+
+      catStats[cat].count++;
+      catStats[cat].bytes += sz;
+    });
+
+    Object.keys(catStats).forEach(k => {
+      catStats[k].formatted = formatBytes(catStats[k].bytes) || '0 B';
+    });
+
+    res.json({
+      total_files: totalCount,
+      total_size_bytes: totalBytes,
+      total_size_formatted: formatBytes(totalBytes) || '0 B',
+      categories: catStats
+    });
+  });
+});
+
+// Exclui arquivo pré-salvo do banco e do disco
+app.delete('/api/files/delete', (req, res) => {
+  const { url, id } = req.body || {};
+
+  db.get("SELECT * FROM tabela_banco_arquivos WHERE id = ? OR url = ?", [id || null, url || null], (err, row) => {
+    if (row) {
+      if (row.url) {
+        const filePath = path.join(uploadDir, path.basename(row.url));
+        try {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (e) {
+          console.warn('Erro ao excluir arquivo físico:', e.message);
+        }
+      }
+      db.run("DELETE FROM tabela_banco_arquivos WHERE id = ?", [row.id], () => {});
+    }
+
+    res.json({ status: 'success', message: 'Arquivo excluído do banco com sucesso.' });
+  });
+});
+
+// ==============================================================================
+// ⚡ CRUD DE RESPOSTAS RÁPIDAS (GLOBAIS DA GESTÃO VS PESSOAIS DO ATENDENTE)
+// ==============================================================================
+
+app.get('/api/quick-replies', (req, res) => {
+  const { usuario_id, search, grupo, categoria, setor_id, escopo } = req.query;
+
+  let query = "SELECT * FROM tabela_respostas_rapidas WHERE 1=1";
+  const params = [];
+
+  if (usuario_id) {
+    query += " AND (escopo = 'global' OR usuario_id = ?)";
+    params.push(String(usuario_id));
+  } else if (escopo) {
+    query += " AND escopo = ?";
+    params.push(escopo);
+  }
+
+  const targetGroup = grupo || categoria;
+  if (targetGroup && targetGroup !== 'ALL' && targetGroup !== 'Todos') {
+    query += " AND (grupo = ? OR categoria = ?)";
+    params.push(targetGroup, targetGroup);
+  }
+
+  if (search && search.trim()) {
+    query += " AND (titulo LIKE ? OR atalho LIKE ? OR conteudo LIKE ? OR grupo LIKE ? OR categoria LIKE ?)";
+    const s = `%${search.trim()}%`;
+    params.push(s, s, s, s, s);
+  }
+
+  query += " ORDER BY favorito DESC, escopo ASC, created_at DESC";
+
+  db.all(query, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    let results = (rows || []).map(r => {
+      let setores = null;
+      try {
+        if (r.setores) setores = typeof r.setores === 'string' ? JSON.parse(r.setores) : r.setores;
+      } catch (e) {}
+
+      let blocos = null;
+      try {
+        if (r.blocos) blocos = typeof r.blocos === 'string' ? JSON.parse(r.blocos) : r.blocos;
+      } catch (e) {}
+
+      // Se blocos for nulo, cria bloco padrão de texto a partir de conteudo
+      if (!blocos || !Array.isArray(blocos) || blocos.length === 0) {
+        blocos = [{ id: 'b_default_' + r.id, tipo: 'texto', texto: r.conteudo || '' }];
+      }
+
+      return {
+        ...r,
+        grupo: r.grupo || r.categoria || 'Geral',
+        setores: Array.isArray(setores) ? setores : null,
+        blocos: blocos
+      };
+    });
+
+    if (setor_id) {
+      const targetSec = Number(setor_id);
+      results = results.filter(r => {
+        if (!r.setores || r.setores.length === 0) return true;
+        return r.setores.includes(targetSec) || r.setores.includes(String(targetSec));
+      });
+    }
+
+    res.json({ quick_replies: results });
+  });
+});
+
+app.post('/api/quick-replies', (req, res) => {
+  const {
+    titulo,
+    atalho = '',
+    conteudo,
+    grupo,
+    categoria = 'Geral',
+    escopo = 'global',
+    setores = null,
+    blocos = null,
+    usuario_id = null,
+    usuario_nome = 'Gestor',
+    favorito = 0,
+    midia_url = null
+  } = req.body || {};
+
+  if (!titulo) {
+    return res.status(400).json({ error: 'Título é obrigatório.' });
+  }
+
+  // Se blocos foram enviados, sintetiza conteudo se vazio
+  let finalConteudo = conteudo || '';
+  let blocosArray = Array.isArray(blocos) ? blocos : (blocos ? JSON.parse(blocos) : null);
+  if (!finalConteudo && blocosArray && blocosArray.length > 0) {
+    const textBlocks = blocosArray.filter(b => b.tipo === 'texto');
+    if (textBlocks.length > 0) {
+      finalConteudo = textBlocks.map(b => b.texto).join('\n\n');
+    } else {
+      finalConteudo = `[${blocosArray.length} arquivo(s)]`;
+    }
+  }
+
+  if (!finalConteudo && (!blocosArray || blocosArray.length === 0)) {
+    return res.status(400).json({ error: 'Informe ao menos um bloco de texto ou arquivo.' });
+  }
+
+  const cleanAtalho = atalho && !atalho.startsWith('/') ? `/${atalho}` : atalho;
+  const finalGroup = grupo || categoria || 'Geral';
+  const setoresJson = Array.isArray(setores) && setores.length > 0 ? JSON.stringify(setores) : (setores ? String(setores) : null);
+  const blocosJson = blocosArray && blocosArray.length > 0 ? JSON.stringify(blocosArray) : JSON.stringify([{ id: 'b_1', tipo: 'texto', texto: finalConteudo }]);
+
+  const sql = `
+    INSERT INTO tabela_respostas_rapidas 
+    (titulo, atalho, conteudo, categoria, grupo, escopo, setores, blocos, usuario_id, usuario_nome, favorito, midia_url, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `;
+
+  db.run(sql, [titulo, cleanAtalho, finalConteudo, finalGroup, finalGroup, escopo, setoresJson, blocosJson, usuario_id ? String(usuario_id) : null, usuario_nome, favorito ? 1 : 0, midia_url], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    db.get("SELECT * FROM tabela_respostas_rapidas WHERE id = ?", [this.lastID], (err2, row) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      let rowSetores = null;
+      let rowBlocos = null;
+      try { if (row.setores) rowSetores = JSON.parse(row.setores); } catch (e) {}
+      try { if (row.blocos) rowBlocos = JSON.parse(row.blocos); } catch (e) {}
+      res.json({ status: 'success', quick_reply: { ...row, grupo: row.grupo || row.categoria, setores: rowSetores, blocos: rowBlocos || [{ id: 'b_1', tipo: 'texto', texto: row.conteudo }] } });
+    });
+  });
+});
+
+app.put('/api/quick-replies/:id', (req, res) => {
+  const { id } = req.params;
+  const {
+    titulo,
+    atalho,
+    conteudo,
+    grupo,
+    categoria,
+    escopo,
+    setores,
+    blocos,
+    usuario_id,
+    usuario_nome,
+    favorito,
+    midia_url
+  } = req.body || {};
+
+  const cleanAtalho = atalho && !atalho.startsWith('/') ? `/${atalho}` : atalho;
+  const finalGroup = grupo || categoria;
+  const setoresJson = setores !== undefined ? (Array.isArray(setores) && setores.length > 0 ? JSON.stringify(setores) : (setores ? String(setores) : null)) : undefined;
+
+  let blocosJson = undefined;
+  let finalConteudo = conteudo;
+  if (blocos !== undefined) {
+    const blocosArray = Array.isArray(blocos) ? blocos : (blocos ? JSON.parse(blocos) : []);
+    blocosJson = JSON.stringify(blocosArray);
+    if (!finalConteudo && blocosArray.length > 0) {
+      const textBlocks = blocosArray.filter(b => b.tipo === 'texto');
+      if (textBlocks.length > 0) {
+        finalConteudo = textBlocks.map(b => b.texto).join('\n\n');
+      } else {
+        finalConteudo = `[${blocosArray.length} arquivo(s)]`;
+      }
+    }
+  }
+
+  const sql = `
+    UPDATE tabela_respostas_rapidas
+    SET titulo = COALESCE(?, titulo),
+        atalho = COALESCE(?, atalho),
+        conteudo = COALESCE(?, conteudo),
+        categoria = COALESCE(?, categoria),
+        grupo = COALESCE(?, grupo),
+        escopo = COALESCE(?, escopo),
+        setores = COALESCE(?, setores),
+        blocos = COALESCE(?, blocos),
+        usuario_id = COALESCE(?, usuario_id),
+        usuario_nome = COALESCE(?, usuario_nome),
+        favorito = COALESCE(?, favorito),
+        midia_url = COALESCE(?, midia_url),
+        updated_at = datetime('now')
+    WHERE id = ?
+  `;
+
+  db.run(sql, [titulo, cleanAtalho, finalConteudo, finalGroup, finalGroup, escopo, setoresJson, blocosJson, usuario_id ? String(usuario_id) : null, usuario_nome, favorito !== undefined ? (favorito ? 1 : 0) : null, midia_url, id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    db.get("SELECT * FROM tabela_respostas_rapidas WHERE id = ?", [id], (err2, row) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      let rowSetores = null;
+      let rowBlocos = null;
+      try { if (row && row.setores) rowSetores = JSON.parse(row.setores); } catch (e) {}
+      try { if (row && row.blocos) rowBlocos = JSON.parse(row.blocos); } catch (e) {}
+      res.json({ status: 'success', quick_reply: { ...row, grupo: row.grupo || row.categoria, setores: rowSetores, blocos: rowBlocos || [{ id: 'b_1', tipo: 'texto', texto: row?.conteudo || '' }] } });
+    });
+  });
+});
+
+app.delete('/api/quick-replies/:id', (req, res) => {
+  const { id } = req.params;
+  db.run("DELETE FROM tabela_respostas_rapidas WHERE id = ?", [id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ status: 'success', message: 'Resposta rápida excluída com sucesso.' });
+  });
+});
+
+app.post('/api/quick-replies/:id/toggle-favorite', (req, res) => {
+  const { id } = req.params;
+  db.get("SELECT favorito FROM tabela_respostas_rapidas WHERE id = ?", [id], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Resposta rápida não encontrada.' });
+    const newFav = row.favorito ? 0 : 1;
+    db.run("UPDATE tabela_respostas_rapidas SET favorito = ?, updated_at = datetime('now') WHERE id = ?", [newFav, id], (err2) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      res.json({ status: 'success', favorito: newFav === 1 });
+    });
+  });
+});
+
+app.all('/api/simulate-incoming-message', (req, res) => {
+  const targetJid = req.query.jid || req.body?.jid;
+  const targetText = req.query.text || req.body?.text || 'Olá! Gostaria de saber se meu chamado já foi atualizado?';
+
+  const query = targetJid
+    ? "SELECT * FROM tabela_atendimentos WHERE cliente_jid = ?"
+    : "SELECT * FROM tabela_atendimentos WHERE status = 'em_atendimento' ORDER BY id ASC LIMIT 1";
+
+  const params = targetJid ? [targetJid] : [];
+
+  db.get(query, params, async (err, chat) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!chat) {
+      return db.get("SELECT * FROM tabela_atendimentos LIMIT 1", [], async (err2, fallbackChat) => {
+        if (!fallbackChat) return res.status(404).json({ error: 'Nenhum atendimento encontrado para simular.' });
+        await processIncomingMessage(fallbackChat.cliente_jid, targetText, fallbackChat.cliente_nome, fallbackChat.cliente_avatar);
+        return res.json({ status: 'success', message: 'Mensagem simulada com sucesso!', chat: fallbackChat.cliente_nome, jid: fallbackChat.cliente_jid });
+      });
+    }
+    await processIncomingMessage(chat.cliente_jid, targetText, chat.cliente_nome, chat.cliente_avatar);
+    res.json({ status: 'success', message: 'Mensagem simulada com sucesso!', chat: chat.cliente_nome, jid: chat.cliente_jid });
+  });
 });
 
 app.post('/api/disconnect', async (req, res) => {
@@ -258,10 +765,71 @@ db.serialize(() => {
   `, (err) => {
     if (!err) {
       db.run("ALTER TABLE tabela_mensagens ADD COLUMN reacao TEXT", (alterErr) => {});
+      db.run("ALTER TABLE tabela_mensagens ADD COLUMN atendente_nome TEXT", (alterErr) => {});
+      db.run("ALTER TABLE tabela_mensagens ADD COLUMN assinado_cliente INTEGER DEFAULT 0", (alterErr) => {});
     }
   });
 
-  // 4. Verificar se a base está vazia e popular dados de exemplo para testes
+  // 4. Tabela de Respostas Rápidas (Globais vs Pessoais + Grupos + Setores)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tabela_respostas_rapidas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo TEXT NOT NULL,
+      atalho TEXT,
+      conteudo TEXT NOT NULL,
+      categoria TEXT DEFAULT 'Geral',
+      grupo TEXT DEFAULT 'Geral',
+      escopo TEXT DEFAULT 'global', -- 'global' (empresa) ou 'pessoal' (atendente)
+      setores TEXT, -- JSON array de IDs de setores vinculados ou NULL (todos)
+      usuario_id TEXT,
+      usuario_nome TEXT,
+      favorito INTEGER DEFAULT 0,
+      midia_url TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `, (err) => {
+    if (!err) {
+      db.run("ALTER TABLE tabela_respostas_rapidas ADD COLUMN grupo TEXT", () => {});
+      db.run("ALTER TABLE tabela_respostas_rapidas ADD COLUMN setores TEXT", () => {});
+      db.run("ALTER TABLE tabela_respostas_rapidas ADD COLUMN blocos TEXT", () => {});
+      seedQuickReplies();
+    }
+  });
+
+  // 5. Tabela do Banco de Arquivos Pré-Salvos (Biblioteca)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tabela_banco_arquivos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo TEXT,
+      filename TEXT,
+      url TEXT UNIQUE,
+      mimetype TEXT,
+      ext TEXT,
+      size_bytes INTEGER DEFAULT 0,
+      grupo TEXT DEFAULT 'Geral',
+      setores TEXT, -- JSON array de IDs de setores autorizados ou NULL (todos)
+      descricao TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // 6. Tabela de Metadados de Arquivos Legados
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tabela_arquivos_metadados (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT UNIQUE,
+      filename TEXT,
+      grupo TEXT DEFAULT 'Geral',
+      setores TEXT,
+      descricao TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // 5. Verificar se a base está vazia e popular dados de exemplo para testes
   setTimeout(() => {
     db.get("SELECT COUNT(*) as count FROM tabela_atendimentos", (err, row) => {
       if (!err && row && row.count === 0) {
@@ -272,21 +840,34 @@ db.serialize(() => {
   }, 1000);
 });
 
+// Seed de respostas rápidas padrão se a tabela estiver vazia
+function seedQuickReplies() {
+  db.get("SELECT COUNT(*) as count FROM tabela_respostas_rapidas", (err, row) => {
+    if (!err && row && row.count === 0) {
+      console.log('📌 Tabela de respostas rápidas vazia. Inserindo templates padrão...');
+      const defaultReplies = [
+        { titulo: 'Saudação Inicial', atalho: '/ola', conteudo: 'Olá! Meu nome é {atendente_nome} do suporte. Como posso ajudar você hoje?', categoria: '👋 Atendimento Inicial', escopo: 'global', favorito: 1 },
+        { titulo: 'Em Análise', atalho: '/analise', conteudo: 'Um momento, por favor. Estou verificando seu cadastro e pedido em nosso sistema.', categoria: '⏳ Em Análise / Aguarde', escopo: 'global', favorito: 1 },
+        { titulo: 'Solicitar Documento', atalho: '/docs', conteudo: 'Por favor, envie uma foto do documento ou comprovante para prosseguirmos com seu atendimento.', categoria: '📄 Documentos & Comprovantes', escopo: 'global', favorito: 1 },
+        { titulo: 'Finalização e Agradecimento', atalho: '/fim', conteudo: 'Atendimento concluído com sucesso! Qualquer nova dúvida, estamos à inteira disposição. Tenha um excelente dia!', categoria: '✅ Finalização', escopo: 'global', favorito: 1 },
+        { titulo: 'Chave Pix para Pagamento', atalho: '/pix', conteudo: 'Segue nossa chave Pix para pagamento: financeiro@empresa.com.br. Por favor, envie o comprovante após a transferência.', categoria: '💳 Financeiro / Cobrança', escopo: 'global', favorito: 0 },
+        { titulo: 'Endereço e Horário', atalho: '/endereco', conteudo: 'Nosso horário de funcionamento é de Segunda a Sexta, das 08h às 18h.', categoria: '📍 Informações Gerais', escopo: 'global', favorito: 0 }
+      ];
+
+      const stmt = db.prepare("INSERT INTO tabela_respostas_rapidas (titulo, atalho, conteudo, categoria, escopo, favorito, usuario_nome) VALUES (?, ?, ?, ?, ?, ?, 'Gestor (Padrão)')");
+      defaultReplies.forEach(r => {
+        stmt.run(r.titulo, r.atalho, r.conteudo, r.categoria, r.escopo, r.favorito);
+      });
+      stmt.finalize();
+    }
+  });
+}
+
 // ==============================================================================
-// 🧪 GERADOR DE DADOS DE TESTE (MOCK DATA PARA DESENVOLVIMENTO)
+// 🧪 GERADOR DE DADOS DE TESTE (MOCK DATA COM HISTÓRICO MULTI-SESSÃO)
 // ==============================================================================
 function seedMockData(force = false, callback = null) {
   const mockClients = [
-    {
-      jid: '5511988881111@c.us',
-      nome: 'Carlos Oliveira',
-      avatar: null,
-      status: 'fila',
-      unread: 1,
-      messages: [
-        { remetente: 'cliente', texto: 'Olá! Boa tarde. Preciso de suporte para redefinir minha senha de acesso ao portal de vendas.' }
-      ]
-    },
     {
       jid: '5511977772222@c.us',
       nome: 'Fernanda Lima',
@@ -294,7 +875,29 @@ function seedMockData(force = false, callback = null) {
       status: 'fila',
       unread: 1,
       messages: [
+        // Sessão Anterior (Finalizada)
+        { remetente: 'cliente', texto: 'Olá, gostaria de confirmar se o meu cadastro foi aprovado no sistema.' },
+        { remetente: 'atendente', atendente_nome: 'Carlos Santos', texto: 'Olá Fernanda! Sim, verifiquei aqui e seus documentos foram aprovados com sucesso.' },
+        { remetente: 'cliente', texto: 'Perfeito, muito obrigada pelo retorno rápido!' },
+        { remetente: 'sistema', texto: 'Atendimento finalizado pelo atendente.' },
+        // Sessão Atual
         { remetente: 'cliente', texto: 'Gostaria de saber se o meu pedido #94821 já foi enviado para a transportadora.' }
+      ]
+    },
+    {
+      jid: '5511988881111@c.us',
+      nome: 'Carlos Oliveira',
+      avatar: null,
+      status: 'fila',
+      unread: 1,
+      messages: [
+        // Sessão Anterior (Finalizada)
+        { remetente: 'cliente', texto: 'Bom dia, como faço para solicitar a troca de um produto com defeito?' },
+        { remetente: 'atendente', atendente_nome: 'Carlos Santos', texto: 'Bom dia Carlos! Basta acessar o menu Meus Pedidos e gerar a etiqueta de devolução gratuita.' },
+        { remetente: 'cliente', texto: 'Consegui gerar aqui, obrigado!' },
+        { remetente: 'sistema', texto: 'Atendimento finalizado pelo atendente.' },
+        // Sessão Atual
+        { remetente: 'cliente', texto: 'Olá! Boa tarde. Preciso de suporte para redefinir minha senha de acesso ao portal de vendas.' }
       ]
     },
     {
@@ -304,6 +907,12 @@ function seedMockData(force = false, callback = null) {
       status: 'fila',
       unread: 1,
       messages: [
+        // Sessão Anterior (Finalizada)
+        { remetente: 'cliente', texto: 'Qual a chave PIX para pagamento da mensalidade?' },
+        { remetente: 'atendente', atendente_nome: 'Carlos Santos', texto: 'Nossa chave PIX CNPJ é 12.345.678/0001-90 (Empresa Tickets Ltda).' },
+        { remetente: 'cliente', texto: 'Pagamento realizado com sucesso!' },
+        { remetente: 'sistema', texto: 'Atendimento finalizado pelo atendente.' },
+        // Sessão Atual
         { remetente: 'cliente', texto: 'Boa tarde! Teria como me enviar a segunda via da nota fiscal referente à compra de ontem?' }
       ]
     },
@@ -314,6 +923,11 @@ function seedMockData(force = false, callback = null) {
       status: 'fila',
       unread: 1,
       messages: [
+        // Sessão Anterior (Finalizada)
+        { remetente: 'cliente', texto: 'Vocês realizam entregas para a região sul?' },
+        { remetente: 'atendente', atendente_nome: 'Carlos Santos', texto: 'Olá Juliana! Sim, enviamos para todo o Brasil via Sedex e transportadoras parceiras.' },
+        { remetente: 'sistema', texto: 'Atendimento finalizado pelo atendente.' },
+        // Sessão Atual
         { remetente: 'cliente', texto: 'Oi pessoal, qual o horário de funcionamento do atendimento presencial no final de semana?' }
       ]
     },
@@ -324,6 +938,11 @@ function seedMockData(force = false, callback = null) {
       status: 'fila',
       unread: 1,
       messages: [
+        // Sessão Anterior (Finalizada)
+        { remetente: 'cliente', texto: 'Preciso atualizar o e-mail de faturamento da minha empresa.' },
+        { remetente: 'atendente', atendente_nome: 'Carlos Santos', texto: 'E-mail atualizado com sucesso no cadastro financeiro!' },
+        { remetente: 'sistema', texto: 'Atendimento finalizado pelo atendente.' },
+        // Sessão Atual
         { remetente: 'cliente', texto: 'Estou tentando acessar o módulo financeiro e recebi um aviso de falta de permissão.' }
       ]
     }
@@ -332,20 +951,21 @@ function seedMockData(force = false, callback = null) {
   let addedCount = 0;
   let processed = 0;
 
-  mockClients.forEach((client) => {
+  const insertClientData = (client) => {
     const startedAt = new Date().toISOString();
     db.run(
       `INSERT INTO tabela_atendimentos (cliente_jid, cliente_nome, cliente_avatar, status, started_at, unread)
        VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(cliente_jid) DO ${force ? 'UPDATE SET status = excluded.status, unread = excluded.unread' : 'NOTHING'}`,
+       ON CONFLICT(cliente_jid) DO UPDATE SET status = excluded.status, unread = excluded.unread`,
       [client.jid, client.nome, client.avatar, client.status, startedAt, client.unread],
       function (err) {
-        if (!err && (this.changes > 0 || force)) {
+        if (!err) {
           addedCount++;
           client.messages.forEach(msg => {
+            const isAttendant = msg.remetente !== 'cliente' && msg.remetente !== 'sistema';
             db.run(
-              `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-              [client.jid, msg.remetente, msg.texto]
+              `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
+              [client.jid, msg.remetente, isAttendant ? (msg.atendente_nome || 'Carlos Santos') : null, isAttendant ? 1 : 0, msg.texto]
             );
           });
         }
@@ -353,12 +973,22 @@ function seedMockData(force = false, callback = null) {
         if (processed === mockClients.length) {
           broadcastQueue();
           broadcastBotList();
-          console.log(`✅ [Mock Seed] ${addedCount} atendimento(s) de teste adicionado(s) à fila.`);
+          console.log(`✅ [Mock Seed] ${addedCount} atendimento(s) com histórico de teste inseridos.`);
           if (callback) callback(null, addedCount);
         }
       }
     );
-  });
+  };
+
+  if (force) {
+    const jidPlaceholders = mockClients.map(() => '?').join(',');
+    const jidList = mockClients.map(c => c.jid);
+    db.run(`DELETE FROM tabela_mensagens WHERE cliente_jid IN (${jidPlaceholders})`, jidList, () => {
+      mockClients.forEach(client => insertClientData(client));
+    });
+  } else {
+    mockClients.forEach(client => insertClientData(client));
+  }
 }
 
 app.get('/api/seed-mock-data', (req, res) => {
@@ -455,11 +1085,17 @@ wwebClient.on('disconnected', (reason) => {
 });
 
 // ==============================================================================
-// 🔄 FLUXO A: RECEBIMENTO DE MENSAGEM DO WHATSAPP
+// 🔄 FLUXO A: RECEBIMENTO DE MENSAGEM DO WHATSAPP (COM PROTEÇÃO ANTI-BAN)
 // ==============================================================================
+
+// Mapa global de debounce para evitar rajadas e spam de mensagens recebidas
+if (!global._inboundDebounceMap) global._inboundDebounceMap = new Map();
+
 wwebClient.on('message', async (msg) => {
-  // Ignora mensagens de grupo e de status/stories
-  if (msg.from.includes('@g.us') || msg.isStatus) return;
+  // Ignora mensagens de grupos, status/stories e listas de transmissão (anti-spam / anti-ban)
+  if (msg.from.includes('@g.us') || msg.isStatus || msg.from.includes('@broadcast') || msg.from.includes('status@broadcast')) {
+    return;
+  }
 
   const clienteJid = msg.from;
   let texto = msg.body;
@@ -493,7 +1129,19 @@ wwebClient.on('message', async (msg) => {
     }
 
     console.log(`📩 Mensagem recebida de ${clienteNome} (${clienteJid}): "${texto}"`);
-    await processIncomingMessage(clienteJid, texto, clienteNome, profilePicUrl);
+
+    // Proteção Anti-Flood / Debounce: Se o cliente enviar múltiplas mensagens em rajada (< 600ms), processa a última consolidada
+    if (global._inboundDebounceMap.has(clienteJid)) {
+      clearTimeout(global._inboundDebounceMap.get(clienteJid));
+    }
+
+    global._inboundDebounceMap.set(
+      clienteJid,
+      setTimeout(async () => {
+        global._inboundDebounceMap.delete(clienteJid);
+        await processIncomingMessage(clienteJid, texto, clienteNome, profilePicUrl);
+      }, 450)
+    );
   } catch (error) {
     console.error('❌ Erro no processamento de mensagem recebida:', error);
   }
@@ -673,10 +1321,13 @@ io.on('connection', (socket) => {
   });
 
   // 3. FLUXO B: ENVIO DE MENSAGEM (Atendente -> Servidor -> WhatsApp)
-  socket.on('send_message', async ({ cliente_jid, texto, atendente_id, attachments }) => {
+  socket.on('send_message', async ({ cliente_jid, texto, atendente_id, atendente_nome, send_signature, is_internal, attachments }) => {
     if (!cliente_jid || (!texto && (!attachments || attachments.length === 0)) || !atendente_id) return;
 
-    console.log(`📤 Enviando mensagem de [${atendente_id}] para [${cliente_jid}]: "${texto}" (Anexos: ${attachments ? attachments.length : 0})`);
+    const opNome = atendente_nome || atendente_id;
+    const isSigned = (send_signature !== false && !is_internal) ? 1 : 0;
+
+    console.log(`📤 Enviando mensagem de [${opNome}] para [${cliente_jid}]: "${texto}" (Assinado: ${isSigned ? 'SIM' : 'NÃO'}, Anexos: ${attachments ? attachments.length : 0})`);
     checkManualTakeover(cliente_jid, atendente_id);
 
     try {
@@ -684,8 +1335,8 @@ io.on('connection', (socket) => {
       if (whatsappStatus !== 'pronto') {
         console.log('⚠️ WhatsApp desconectado. Salvando mensagem no modo Simulação...');
         db.run(
-          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-          [cliente_jid, atendente_id, texto],
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
+          [cliente_jid, atendente_id, opNome, isSigned, texto],
           function (err) {
             if (err) {
               console.error('Erro ao salvar mensagem simulada:', err.message);
@@ -696,6 +1347,8 @@ io.on('connection', (socket) => {
               id: this.lastID,
               cliente_jid: cliente_jid,
               remetente: atendente_id,
+              atendente_nome: opNome,
+              assinado_cliente: isSigned,
               texto: texto,
               timestamp: new Date().toISOString()
             };
@@ -744,31 +1397,44 @@ io.on('connection', (socket) => {
         // Envio de Anexos
         for (let i = 0; i < attachments.length; i++) {
           const file = attachments[i];
-          const media = MessageMedia.fromFilePath(file.path);
-          // O texto digitado vira legenda (caption) apenas do primeiro arquivo enviado
-          const options = (i === 0 && texto) ? { caption: texto } : {};
+          const localPath = file.path || (file.url ? path.join(uploadDir, path.basename(file.url)) : null);
+          
+          if (!localPath || !fs.existsSync(localPath)) {
+            console.error('Arquivo não encontrado localmente:', file);
+            continue;
+          }
+
+          const media = MessageMedia.fromFilePath(localPath);
+          
+          let captionToSend = (i === 0 && texto) ? texto : (file.caption || '');
+          if (captionToSend && isSigned && opNome) {
+            captionToSend = `*${opNome}:*\n${captionToSend}`;
+          }
+
+          const options = captionToSend ? { caption: captionToSend } : {};
           
           await wwebClient.sendMessage(cliente_jid, media, options);
           
           // Salva o registro de envio do anexo no banco de dados local
-          // Concatenamos a URL da imagem com o texto para renderização simples
-          const anexoTexto = `[ANEXO] ${file.url} \n${(i === 0 && texto) ? texto : ''}`;
+          const anexoTexto = `[ANEXO] ${file.url || ('/uploads/' + path.basename(localPath))} \n${captionToSend || ''}`.trim();
           db.run(
-            `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-            [cliente_jid, atendente_id, anexoTexto],
+            `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
+            [cliente_jid, atendente_id, opNome, isSigned, anexoTexto],
             function (err) {
               if (err) console.error('Erro ao salvar anexo no bd:', err.message);
               io.to(atendente_id).emit('new_message', {
                 id: this.lastID,
                 cliente_jid: cliente_jid,
                 remetente: atendente_id,
+                atendente_nome: opNome,
+                assinado_cliente: isSigned,
                 texto: anexoTexto,
                 timestamp: new Date().toISOString()
               });
             }
           );
         }
-      } else if (texto.startsWith('data:audio/')) {
+      } else if (texto && texto.startsWith('data:audio/')) {
         // Fluxo de Áudio de Voz gravado no app
         const matches = texto.match(/^data:(audio\/[a-zA-Z0-9\-]+);base64,(.+)$/);
         if (matches) {
@@ -782,23 +1448,44 @@ io.on('connection', (socket) => {
         
         // Salva áudio no db
         db.run(
-          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-          [cliente_jid, atendente_id, texto],
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
+          [cliente_jid, atendente_id, opNome, isSigned, texto],
           function (err) {
             if (err) console.error('Erro salvar áudio:', err.message);
-            io.to(atendente_id).emit('new_message', { id: this.lastID, cliente_jid, remetente: atendente_id, texto, timestamp: new Date().toISOString() });
+            io.to(atendente_id).emit('new_message', {
+              id: this.lastID,
+              cliente_jid,
+              remetente: atendente_id,
+              atendente_nome: opNome,
+              assinado_cliente: isSigned,
+              texto,
+              timestamp: new Date().toISOString()
+            });
           }
         );
       } else {
         // Envio de texto normal
-        await wwebClient.sendMessage(cliente_jid, texto);
+        let textToSend = texto;
+        if (isSigned && opNome && typeof texto === 'string' && !is_internal) {
+          textToSend = `*${opNome}:*\n${texto}`;
+        }
+
+        await wwebClient.sendMessage(cliente_jid, textToSend);
         
         db.run(
-          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, ?, ?)`,
-          [cliente_jid, atendente_id, texto],
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
+          [cliente_jid, atendente_id, opNome, isSigned, texto],
           function (err) {
             if (err) console.error('Erro salvar txt:', err.message);
-            io.to(atendente_id).emit('new_message', { id: this.lastID, cliente_jid, remetente: atendente_id, texto, timestamp: new Date().toISOString() });
+            io.to(atendente_id).emit('new_message', {
+              id: this.lastID,
+              cliente_jid,
+              remetente: atendente_id,
+              atendente_nome: opNome,
+              assinado_cliente: isSigned,
+              texto,
+              timestamp: new Date().toISOString()
+            });
           }
         );
       }
@@ -1000,13 +1687,19 @@ io.on('connection', (socket) => {
   // 6b. EXCLUIR MENSAGEM DO HISTÓRICO
   socket.on('delete_message', ({ message_id, atendente_id, cliente_jid }) => {
     if (!message_id) return;
-    console.log(`🗑️ Excluindo mensagem ID ${message_id} por solicitação de atendente ${atendente_id || 'sistema'}`);
-    db.run(`DELETE FROM tabela_mensagens WHERE id = ?`, [message_id], (err) => {
-      if (err) {
-        console.error('Erro ao excluir mensagem do banco de dados:', err.message);
+    db.get(`SELECT status FROM tabela_atendimentos WHERE cliente_jid = ?`, [cliente_jid], (err, at) => {
+      if (!err && at && (at.status === 'finalizado' || at.status === 'bot')) {
+        console.warn(`⚠️ Tentativa de exclusão bloqueada em atendimento encerrado/bot (${cliente_jid}).`);
         return;
       }
-      io.emit('message_deleted', { message_id, cliente_jid });
+      console.log(`🗑️ Excluindo mensagem ID ${message_id} por solicitação de atendente ${atendente_id || 'sistema'}`);
+      db.run(`DELETE FROM tabela_mensagens WHERE id = ?`, [message_id], (err) => {
+        if (err) {
+          console.error('Erro ao excluir mensagem do banco de dados:', err.message);
+          return;
+        }
+        io.emit('message_deleted', { message_id, cliente_jid });
+      });
     });
   });
 
@@ -1031,13 +1724,19 @@ io.on('connection', (socket) => {
   // 6c. REAGIR A MENSAGEM
   socket.on('react_message', ({ message_id, reacao, atendente_id, cliente_jid }) => {
     if (!message_id) return;
-    console.log(`❤️ Reagindo à mensagem ID ${message_id} com "${reacao || 'Nenhuma'}" por solicitação de atendente ${atendente_id || 'sistema'}`);
-    db.run(`UPDATE tabela_mensagens SET reacao = ? WHERE id = ?`, [reacao, message_id], (err) => {
-      if (err) {
-        console.error('Erro ao atualizar reação da mensagem:', err.message);
+    db.get(`SELECT status FROM tabela_atendimentos WHERE cliente_jid = ?`, [cliente_jid], (err, at) => {
+      if (!err && at && (at.status === 'finalizado' || at.status === 'bot')) {
+        console.warn(`⚠️ Tentativa de reação bloqueada em atendimento encerrado/bot (${cliente_jid}).`);
         return;
       }
-      io.emit('message_reacted', { message_id, reacao, cliente_jid });
+      console.log(`❤️ Reagindo à mensagem ID ${message_id} com "${reacao || 'Nenhuma'}" por solicitação de atendente ${atendente_id || 'sistema'}`);
+      db.run(`UPDATE tabela_mensagens SET reacao = ? WHERE id = ?`, [reacao, message_id], (err) => {
+        if (err) {
+          console.error('Erro ao atualizar reação da mensagem:', err.message);
+          return;
+        }
+        io.emit('message_reacted', { message_id, reacao, cliente_jid });
+      });
     });
   });
 
@@ -1088,12 +1787,41 @@ function checkManualTakeover(clienteJid, atendenteId) {
   });
 }
 
-// Envia mensagem do bot (e também grava no banco e avisa no socket)
+// Envia mensagem do bot (com simulação de digitação humana e proteções anti-ban)
 async function sendBotMessage(clienteJid, texto) {
   console.log(`🤖 [BOT -> ${clienteJid}]: "${texto}"`);
   
   if (whatsappStatus === 'pronto') {
     try {
+      // 1. Simulação de Presença Humana: Visualizar e Digitar
+      try {
+        const chat = await wwebClient.getChatById(clienteJid);
+        if (chat) {
+          // Marca mensagem anterior como lida
+          try { await chat.sendSeen(); } catch (_) {}
+          // Ativa status "digitando..."
+          try { await chat.sendStateTyping(); } catch (_) {}
+        }
+      } catch (presenceErr) {
+        // Ignora silenciosamente se o chat ainda não foi indexado
+      }
+
+      // 2. Intervalo Orgânico de Digitação Humana (Anti-ban)
+      // Delay proporcional ao tamanho do texto + jitter aleatório (entre 1.2s e 3.8s)
+      const textLength = (texto || '').length;
+      const charDelay = Math.min(textLength * 28, 2400);
+      const randomJitter = Math.floor(Math.random() * 600) + 800;
+      const totalDelay = Math.min(charDelay + randomJitter, 4000);
+
+      await new Promise(resolve => setTimeout(resolve, totalDelay));
+
+      // Limpa status de digitação antes de enviar
+      try {
+        const chat = await wwebClient.getChatById(clienteJid);
+        if (chat) await chat.clearState();
+      } catch (_) {}
+
+      // 3. Envio da mensagem de fato
       await wwebClient.sendMessage(clienteJid, texto);
     } catch (err) {
       console.error('Erro ao enviar mensagem do bot via WhatsApp:', err.message);
@@ -1149,6 +1877,41 @@ function moveToQueue(row) {
 
 // Processador unificado para mensagens recebidas (Chatbot vs Humanos)
 async function processIncomingMessage(clienteJid, texto, clienteNome, profilePicUrl) {
+  // Se houver uma pesquisa de avaliação pendente para este cliente (mesmo que o atendimento já esteja FINALIZADO)
+  if (global._botRatingPending && global._botRatingPending[clienteJid]) {
+    const ratingConfig = global._botRatingPending[clienteJid];
+    if (ratingConfig.timeoutHandle) clearTimeout(ratingConfig.timeoutHandle);
+    delete global._botRatingPending[clienteJid];
+
+    const trimmed = (texto || '').trim();
+    let ratingNote = null;
+    const match = trimmed.match(/\b([1-5])\b/);
+    if (match) {
+      ratingNote = match[1];
+    } else if (trimmed.includes('⭐') || trimmed.includes('★')) {
+      const starCount = (trimmed.match(/⭐|★/g) || []).length;
+      if (starCount >= 1 && starCount <= 5) ratingNote = String(starCount);
+    }
+
+    console.log(`⭐ [AVALIAÇÃO RECEBIDA] de [${clienteJid}]: "${texto}" (Nota: ${ratingNote || 'Registrada'})`);
+
+    // Salva a mensagem do cliente no histórico do atendimento já finalizado
+    db.run(
+      `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'cliente', ?)`,
+      [clienteJid, texto],
+      () => {
+        const thanksMsg = ratingConfig.ratingThanksMessage || "Obrigado pela sua avaliação! Tenha um ótimo dia.";
+        sendBotMessage(clienteJid, thanksMsg).finally(() => {
+          const sysText = ratingNote 
+            ? `Avaliação do cliente registrada com sucesso (Nota: ${ratingNote} ⭐).` 
+            : `Resposta de avaliação do cliente registrada no histórico.`;
+          db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', ?)`, [clienteJid, sysText]);
+        });
+      }
+    );
+    return;
+  }
+
   db.get(
     `SELECT * FROM tabela_atendimentos WHERE cliente_jid = ?`,
     [clienteJid],
@@ -1331,12 +2094,39 @@ async function runBotStep(row, texto) {
     return;
   }
 
+  // Se o nó atual for Tempo de Espera (delay) e o cliente enviou uma mensagem
+  if (currentNode.type === 'delay' || currentNode.type === 'wait') {
+    if (global._botDelayTimeouts && global._botDelayTimeouts[row.cliente_jid]) {
+      clearTimeout(global._botDelayTimeouts[row.cliente_jid]);
+      delete global._botDelayTimeouts[row.cliente_jid];
+    }
+
+    console.log(`[BOT] Cliente enviou mensagem durante o tempo de espera [${row.cliente_jid}]`);
+    const replyEdge = edges.find(e => e.source === currentNode.id && (e.sourceHandle === 'reply' || !e.sourceHandle));
+    if (replyEdge) {
+      const nextNode = nodes.find(n => n.id === replyEdge.target);
+      if (nextNode) {
+        db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [nextNode.id, row.cliente_jid]);
+        executeNode(row, nextNode);
+        return;
+      }
+    }
+    moveToQueue(row);
+    return;
+  }
+
   // Outros nós, executa e avança
   executeNode(row, currentNode, texto);
 }
 
-// Execução recursiva de nós imediatos (ex: mensagem -> pergunta)
-async function executeNode(row, node) {
+// Execução recursiva de nós imediatos (com proteção de profundidade e cadência orgânica)
+async function executeNode(row, node, texto, depth = 0) {
+  if (depth > 12) {
+    console.warn(`🛑 [BOT] Limite de profundidade de execução atingido (${depth}). Evitando loop infinito.`);
+    moveToQueue(row);
+    return;
+  }
+
   const channel = getChannelConfig();
   if (!channel || !channel.bot_flow) return;
   const { nodes, edges } = channel.bot_flow;
@@ -1344,13 +2134,15 @@ async function executeNode(row, node) {
   if (node.type === 'message') {
     await sendBotMessage(row.cliente_jid, node.data.text);
     
-    // Avança para o próximo
+    // Avança para o próximo com cadência humana
     const edge = edges.find(e => e.source === node.id);
     if (edge) {
       const nextNode = nodes.find(n => n.id === edge.target);
       if (nextNode) {
+        // Pausa natural de 1.2s a 2.0s entre blocos automáticos consecutivos
+        await new Promise(r => setTimeout(r, 1200 + Math.floor(Math.random() * 800)));
         db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [nextNode.id, row.cliente_jid]);
-        executeNode(row, nextNode);
+        executeNode(row, nextNode, texto, depth + 1);
         return;
       }
     }
@@ -1406,6 +2198,95 @@ async function executeNode(row, node) {
         broadcastBotList();
       }
     );
+  }
+
+  else if (node.type === 'delay' || node.type === 'wait') {
+    const unit = node.data && node.data.delayUnit === 'minutes' ? 'minutes' : 'seconds';
+    const val = parseInt(node.data && (node.data.delayValue || node.data.delaySeconds)) || 3;
+    const totalSec = Math.min(Math.max(unit === 'minutes' ? val * 60 : val, 1), 86400); // até 24h
+    
+    console.log(`[BOT] Iniciando tempo de espera de ${totalSec}s (${val} ${unit}) para [${row.cliente_jid}]`);
+    
+    db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [node.id, row.cliente_jid]);
+
+    if (!global._botDelayTimeouts) global._botDelayTimeouts = {};
+    if (global._botDelayTimeouts[row.cliente_jid]) {
+      clearTimeout(global._botDelayTimeouts[row.cliente_jid]);
+    }
+
+    global._botDelayTimeouts[row.cliente_jid] = setTimeout(() => {
+      delete global._botDelayTimeouts[row.cliente_jid];
+      
+      // Verifica se o atendimento ainda está no mesmo nó do bot
+      db.get(`SELECT bot_node_id, status FROM tabela_atendimentos WHERE cliente_jid = ?`, [row.cliente_jid], (err, currentAtendimento) => {
+        if (!err && currentAtendimento && currentAtendimento.status === 'bot' && currentAtendimento.bot_node_id === node.id) {
+          console.log(`[BOT] Tempo limite esgotado sem resposta (Timeout) para [${row.cliente_jid}]`);
+          const timeoutEdge = edges.find(e => e.source === node.id && (e.sourceHandle === 'timeout' || !e.sourceHandle));
+          if (timeoutEdge) {
+            const nextNode = nodes.find(n => n.id === timeoutEdge.target);
+            if (nextNode) {
+              db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [nextNode.id, row.cliente_jid]);
+              executeNode(row, nextNode);
+              return;
+            }
+          }
+          moveToQueue(row);
+        }
+      });
+    }, totalSec * 1000);
+  }
+
+  else if (node.type === 'close' || node.type === 'finalize') {
+    console.log(`[BOT] Finalizando atendimento imediatamente para [${row.cliente_jid}] e movendo ao histórico`);
+    
+    const runCloseFlow = async () => {
+      try {
+        if (node.data && node.data.text) {
+          await sendBotMessage(row.cliente_jid, node.data.text);
+        }
+
+        // 1. Finaliza IMEDIATAMENTE no banco de dados para sair dos chats ativos e ir ao histórico
+        db.run(
+          `UPDATE tabela_atendimentos SET status = 'finalizado', atendente_id = NULL, bot_node_id = NULL WHERE cliente_jid = ?`,
+          [row.cliente_jid],
+          async () => {
+            db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento finalizado pelo assistente virtual.')`, [row.cliente_jid]);
+            broadcastBotList();
+            broadcastQueue();
+
+            // 2. Se houver pesquisa de avaliação, dispara mensagem e mantém captura atrelada ao histórico
+            if (node.data && node.data.requestRating) {
+              await new Promise(r => setTimeout(r, 600));
+              if (node.data.ratingMessage) {
+                await sendBotMessage(row.cliente_jid, node.data.ratingMessage);
+              }
+
+              const timeoutMin = Math.min(Math.max(parseInt(node.data.ratingTimeoutMinutes) || 5, 1), 15);
+              console.log(`[BOT] Pesquisa enviada. Aguardando avaliação por até ${timeoutMin} min para [${row.cliente_jid}] (Vinculado ao histórico)`);
+
+              if (!global._botRatingPending) global._botRatingPending = {};
+              if (global._botRatingPending[row.cliente_jid]?.timeoutHandle) {
+                clearTimeout(global._botRatingPending[row.cliente_jid].timeoutHandle);
+              }
+
+              const timer = setTimeout(() => {
+                console.log(`[BOT] Prazo de avaliação (${timeoutMin} min) expirado para [${row.cliente_jid}].`);
+                delete global._botRatingPending[row.cliente_jid];
+              }, timeoutMin * 60 * 1000);
+
+              global._botRatingPending[row.cliente_jid] = {
+                ratingThanksMessage: node.data.ratingThanksMessage || 'Obrigado pela sua avaliação! Tenha um ótimo dia.',
+                timeoutHandle: timer
+              };
+            }
+          }
+        );
+      } catch (e) {
+        console.error('Erro ao processar fechamento do bot:', e);
+      }
+    };
+
+    runCloseFlow();
   }
 }
 

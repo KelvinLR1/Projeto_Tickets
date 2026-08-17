@@ -5,8 +5,11 @@ import {
     Save, RotateCcw, Globe, Cpu, Palette, CheckCircle2, ChevronDown, Loader2, Ticket,
     Plus, Edit2, Trash2, Shield, User as UserIcon, Mail, ShieldCheck,
     Settings as SettingsIcon, Key, UserSquare2, Users, ArrowLeft, ArrowRight,
+    ArrowUp, ArrowDown,
     Link2, Tag, PlusCircle, HardDrive, FolderPlus, Download, Upload, AlertTriangle,
-    XCircle, Eye, EyeOff, Check, Layers, MessageSquare, Bot
+    XCircle, Eye, EyeOff, Check, Layers, MessageSquare, Bot, Zap, FileText,
+    Image, Video, Music, Sparkles, Folder, Search, Filter, ExternalLink, Copy,
+    CheckCheck, RefreshCw, Paperclip, Lock, Smartphone, Clock, Phone, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
@@ -122,20 +125,215 @@ export default function SettingsPage() {
     const [connectionStatus, setConnectionStatus] = useState<'success' | 'error' | null>(null);
 
     // Estados WhatsApp Multi-Canal
-    type WhatsAppChannel = { id: string; name: string; port: number; color: string; description?: string; sector_id?: number | null; };
+    type WhatsAppChannel = {
+        id: string;
+        name: string;
+        port: number;
+        color: string;
+        description?: string;
+        sector_id?: number | null;
+        sector_ids?: number[] | null;
+        all_sectors?: boolean;
+        bot_flow?: any;
+    };
     const [whatsappChannels, setWhatsappChannels] = useState<WhatsAppChannel[]>([]);
     const [loadingChannels, setLoadingChannels] = useState(false);
     const [channelStatuses, setChannelStatuses] = useState<Record<string, { status: string; qr: string | null } | null>>({});
     const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
     const [editingChannel, setEditingChannel] = useState<WhatsAppChannel | null>(null);
     const [zoomedChannelId, setZoomedChannelId] = useState<string | null>(null);
-    const [channelForm, setChannelForm] = useState<Partial<WhatsAppChannel>>({});
+    const [channelForm, setChannelForm] = useState<{
+        id?: string;
+        name: string;
+        port: number;
+        color: string;
+        description?: string;
+        sector_id?: number | null;
+        sector_ids: number[];
+        allSectors: boolean;
+    }>({
+        name: '',
+        port: 5000,
+        color: '#8b5cf6',
+        description: '',
+        sector_id: null,
+        sector_ids: [],
+        allSectors: true
+    });
     const [savingChannel, setSavingChannel] = useState(false);
     // Legacy single-channel states (mantidos para compatibilidade com código de teste de conexão)
     const [whatsappStatus, setWhatsappStatus] = useState<{ status: string; qr: string | null } | null>(null);
     const [loadingWhatsappStatus, setLoadingWhatsappStatus] = useState(false);
     const [testingWhatsapp, setTestingWhatsapp] = useState(false);
     const [whatsappConnectionStatus, setWhatsappConnectionStatus] = useState<'success' | 'error' | null>(null);
+
+    // =========================================================================
+    // 🔀 SUB-ABAS DE WHATSAPP ('channels' | 'files' | 'quick_replies')
+    // =========================================================================
+    const [whatsappSubTab, setWhatsappSubTab] = useState<'channels' | 'files' | 'quick_replies'>('channels');
+
+    // --- Estados da Base de Arquivos Pré-Salvos (Biblioteca) ---
+    interface FileItem {
+        id: number;
+        url: string;
+        filename: string;
+        titulo?: string;
+        ext: string;
+        mimetype?: string;
+        caption?: string;
+        grupo?: string;
+        setores?: (number | string)[] | null;
+        descricao?: string | null;
+        size_bytes?: number;
+        size_formatted?: string;
+        cliente_jid?: string;
+        cliente_nome?: string;
+        cliente_avatar?: string | null;
+        remetente?: string;
+        atendente_nome?: string | null;
+        timestamp?: string;
+        created_at?: string;
+    }
+
+    interface FileStats {
+        total_files: number;
+        total_size_bytes: number;
+        total_size_formatted: string;
+        categories: {
+            image: { count: number; bytes: number; formatted: string };
+            video: { count: number; bytes: number; formatted: string };
+            audio: { count: number; bytes: number; formatted: string };
+            doc: { count: number; bytes: number; formatted: string };
+            other: { count: number; bytes: number; formatted: string };
+        };
+    }
+
+    const [fileStats, setFileStats] = useState<FileStats | null>(null);
+    const [filesList, setFilesList] = useState<FileItem[]>([]);
+    const [fileGruposList, setFileGruposList] = useState<{ name: string; count: number }[]>([]);
+    const [loadingFiles, setLoadingFiles] = useState(false);
+    const [fileTypeFilter, setFileTypeFilter] = useState('all');
+    const [fileGroupFilter, setFileGroupFilter] = useState('all');
+    const [fileSectorFilter, setFileSectorFilter] = useState('all');
+    const [fileSearchQuery, setFileSearchQuery] = useState('');
+    const [filesPage, setFilesPage] = useState(1);
+    const [filesTotal, setFilesTotal] = useState(0);
+    const [filePreviewItem, setFilePreviewItem] = useState<FileItem | null>(null);
+    const [editingFile, setEditingFile] = useState<FileItem | null>(null);
+    const [isEditFileModalOpen, setIsEditFileModalOpen] = useState(false);
+    const [fileMetaForm, setFileMetaForm] = useState<{
+        titulo: string;
+        grupo: string;
+        setores: number[];
+        descricao: string;
+        allSectors: boolean;
+    }>({
+        titulo: '',
+        grupo: 'Geral',
+        setores: [],
+        descricao: '',
+        allSectors: true
+    });
+    const [savingFileMeta, setSavingFileMeta] = useState(false);
+
+    // Modal de Novo Arquivo Pré-Salvo
+    const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false);
+    const [uploadingFile, setUploadingFile] = useState(false);
+    const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+    const [newFileForm, setNewFileForm] = useState<{
+        titulo: string;
+        grupo: string;
+        setores: number[];
+        allSectors: boolean;
+        descricao: string;
+    }>({
+        titulo: '',
+        grupo: 'Geral',
+        setores: [],
+        allSectors: true,
+        descricao: ''
+    });
+
+    // --- Estados de Mensagens Rápidas (Sequência com Submensagens & Arquivos) ---
+    type QuickReplyBlock =
+        | {
+            id: string;
+            tipo: 'texto';
+            texto: string;
+        }
+        | {
+            id: string;
+            tipo: 'arquivo';
+            url: string;
+            filename: string;
+            titulo?: string;
+            ext?: string;
+            mimetype?: string;
+            size_bytes?: number;
+            size_formatted?: string;
+            legenda?: string;
+        };
+
+    interface QuickReplyItem {
+        id: number;
+        titulo: string;
+        atalho: string;
+        conteudo: string;
+        categoria: string;
+        grupo?: string;
+        escopo: 'global' | 'pessoal';
+        setores?: (number | string)[] | null;
+        blocos?: QuickReplyBlock[] | null;
+        usuario_id?: string | null;
+        usuario_nome?: string | null;
+        favorito?: number;
+        midia_url?: string | null;
+        created_at?: string;
+    }
+
+    const [quickReplies, setQuickReplies] = useState<QuickReplyItem[]>([]);
+    const [loadingQuickReplies, setLoadingQuickReplies] = useState(false);
+    const [qrScopeFilter, setQrScopeFilter] = useState<'all' | 'global' | 'pessoal'>('all');
+    const [qrGroupFilter, setQrGroupFilter] = useState('ALL');
+    const [qrSectorFilter, setQrSectorFilter] = useState('all');
+    const [qrSearchQuery, setQrSearchQuery] = useState('');
+    const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+    const [isQrFilePickerOpen, setIsQrFilePickerOpen] = useState(false);
+    const [editingQr, setEditingQr] = useState<QuickReplyItem | null>(null);
+    const [qrForm, setQrForm] = useState<{
+        titulo: string;
+        atalho: string;
+        conteudo: string;
+        categoria: string;
+        grupo: string;
+        escopo: 'global' | 'pessoal';
+        setores: number[];
+        allSectors: boolean;
+        blocos: QuickReplyBlock[];
+    }>({
+        titulo: '',
+        atalho: '',
+        conteudo: '',
+        categoria: '👋 Atendimento Inicial',
+        grupo: '👋 Atendimento Inicial',
+        escopo: 'global',
+        setores: [],
+        allSectors: true,
+        blocos: [{ id: 'b_1', tipo: 'texto', texto: '' }]
+    });
+    const [savingQr, setSavingQr] = useState(false);
+
+    // Carregar dados da sub-aba ativa do WhatsApp
+    useEffect(() => {
+        if (activeTab === 'whatsapp') {
+            if (whatsappSubTab === 'files') {
+                fetchFileStats();
+                fetchFilesList(1, fileTypeFilter, fileGroupFilter, fileSectorFilter, fileSearchQuery);
+            } else if (whatsappSubTab === 'quick_replies') {
+                fetchQuickReplies(qrGroupFilter, qrSectorFilter);
+            }
+        }
+    }, [activeTab, whatsappSubTab]);
     // Usamos refs para evitar problemas com closures nos cleanups do useEffect
     const savedRef = React.useRef(false);
     const originalThemeRef = React.useRef<any>(null);
@@ -233,7 +431,8 @@ export default function SettingsPage() {
         favicon_url: '',
         whatsapp_warn_new_number: true,
         whatsapp_limit_active_chats: true,
-        whatsapp_limit_count: 10
+        whatsapp_limit_count: 10,
+        whatsapp_send_signature: true
     });
     const [logoFileLight, setLogoFileLight] = useState<File | null>(null);
     const [logoFileDark, setLogoFileDark] = useState<File | null>(null);
@@ -616,13 +815,14 @@ export default function SettingsPage() {
             await api.patch('/system-settings', {
                 whatsapp_warn_new_number: systemSettings.whatsapp_warn_new_number,
                 whatsapp_limit_active_chats: systemSettings.whatsapp_limit_active_chats,
-                whatsapp_limit_count: systemSettings.whatsapp_limit_count
+                whatsapp_limit_count: systemSettings.whatsapp_limit_count,
+                whatsapp_send_signature: systemSettings.whatsapp_send_signature
             });
-            showNotification('Configurações de segurança salvas com sucesso!', 'success');
+            showNotification('Configurações de WhatsApp salvas com sucesso!', 'success');
             refreshSettings();
         } catch (error) {
-            console.error("Error saving WhatsApp safety settings:", error);
-            showNotification('Erro ao salvar configurações de segurança do WhatsApp', 'error');
+            console.error("Error saving WhatsApp settings:", error);
+            showNotification('Erro ao salvar configurações do WhatsApp', 'error');
         } finally {
             setIsSavingWhatsappSafety(false);
         }
@@ -1267,26 +1467,108 @@ export default function SettingsPage() {
     const openChannelModal = (channel?: any) => {
         if (channel) {
             setEditingChannel(channel);
-            setChannelForm({ ...channel });
+            const secIds: number[] = Array.isArray(channel.sector_ids) && channel.sector_ids.length > 0
+                ? channel.sector_ids.map(Number)
+                : (channel.sector_id ? [Number(channel.sector_id)] : []);
+            setChannelForm({
+                id: channel.id,
+                name: channel.name || '',
+                port: channel.port || 5000,
+                color: channel.color || '#8b5cf6',
+                description: channel.description || '',
+                sector_id: secIds[0] || null,
+                sector_ids: secIds,
+                allSectors: channel.all_sectors ?? (secIds.length === 0)
+            });
         } else {
             setEditingChannel(null);
             const nextPort = whatsappChannels.length > 0
                 ? Math.max(...whatsappChannels.map(c => c.port)) + 1
                 : 5000;
-            setChannelForm({ name: '', port: nextPort, color: '#8b5cf6', description: '', sector_id: null });
+            setChannelForm({
+                name: '',
+                port: nextPort,
+                color: '#8b5cf6',
+                description: '',
+                sector_id: null,
+                sector_ids: [],
+                allSectors: true
+            });
         }
         setIsChannelModalOpen(true);
     };
+
+    // Mapeamento dos setores que já estão em uso por outras conexões WhatsApp
+    const occupiedSectorsMap = React.useMemo(() => {
+        const map: Record<number, string> = {};
+        whatsappChannels.forEach(c => {
+            if (c.id === editingChannel?.id) return;
+            if (c.all_sectors) {
+                sectors.forEach(s => {
+                    map[s.id] = c.name;
+                });
+            } else {
+                const secIds: number[] = Array.isArray(c.sector_ids) && c.sector_ids.length > 0
+                    ? c.sector_ids.map(Number)
+                    : (c.sector_id ? [Number(c.sector_id)] : []);
+                secIds.forEach(id => {
+                    map[id] = c.name;
+                });
+            }
+        });
+        return map;
+    }, [whatsappChannels, editingChannel, sectors]);
 
     const handleSaveChannel = async () => {
         if (!channelForm.name || !channelForm.port) {
             showNotification('Nome e Porta são obrigatórios.', 'error');
             return;
         }
+
+        const otherChannels = whatsappChannels.filter(c => c.id !== editingChannel?.id);
+
+        // Validação: 'Todos os Setores' não pode sobrepor outros canais com setores vinculados
+        if (channelForm.allSectors) {
+            if (otherChannels.length > 0) {
+                const conflicting = otherChannels.find(c => {
+                    const hasSectors = c.all_sectors || (Array.isArray(c.sector_ids) && c.sector_ids.length > 0) || c.sector_id;
+                    return hasSectors;
+                });
+                if (conflicting) {
+                    showNotification(`Não é possível definir "Todos os Setores" pois a conexão "${conflicting.name}" já possui setores vinculados. Cada setor só pode pertencer a uma conexão WhatsApp.`, 'error');
+                    return;
+                }
+            }
+        } else {
+            // Validação: se nenhum setor foi marcado
+            if (channelForm.sector_ids.length === 0) {
+                showNotification('Selecione ao menos um setor ou marque a opção "Utilizar em Todos os Setores".', 'warning');
+                return;
+            }
+
+            // Validação: conflito de setor já utilizado por outra conexão
+            const conflictingSectorIds = channelForm.sector_ids.filter(id => occupiedSectorsMap[id]);
+            if (conflictingSectorIds.length > 0) {
+                const conflictNames = conflictingSectorIds.map(id => {
+                    const sec = sectors.find(s => s.id === id);
+                    return `"${sec?.name || id}" (já em uso por ${occupiedSectorsMap[id]})`;
+                }).join(', ');
+                showNotification(`O setor ${conflictNames} não pode ser vinculado. Um mesmo setor não pode pertencer a duas conexões WhatsApp.`, 'error');
+                return;
+            }
+        }
+
         const id = editingChannel?.id || channelForm.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        const cleanChannelData = {
+            ...channelForm,
+            id,
+            sector_id: channelForm.allSectors ? null : (channelForm.sector_ids[0] || null),
+            sector_ids: channelForm.allSectors ? [] : channelForm.sector_ids,
+            all_sectors: channelForm.allSectors
+        };
         const updated = editingChannel
-            ? whatsappChannels.map(c => c.id === editingChannel.id ? { ...c, ...channelForm, id } : c)
-            : [...whatsappChannels, { ...channelForm, id } as any];
+            ? whatsappChannels.map(c => c.id === editingChannel.id ? { ...c, ...cleanChannelData } : c)
+            : [...whatsappChannels, cleanChannelData as any];
         await saveChannels(updated);
         setIsChannelModalOpen(false);
     };
@@ -1315,6 +1597,419 @@ export default function SettingsPage() {
                 showNotification('Sessão encerrada!', 'success');
                 fetchAllChannelStatuses(whatsappChannels);
             } catch { showNotification('Erro ao desconectar.', 'error'); }
+        }
+    };
+
+    // =========================================================================
+    // 📁 FUNÇÕES DA BASE DE ARQUIVOS (Métricas, Busca, Grupos e Setores)
+    // =========================================================================
+    const fetchFileStats = async () => {
+        try {
+            const res = await fetch('/api/whatsapp/files?action=stats', { cache: 'no-store' });
+            if (res.ok) {
+                const data = await res.json();
+                setFileStats(data);
+            }
+        } catch (e) {
+            console.error('Erro ao buscar estatísticas de arquivos:', e);
+        }
+    };
+
+    const fetchFilesList = async (
+        page = filesPage,
+        type = fileTypeFilter,
+        grupo = fileGroupFilter,
+        setor = fileSectorFilter,
+        search = fileSearchQuery
+    ) => {
+        setLoadingFiles(true);
+        try {
+            const queryParams = new URLSearchParams({
+                action: 'search',
+                page: String(page),
+                limit: '12',
+                type: type,
+                grupo: grupo === 'all' ? '' : grupo,
+                setor_id: setor === 'all' ? '' : setor,
+                q: search
+            });
+            const res = await fetch(`/api/whatsapp/files?${queryParams.toString()}`, { cache: 'no-store' });
+            if (res.ok) {
+                const data = await res.json();
+                setFilesList(data.files || []);
+                setFilesTotal(data.total || 0);
+                setFilesPage(data.page || 1);
+                if (data.grupos) setFileGruposList(data.grupos);
+            }
+        } catch (e) {
+            console.error('Erro ao buscar lista de arquivos:', e);
+        } finally {
+            setLoadingFiles(false);
+        }
+    };
+
+    const handleOpenNewFileModal = () => {
+        setSelectedUploadFile(null);
+        setNewFileForm({
+            titulo: '',
+            grupo: 'Geral',
+            setores: [],
+            allSectors: true,
+            descricao: ''
+        });
+        setIsNewFileModalOpen(true);
+    };
+
+    const handleUploadNewFile = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (!selectedUploadFile) {
+            showNotification('Selecione um arquivo para cadastrar na base.', 'warning');
+            return;
+        }
+
+        setUploadingFile(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', selectedUploadFile);
+            formData.append('titulo', newFileForm.titulo.trim() || selectedUploadFile.name);
+            formData.append('grupo', newFileForm.grupo.trim() || 'Geral');
+            formData.append('descricao', newFileForm.descricao.trim());
+            formData.append('setores', JSON.stringify(newFileForm.allSectors ? [] : newFileForm.setores));
+
+            const res = await fetch('/api/whatsapp/files/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                showNotification('Arquivo pré-salvo cadastrado com sucesso!', 'success');
+                setIsNewFileModalOpen(false);
+                setSelectedUploadFile(null);
+                setNewFileForm({
+                    titulo: '',
+                    grupo: 'Geral',
+                    setores: [],
+                    allSectors: true,
+                    descricao: ''
+                });
+                fetchFileStats();
+                fetchFilesList(1, fileTypeFilter, fileGroupFilter, fileSectorFilter, fileSearchQuery);
+            } else {
+                const data = await res.json().catch(() => ({}));
+                showNotification(data.error || 'Erro ao enviar arquivo.', 'error');
+            }
+        } catch {
+            showNotification('Erro ao conectar ao servidor.', 'error');
+        } finally {
+            setUploadingFile(false);
+        }
+    };
+
+    const handleOpenEditFileModal = (file: FileItem) => {
+        setEditingFile(file);
+        const hasSpecificSectors = Array.isArray(file.setores) && file.setores.length > 0;
+        setFileMetaForm({
+            titulo: file.titulo || file.filename,
+            grupo: file.grupo || 'Geral',
+            setores: hasSpecificSectors ? (file.setores as any[]).map(s => Number(s)) : [],
+            descricao: file.descricao || '',
+            allSectors: !hasSpecificSectors
+        });
+        setIsEditFileModalOpen(true);
+    };
+
+    const handleSaveFileMetadata = async () => {
+        if (!editingFile) return;
+        setSavingFileMeta(true);
+        try {
+            const payload = {
+                id: editingFile.id,
+                url: editingFile.url,
+                filename: editingFile.filename,
+                titulo: fileMetaForm.titulo?.trim() || editingFile.filename,
+                grupo: fileMetaForm.grupo?.trim() || 'Geral',
+                setores: fileMetaForm.allSectors ? null : fileMetaForm.setores,
+                descricao: fileMetaForm.descricao?.trim() || ''
+            };
+
+            const res = await fetch('/api/whatsapp/files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                showNotification('Dados e permissões do arquivo salvos com sucesso!', 'success');
+                setIsEditFileModalOpen(false);
+                fetchFilesList(filesPage, fileTypeFilter, fileGroupFilter, fileSectorFilter, fileSearchQuery);
+            } else {
+                showNotification('Erro ao salvar permissões do arquivo.', 'error');
+            }
+        } catch {
+            showNotification('Erro ao conectar ao servidor.', 'error');
+        } finally {
+            setSavingFileMeta(false);
+        }
+    };
+
+    const handleDeleteFile = async (file: FileItem) => {
+        const confirmed = await askConfirm({
+            title: 'Excluir Arquivo',
+            message: `Deseja realmente excluir o arquivo "${file.filename}"? Ele será removido permanentemente do disco do servidor.`,
+            type: 'danger'
+        });
+        if (confirmed) {
+            try {
+                const res = await fetch('/api/whatsapp/files', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: file.url, filename: file.filename, id: file.id })
+                });
+                if (res.ok) {
+                    showNotification('Arquivo excluído com sucesso!', 'success');
+                    fetchFileStats();
+                    fetchFilesList(filesPage, fileTypeFilter, fileGroupFilter, fileSectorFilter, fileSearchQuery);
+                    if (filePreviewItem?.id === file.id) setFilePreviewItem(null);
+                } else {
+                    showNotification('Erro ao excluir arquivo.', 'error');
+                }
+            } catch {
+                showNotification('Erro ao conectar ao servidor.', 'error');
+            }
+        }
+    };
+
+    // =========================================================================
+    // ⚡ FUNÇÕES DE MENSAGENS RÁPIDAS (Globais da Empresa + Grupos + Setores)
+    // =========================================================================
+    const fetchQuickReplies = async (grupo = qrGroupFilter, setor = qrSectorFilter) => {
+        setLoadingQuickReplies(true);
+        try {
+            const queryParams = new URLSearchParams();
+            queryParams.set('escopo', 'global');
+            if (grupo && grupo !== 'ALL' && grupo !== 'Todos') queryParams.set('grupo', grupo);
+            if (setor && setor !== 'all') queryParams.set('setor_id', setor);
+
+            const res = await fetch(`/api/whatsapp/quick-replies?${queryParams.toString()}`, { cache: 'no-store' });
+            if (res.ok) {
+                const data = await res.json();
+                setQuickReplies(data.quick_replies || []);
+            }
+        } catch (e) {
+            console.error('Erro ao buscar respostas rápidas:', e);
+        } finally {
+            setLoadingQuickReplies(false);
+        }
+    };
+
+    const openQrModal = (qr?: QuickReplyItem) => {
+        if (qr) {
+            setEditingQr(qr);
+            const hasSpecificSectors = Array.isArray(qr.setores) && qr.setores.length > 0;
+            const targetGroup = qr.grupo || qr.categoria || 'Geral';
+            let initialBlocks: QuickReplyBlock[] = [];
+            if (qr.blocos && Array.isArray(qr.blocos) && qr.blocos.length > 0) {
+                initialBlocks = qr.blocos;
+            } else if (qr.conteudo) {
+                initialBlocks = [{ id: 'b_' + Date.now(), tipo: 'texto', texto: qr.conteudo }];
+            } else {
+                initialBlocks = [{ id: 'b_' + Date.now(), tipo: 'texto', texto: '' }];
+            }
+
+            setQrForm({
+                titulo: qr.titulo,
+                atalho: qr.atalho || '',
+                conteudo: qr.conteudo || '',
+                categoria: targetGroup,
+                grupo: targetGroup,
+                escopo: 'global',
+                setores: hasSpecificSectors ? (qr.setores as any[]).map(s => Number(s)) : [],
+                allSectors: !hasSpecificSectors,
+                blocos: initialBlocks
+            });
+        } else {
+            setEditingQr(null);
+            setQrForm({
+                titulo: '',
+                atalho: '',
+                conteudo: '',
+                categoria: '👋 Atendimento Inicial',
+                grupo: '👋 Atendimento Inicial',
+                escopo: 'global',
+                setores: [],
+                allSectors: true,
+                blocos: [{ id: 'b_' + Date.now(), tipo: 'texto', texto: '' }]
+            });
+        }
+        setIsQrModalOpen(true);
+    };
+
+    const addQrTextBlock = () => {
+        setQrForm(prev => ({
+            ...prev,
+            blocos: [...prev.blocos, { id: 'b_' + Date.now() + Math.random().toString(36).substring(2, 5), tipo: 'texto', texto: '' }]
+        }));
+    };
+
+    const addQrFileBlock = (file: FileItem) => {
+        setQrForm(prev => ({
+            ...prev,
+            blocos: [
+                ...prev.blocos,
+                {
+                    id: 'b_' + Date.now() + Math.random().toString(36).substring(2, 5),
+                    tipo: 'arquivo',
+                    url: file.url,
+                    filename: file.filename,
+                    titulo: file.titulo || file.filename,
+                    ext: file.ext,
+                    mimetype: file.mimetype,
+                    size_bytes: file.size_bytes,
+                    size_formatted: file.size_formatted,
+                    legenda: ''
+                }
+            ]
+        }));
+        setIsQrFilePickerOpen(false);
+    };
+
+    const removeQrBlock = (id: string) => {
+        setQrForm(prev => ({
+            ...prev,
+            blocos: prev.blocos.length > 1 ? prev.blocos.filter(b => b.id !== id) : prev.blocos
+        }));
+    };
+
+    const moveQrBlock = (index: number, direction: 'up' | 'down') => {
+        setQrForm(prev => {
+            const targetIndex = direction === 'up' ? index - 1 : index + 1;
+            if (targetIndex < 0 || targetIndex >= prev.blocos.length) return prev;
+            const newBlocks = [...prev.blocos];
+            const temp = newBlocks[index];
+            newBlocks[index] = newBlocks[targetIndex];
+            newBlocks[targetIndex] = temp;
+            return { ...prev, blocos: newBlocks };
+        });
+    };
+
+    const updateQrBlock = (id: string, patch: Partial<QuickReplyBlock>) => {
+        setQrForm(prev => ({
+            ...prev,
+            blocos: prev.blocos.map(b => b.id === id ? ({ ...b, ...patch } as QuickReplyBlock) : b)
+        }));
+    };
+
+    const insertVariableInBlock = (blockId: string, variableTag: string) => {
+        setQrForm(prev => ({
+            ...prev,
+            blocos: prev.blocos.map(b => {
+                if (b.id === blockId && b.tipo === 'texto') {
+                    return { ...b, texto: (b.texto || '') + variableTag };
+                }
+                return b;
+            })
+        }));
+    };
+
+    const resolvePreviewVariables = (text: string) => {
+        if (!text) return '';
+        const now = new Date();
+        const hours = now.getHours();
+        const saudacao = hours >= 5 && hours < 12 ? 'Bom dia' : (hours >= 12 && hours < 18 ? 'Boa tarde' : 'Boa noite');
+        const dataStr = now.toLocaleDateString('pt-BR');
+        const atendenteNome = user?.full_name?.split(' ')[0] || user?.username || 'Atendente';
+
+        return text
+            .replace(/\{cliente_nome\}/gi, 'Maria Silva')
+            .replace(/\{atendente_nome\}/gi, atendenteNome)
+            .replace(/\{saudacao\}/gi, saudacao)
+            .replace(/\{data_atual\}/gi, dataStr);
+    };
+
+    const handleSaveQuickReply = async () => {
+        if (!qrForm.titulo?.trim()) {
+            showNotification('Preencha o título da mensagem rápida.', 'error');
+            return;
+        }
+
+        const validBlocks = qrForm.blocos.filter(b => {
+            if (b.tipo === 'texto') return b.texto.trim().length > 0;
+            if (b.tipo === 'arquivo') return Boolean(b.url);
+            return false;
+        });
+
+        if (validBlocks.length === 0) {
+            showNotification('Adicione ao menos um bloco de texto ou arquivo na sequência.', 'error');
+            return;
+        }
+
+        // Sintetiza conteúdo de texto para listagem/fallback
+        const textParts = validBlocks.filter(b => b.tipo === 'texto').map(b => (b as any).texto);
+        const synthesizedContent = textParts.length > 0 ? textParts.join('\n\n') : `[${validBlocks.length} arquivo(s)]`;
+
+        setSavingQr(true);
+        try {
+            const finalGroup = qrForm.grupo?.trim() || qrForm.categoria?.trim() || 'Geral';
+            const payload = {
+                titulo: qrForm.titulo.trim(),
+                atalho: qrForm.atalho?.trim() || '',
+                conteudo: synthesizedContent,
+                blocos: validBlocks,
+                categoria: finalGroup,
+                grupo: finalGroup,
+                escopo: qrForm.escopo || 'global',
+                setores: qrForm.allSectors ? null : qrForm.setores,
+                usuario_id: qrForm.escopo === 'pessoal' ? (user?.id ? String(user.id) : 'user') : null,
+                usuario_nome: user?.full_name || user?.username || 'Gestor'
+            };
+
+            let res;
+            if (editingQr) {
+                res = await fetch(`/api/whatsapp/quick-replies?id=${editingQr.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                res = await fetch('/api/whatsapp/quick-replies', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+
+            if (res.ok) {
+                showNotification(editingQr ? 'Mensagem rápida atualizada!' : 'Mensagem rápida criada com sucesso!', 'success');
+                setIsQrModalOpen(false);
+                fetchQuickReplies(qrGroupFilter, qrSectorFilter);
+            } else {
+                showNotification('Erro ao salvar mensagem rápida.', 'error');
+            }
+        } catch {
+            showNotification('Erro ao conectar ao servidor.', 'error');
+        } finally {
+            setSavingQr(false);
+        }
+    };
+
+    const handleDeleteQuickReply = async (qr: QuickReplyItem) => {
+        const confirmed = await askConfirm({
+            title: 'Excluir Mensagem Rápida',
+            message: `Deseja realmente excluir a mensagem rápida "${qr.titulo}"?`,
+            type: 'danger'
+        });
+        if (confirmed) {
+            try {
+                const res = await fetch(`/api/whatsapp/quick-replies?id=${qr.id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    showNotification('Mensagem rápida excluída!', 'success');
+                    fetchQuickReplies(qrGroupFilter, qrSectorFilter);
+                } else {
+                    showNotification('Erro ao excluir mensagem rápida.', 'error');
+                }
+            } catch {
+                showNotification('Erro de conexão.', 'error');
+            }
         }
     };
 
@@ -1558,7 +2253,7 @@ export default function SettingsPage() {
                                                     </div>
                                                 )}
                                             </div>
-                                            <p className="text-[9px] text-[var(--color-text-muted)] italic px-1 flex items-center gap-1">
+                                                <p className="text-[9px] text-[var(--color-text-muted)] italic px-1 flex items-center gap-1">
                                                 <AlertTriangle className="w-3 h-3 text-yellow-500 shrink-0" />
                                                 Para alterar o banco de dados, execute o{' '}
                                                 <code className="font-mono bg-white/5 px-1 rounded">config_db.exe</code>
@@ -1584,502 +2279,1025 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
 
-                                    {/* Header */}
-                                    <div className="flex items-center justify-between relative z-10">
-                                        <div className="flex items-center gap-3 text-accent-theme">
-                                            <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                                <MessageSquare className="w-6 h-6" />
-                                            </div>
-                                            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
-                                                Canais <span className="text-accent-theme">WhatsApp</span>
-                                            </h2>
-                                        </div>
-                                        <button
-                                            onClick={() => openChannelModal()}
-                                            className="flex items-center gap-2 px-4 py-2.5 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95"
-                                        >
-                                            <Plus className="w-3.5 h-3.5" />
-                                            Novo Canal
-                                        </button>
+                                    {/* Sub-Abas de Navegação com Indicador Deslizante Suave */}
+                                    <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-white/5 rounded-2xl border border-white/10 w-fit relative z-10">
+                                        {[
+                                            {
+                                                id: 'channels' as const,
+                                                label: 'Canais & Anti-Ban',
+                                                icon: MessageSquare,
+                                                onClick: () => setWhatsappSubTab('channels')
+                                            },
+                                            {
+                                                id: 'files' as const,
+                                                label: 'Base de Arquivos',
+                                                icon: Folder,
+                                                onClick: () => {
+                                                    setWhatsappSubTab('files');
+                                                    fetchFileStats();
+                                                    fetchFilesList(1, fileTypeFilter, fileSearchQuery);
+                                                }
+                                            },
+                                            {
+                                                id: 'quick_replies' as const,
+                                                label: 'Mensagens Rápidas',
+                                                icon: Zap,
+                                                onClick: () => {
+                                                    setWhatsappSubTab('quick_replies');
+                                                    fetchQuickReplies();
+                                                }
+                                            }
+                                        ].map(tab => {
+                                            const Icon = tab.icon;
+                                            const isActive = whatsappSubTab === tab.id;
+
+                                            return (
+                                                <button
+                                                    key={tab.id}
+                                                    onClick={tab.onClick}
+                                                    className={clsx(
+                                                        "relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer select-none",
+                                                        isActive
+                                                            ? "text-white"
+                                                            : "text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5"
+                                                    )}
+                                                >
+                                                    {isActive && (
+                                                        <motion.div
+                                                            layoutId="activeWhatsappSubTabPill"
+                                                            className="absolute inset-0 bg-accent-theme rounded-xl shadow-lg shadow-accent-theme/25"
+                                                            transition={{ type: "spring", stiffness: 450, damping: 35 }}
+                                                        />
+                                                    )}
+                                                    <span className="relative z-10 flex items-center gap-2">
+                                                        <Icon className="w-4 h-4" />
+                                                        {tab.label}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
 
-                                    <div className="space-y-4">
-                                        {loadingChannels ? (
-                                            <div className="flex items-center gap-2 text-[var(--color-text-muted)] p-6 bg-white/5 rounded-2xl">
-                                                <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />
-                                                <span className="text-xs">Carregando canais...</span>
-                                            </div>
-                                        ) : whatsappChannels.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center p-12 bg-white/3 rounded-2xl border border-dashed border-white/10 space-y-4 text-center">
-                                                <div className="w-14 h-14 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-                                                    <MessageSquare className="w-7 h-7 text-violet-400" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-bold text-foreground">Nenhum canal configurado</p>
-                                                    <p className="text-xs text-[var(--color-text-muted)] mt-1">Clique em "Novo Canal" para adicionar seu primeiro número de WhatsApp.</p>
+                                    {/* ========================================================================= */}
+                                    {/* CONTEÚDO DAS SUB-ABAS COM TRANSIÇÃO SUAVE (AnimatePresence)               */}
+                                    {/* ========================================================================= */}
+                                    <AnimatePresence mode="wait">
+                                        {/* ========================================================================= */}
+                                        {/* SUB-ABA 1: CANAIS & SEGURANÇA ANTI-BAN                                   */}
+                                        {/* ========================================================================= */}
+                                        {whatsappSubTab === 'channels' && (
+                                            <motion.div
+                                                key="channels"
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                                                className="space-y-8"
+                                            >
+                                                {/* Header */}
+                                                <div className="flex items-center justify-between relative z-10">
+                                                    <div className="flex items-center gap-3 text-accent-theme">
+                                                        <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                                        <MessageSquare className="w-6 h-6" />
+                                                    </div>
+                                                    <div>
+                                                        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                                            Canais <span className="text-accent-theme">WhatsApp</span>
+                                                        </h2>
+                                                        <p className="text-xs text-[var(--color-text-muted)]">Gerencie instâncias, conexão de números e regras de envio</p>
+                                                    </div>
                                                 </div>
                                                 <button
                                                     onClick={() => openChannelModal()}
-                                                    className="flex items-center gap-2 px-4 py-2 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+                                                    className="flex items-center gap-2 px-4 py-2.5 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-accent-theme/20"
                                                 >
                                                     <Plus className="w-3.5 h-3.5" />
-                                                    Adicionar Primeiro Canal
+                                                    Novo Canal
                                                 </button>
                                             </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                {whatsappChannels.map(channel => {
-                                                    const st = channelStatuses[channel.id];
-                                                    const isReady = st?.status === 'pronto' || st?.status === 'autenticado';
-                                                    const isWaiting = st?.status === 'aguardando_qr';
-                                                    const isOffline = st === null || st === undefined;
-                                                    const linkedSector = sectors.find(s => s.id === channel.sector_id);
 
-                                                    return (
-                                                        <div key={channel.id} className="p-5 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-all space-y-4">
-                                                            {/* Card Header */}
-                                                            <div className="flex items-center gap-3">
-                                                                <div
-                                                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-base shrink-0"
-                                                                    style={{ backgroundColor: channel.color || '#8b5cf6' }}
-                                                                >
-                                                                    {channel.name.charAt(0).toUpperCase()}
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <p className="text-sm font-bold text-foreground truncate">{channel.name}</p>
-                                                                        <span className={clsx(
-                                                                            "flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0",
-                                                                            isReady ? "bg-green-500/15 text-green-400" :
-                                                                            isWaiting ? "bg-amber-500/15 text-amber-400" :
-                                                                            "bg-white/10 text-[var(--color-text-muted)]"
-                                                                        )}>
-                                                                            <span className={clsx(
-                                                                                "w-1.5 h-1.5 rounded-full",
-                                                                                isReady ? "bg-green-400 animate-pulse" :
-                                                                                isWaiting ? "bg-amber-400 animate-pulse" : "bg-slate-500"
-                                                                            )} />
-                                                                            {isReady ? 'Conectado' : isWaiting ? 'Aguardando QR' : isOffline ? 'Offline' : 'Desconectado'}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono">Porta {channel.port}</p>
-                                                                        {linkedSector && (
-                                                                            <>
-                                                                                <span className="text-[var(--color-text-muted)] text-[10px]">·</span>
-                                                                                <p className="text-[10px] text-[var(--color-text-muted)]">Setor: {linkedSector.name}</p>
-                                                                            </>
-                                                                        )}
-                                                                        {channel.description && (
-                                                                            <>
-                                                                                <span className="text-[var(--color-text-muted)] text-[10px]">·</span>
-                                                                                <p className="text-[10px] text-[var(--color-text-muted)] truncate">{channel.description}</p>
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center gap-2 shrink-0">
-                                                                    {isReady && (
-                                                                        <button
-                                                                            onClick={() => handleDisconnectChannel(channel)}
-                                                                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                                            <div className="space-y-4">
+                                                {loadingChannels ? (
+                                                    <div className="flex items-center gap-2 text-[var(--color-text-muted)] p-6 bg-white/5 rounded-2xl">
+                                                        <Loader2 className="w-4 h-4 animate-spin text-accent-theme" />
+                                                        <span className="text-xs">Carregando canais...</span>
+                                                    </div>
+                                                ) : whatsappChannels.length === 0 ? (
+                                                    <div className="flex flex-col items-center justify-center p-12 bg-white/3 rounded-2xl border border-dashed border-white/10 space-y-4 text-center">
+                                                        <div className="w-14 h-14 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+                                                            <MessageSquare className="w-7 h-7 text-violet-400" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-bold text-foreground">Nenhum canal configurado</p>
+                                                            <p className="text-xs text-[var(--color-text-muted)] mt-1">Clique em "Novo Canal" para adicionar seu primeiro número de WhatsApp.</p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => openChannelModal()}
+                                                            className="flex items-center gap-2 px-4 py-2 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" />
+                                                            Adicionar Primeiro Canal
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-3">
+                                                        {whatsappChannels.map(channel => {
+                                                            const st = channelStatuses[channel.id];
+                                                            const isReady = st?.status === 'pronto' || st?.status === 'autenticado';
+                                                            const isWaiting = st?.status === 'aguardando_qr';
+                                                            const isOffline = st === null || st === undefined;
+                                                            const channelSectorIds: number[] = Array.isArray(channel.sector_ids) && channel.sector_ids.length > 0
+                                                                ? channel.sector_ids.map(Number)
+                                                                : (channel.sector_id ? [Number(channel.sector_id)] : []);
+                                                            const linkedSectors = sectors.filter(s => channelSectorIds.includes(s.id));
+                                                            const isAllSectors = channel.all_sectors || channelSectorIds.length === 0;
+
+                                                            return (
+                                                                <div key={channel.id} className="p-5 bg-white/5 rounded-2xl border border-white/5 hover:border-white/10 transition-all space-y-4">
+                                                                    {/* Card Header */}
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div
+                                                                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-base shrink-0"
+                                                                            style={{ backgroundColor: channel.color || '#8b5cf6' }}
                                                                         >
-                                                                            Desconectar
-                                                                        </button>
-                                                                    )}
-                                                                    <Link
-                                                                        href={`/settings/bot/${channel.id}`}
-                                                                        className="p-2 bg-white/5 hover:bg-violet-500/20 border border-white/5 hover:border-violet-500/30 text-[var(--color-text-muted)] hover:text-violet-400 rounded-lg transition-all"
-                                                                        title="Configurar Bot"
-                                                                    >
-                                                                        <Bot className="w-3.5 h-3.5" />
-                                                                    </Link>
-                                                                    <button
-                                                                        onClick={() => openChannelModal(channel)}
-                                                                        className="p-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-[var(--color-text-muted)] hover:text-foreground rounded-lg transition-all"
-                                                                        title="Editar canal"
-                                                                    >
-                                                                        <Edit2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleDeleteChannel(channel.id)}
-                                                                        className="p-2 bg-white/5 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 text-[var(--color-text-muted)] hover:text-red-400 rounded-lg transition-all"
-                                                                        title="Excluir canal"
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
+                                                                            {channel.name.charAt(0).toUpperCase()}
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <p className="text-sm font-bold text-foreground truncate">{channel.name}</p>
+                                                                                <span className={clsx(
+                                                                                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0",
+                                                                                    isReady ? "bg-green-500/15 text-green-400" :
+                                                                                    isWaiting ? "bg-amber-500/15 text-amber-400" :
+                                                                                    "bg-white/10 text-[var(--color-text-muted)]"
+                                                                                )}>
+                                                                                    <span className={clsx(
+                                                                                        "w-1.5 h-1.5 rounded-full",
+                                                                                        isReady ? "bg-green-400 animate-pulse" :
+                                                                                        isWaiting ? "bg-amber-400 animate-pulse" : "bg-slate-500"
+                                                                                    )} />
+                                                                                    {isReady ? 'Conectado' : isWaiting ? 'Aguardando QR' : isOffline ? 'Offline' : 'Desconectado'}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                                                <p className="text-[10px] text-[var(--color-text-muted)] font-mono">Porta {channel.port}</p>
+                                                                                <span className="text-[var(--color-text-muted)] text-[10px]">·</span>
+                                                                                {isAllSectors ? (
+                                                                                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 text-[9px] font-bold">
+                                                                                        🌐 Todos os Setores (Geral)
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <div className="flex items-center gap-1 flex-wrap">
+                                                                                        {linkedSectors.map(sec => (
+                                                                                            <span key={sec.id} className="px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25 text-[9px] font-bold">
+                                                                                                🏢 {sec.name}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                )}
+                                                                                {channel.description && (
+                                                                                    <>
+                                                                                        <span className="text-[var(--color-text-muted)] text-[10px]">·</span>
+                                                                                        <p className="text-[10px] text-[var(--color-text-muted)] truncate">{channel.description}</p>
+                                                                                    </>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 shrink-0">
+                                                                            {isReady && (
+                                                                                <button
+                                                                                    onClick={() => handleDisconnectChannel(channel)}
+                                                                                    className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                                                                                >
+                                                                                    Desconectar
+                                                                                </button>
+                                                                            )}
+                                                                            <Link
+                                                                                href={`/settings/bot/${channel.id}`}
+                                                                                className="p-2 bg-white/5 hover:bg-violet-500/20 border border-white/5 hover:border-violet-500/30 text-[var(--color-text-muted)] hover:text-violet-400 rounded-lg transition-all"
+                                                                                title="Configurar Bot"
+                                                                            >
+                                                                                <Bot className="w-3.5 h-3.5" />
+                                                                            </Link>
+                                                                            <button
+                                                                                onClick={() => openChannelModal(channel)}
+                                                                                className="p-2 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-[var(--color-text-muted)] hover:text-foreground rounded-lg transition-all"
+                                                                                title="Editar canal"
+                                                                            >
+                                                                                <Edit2 className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => handleDeleteChannel(channel.id)}
+                                                                                className="p-2 bg-white/5 hover:bg-red-500/20 border border-white/5 hover:border-red-500/30 text-[var(--color-text-muted)] hover:text-red-400 rounded-lg transition-all"
+                                                                                title="Excluir canal"
+                                                                            >
+                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
 
-                                                            {/* QR Code Display */}
-                                                            {isWaiting && st?.qr && (
-                                                                <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-amber-500/5 border border-amber-500/15 rounded-xl">
-                                                                    <div 
-                                                                        className="p-2 bg-white rounded-xl shadow-lg shrink-0 cursor-zoom-in transition-all duration-300 hover:scale-[1.03] hover:shadow-xl active:scale-[0.98]"
-                                                                        onClick={() => setZoomedChannelId(channel.id)}
-                                                                        title="Clique para ampliar o QR Code"
-                                                                    >
-                                                                        <img src={st.qr} alt="QR Code" className="w-36 h-36 block" />
-                                                                    </div>
-                                                                    <div className="space-y-1 text-center sm:text-left">
-                                                                        <p className="text-xs font-bold text-amber-400">Aguardando Scan do QR Code</p>
-                                                                        <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
-                                                                            Abra o WhatsApp no celular do número <strong>{channel.name}</strong>,<br />
-                                                                            vá em <strong>Aparelhos Conectados</strong> e aponte a câmera para o QR ao lado.
-                                                                        </p>
-                                                                    </div>
+                                                                    {/* QR Code Display */}
+                                                                    {isWaiting && st?.qr && (
+                                                                        <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-amber-500/5 border border-amber-500/15 rounded-xl">
+                                                                            <div 
+                                                                                className="p-2 bg-white rounded-xl shadow-lg shrink-0 cursor-zoom-in transition-all duration-300 hover:scale-[1.03] hover:shadow-xl active:scale-[0.98]"
+                                                                                onClick={() => setZoomedChannelId(channel.id)}
+                                                                                title="Clique para ampliar o QR Code"
+                                                                            >
+                                                                                <img src={st.qr} alt="QR Code" className="w-36 h-36 block" />
+                                                                            </div>
+                                                                            <div className="space-y-1 text-center sm:text-left">
+                                                                                <p className="text-xs font-bold text-amber-400">Aguardando Scan do QR Code</p>
+                                                                                <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
+                                                                                    Abra o WhatsApp no celular do número <strong>{channel.name}</strong>,<br />
+                                                                                    vá em <strong>Aparelhos Conectados</strong> e aponte a câmera para o QR ao lado.
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+
+                                                {whatsappChannels.length > 0 && (
+                                                    <p className="text-[9px] text-[var(--color-text-muted)] italic flex items-center gap-1 px-1">
+                                                        <AlertTriangle className="w-3 h-3 text-yellow-500 shrink-0" />
+                                                        Após adicionar ou remover canais, reinicie o projeto para que os novos servidores sejam iniciados.
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {/* Configurações de Segurança */}
+                                            <hr className="border-white/5 my-6" />
+                                            <div className="space-y-6">
+                                                <div className="flex items-center gap-3 text-accent-theme">
+                                                    <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                                        <Shield className="w-5 h-5 text-accent-theme" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-sm font-bold text-foreground">Segurança e Proteção Anti-Ban</h3>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-medium">Controles para mitigar o risco de bloqueio da linha</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    {/* Toggle 1: Warn on new number */}
+                                                    <div className="flex items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                                        <div className="space-y-1">
+                                                            <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                                Aviso ao iniciar nova conversa ativa
+                                                            </label>
+                                                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                                Exibe um alerta de segurança na tela antes de abrir conversas com contatos novos.
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            onClick={async () => {
+                                                                const newVal = !systemSettings.whatsapp_warn_new_number;
+                                                                if (!newVal) {
+                                                                    const confirmed = await askConfirm({
+                                                                        title: '⚠️ Aviso de Segurança',
+                                                                        message: 'Desativar o aviso visual aumenta a chance de disparos acidentais a contatos não autorizados. Deseja mesmo desativar?',
+                                                                        confirmText: 'Sim, Desativar',
+                                                                        cancelText: 'Cancelar',
+                                                                        type: 'danger'
+                                                                    });
+                                                                    if (!confirmed) return;
+                                                                }
+                                                                setSystemSettings({ ...systemSettings, whatsapp_warn_new_number: newVal });
+                                                            }}
+                                                            className={clsx(
+                                                                "w-10 h-6 rounded-full p-1 transition-colors relative shrink-0",
+                                                                systemSettings.whatsapp_warn_new_number ? "bg-accent-theme" : "bg-white/10"
+                                                            )}
+                                                        >
+                                                            <span className={clsx(
+                                                                "w-4 h-4 rounded-full bg-white block transition-all shadow",
+                                                                systemSettings.whatsapp_warn_new_number ? "translate-x-4" : "translate-x-0"
+                                                            )} />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Toggle 2: Limit active chats */}
+                                                    <div className="flex items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                                        <div className="space-y-1">
+                                                            <label className="text-xs font-bold text-foreground">
+                                                                Limitar novas conversas ativas por hora
+                                                            </label>
+                                                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                                Impede disparos rápidos bloqueando o início de novos chats ativos acima de um limite definido.
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            onClick={async () => {
+                                                                const newVal = !systemSettings.whatsapp_limit_active_chats;
+                                                                if (!newVal) {
+                                                                    const confirmed = await askConfirm({
+                                                                        title: '⚠️ Aviso de Segurança',
+                                                                        message: 'Desativar o limite de conversas por hora remove a proteção de envio em lote, elevando gravemente o risco de bloqueio da linha. Deseja prosseguir?',
+                                                                        confirmText: 'Sim, Desativar',
+                                                                        cancelText: 'Cancelar',
+                                                                        type: 'danger'
+                                                                    });
+                                                                    if (!confirmed) return;
+                                                                }
+                                                                setSystemSettings({ ...systemSettings, whatsapp_limit_active_chats: newVal });
+                                                            }}
+                                                            className={clsx(
+                                                                "w-10 h-6 rounded-full p-1 transition-colors relative shrink-0",
+                                                                systemSettings.whatsapp_limit_active_chats ? "bg-accent-theme" : "bg-white/10"
+                                                            )}
+                                                        >
+                                                            <span className={clsx(
+                                                                "w-4 h-4 rounded-full bg-white block transition-all shadow",
+                                                                systemSettings.whatsapp_limit_active_chats ? "translate-x-4" : "translate-x-0"
+                                                            )} />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Limit Input */}
+                                                    {systemSettings.whatsapp_limit_active_chats && (
+                                                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            <div className="space-y-1">
+                                                                <label className="text-xs font-bold text-foreground">
+                                                                    Limite de novos chats iniciados por hora
+                                                                </label>
+                                                                <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                                    Quantidade máxima de novas conversas ativas por hora, por atendente.
+                                                                </p>
+                                                            </div>
+                                                            <input
+                                                                type="number"
+                                                                value={systemSettings.whatsapp_limit_count || 10}
+                                                                onChange={e => setSystemSettings({ ...systemSettings, whatsapp_limit_count: Math.max(1, Number(e.target.value)) })}
+                                                                className="w-24 bg-background/50 border border-white/10 rounded-xl px-3 py-2 text-center text-sm font-mono text-foreground focus:ring-1 focus:ring-accent-theme/30 outline-none"
+                                                                min={1}
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    {/* Toggle 3: Operator Signature */}
+                                                    <div className="flex items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                                        <div className="space-y-1">
+                                                            <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                                Assinatura do Atendente nas Mensagens
+                                                            </label>
+                                                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                                Envia automaticamente o nome do atendente no cabeçalho das mensagens entregues ao cliente no WhatsApp.
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setSystemSettings({ ...systemSettings, whatsapp_send_signature: !systemSettings.whatsapp_send_signature })}
+                                                            className={clsx(
+                                                                "w-10 h-6 rounded-full p-1 transition-colors relative shrink-0",
+                                                                systemSettings.whatsapp_send_signature ? "bg-accent-theme" : "bg-white/10"
+                                                            )}
+                                                        >
+                                                            <span className={clsx(
+                                                                "w-4 h-4 rounded-full bg-white block transition-all shadow",
+                                                                systemSettings.whatsapp_send_signature ? "translate-x-4" : "translate-x-0"
+                                                            )} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="pt-2">
+                                                    <button
+                                                        onClick={handleSaveWhatsappSafetySettings}
+                                                        disabled={isSavingWhatsappSafety}
+                                                        className="premium-gradient text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
+                                                    >
+                                                        {isSavingWhatsappSafety ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                        Salvar Configurações de Atendimento e Segurança
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    )}
+
+                                        {/* ========================================================================= */}
+                                        {/* SUB-ABA 2: BASE DE ARQUIVOS (Métricas, Grupos, Setores e Limpeza)        */}
+                                        {/* ========================================================================= */}
+                                        {whatsappSubTab === 'files' && (
+                                            <motion.div
+                                                key="files"
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                                                className="space-y-8"
+                                            >
+                                                {/* Header */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                                                    <div className="flex items-center gap-3 text-accent-theme">
+                                                        <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                                            <Folder className="w-6 h-6 text-accent-theme" />
+                                                        </div>
+                                                        <div>
+                                                            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                                                Central de <span className="text-accent-theme">Arquivos Pré-Salvos</span>
+                                                            </h2>
+                                                            <p className="text-xs text-[var(--color-text-muted)]">
+                                                                Cadastre catálogos, manuais, tabelas e mídias da empresa para envio rápido durante os atendimentos
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={handleOpenNewFileModal}
+                                                            className="flex items-center gap-2 px-4 py-2.5 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-accent-theme/20 cursor-pointer"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" />
+                                                            Novo Arquivo
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                fetchFileStats();
+                                                                fetchFilesList(filesPage, fileTypeFilter, fileGroupFilter, fileSectorFilter, fileSearchQuery);
+                                                            }}
+                                                            className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-foreground rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                                                            title="Recarregar arquivos"
+                                                        >
+                                                            <RefreshCw className={clsx("w-3.5 h-3.5", loadingFiles && "animate-spin")} />
+                                                            Atualizar
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Métricas de Armazenamento em Disco */}
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+                                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">Total Arquivos</span>
+                                                        <p className="text-xl font-black text-foreground font-mono">{fileStats?.total_files || 0}</p>
+                                                        <p className="text-[10px] text-accent-theme font-medium">pré-salvos na base</p>
+                                                    </div>
+                                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-[var(--color-text-muted)]">Espaço Ocupado</span>
+                                                        <p className="text-xl font-black text-amber-400 font-mono">{fileStats?.total_size_formatted || '0 B'}</p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-medium">em disco</p>
+                                                    </div>
+                                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">🖼️ Imagens</span>
+                                                        <p className="text-lg font-black text-foreground font-mono">{fileStats?.categories?.image?.count || 0}</p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono">{fileStats?.categories?.image?.formatted || '0 B'}</p>
+                                                    </div>
+                                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-violet-400">🎬 Vídeos</span>
+                                                        <p className="text-lg font-black text-foreground font-mono">{fileStats?.categories?.video?.count || 0}</p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono">{fileStats?.categories?.video?.formatted || '0 B'}</p>
+                                                    </div>
+                                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">🎵 Áudios</span>
+                                                        <p className="text-lg font-black text-foreground font-mono">{fileStats?.categories?.audio?.count || 0}</p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono">{fileStats?.categories?.audio?.formatted || '0 B'}</p>
+                                                    </div>
+                                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-400">📄 Documentos</span>
+                                                        <p className="text-lg font-black text-foreground font-mono">{fileStats?.categories?.doc?.count || 0}</p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono">{fileStats?.categories?.doc?.formatted || '0 B'}</p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Barra de Filtros, Grupos e Busca */}
+                                                <div className="space-y-3.5 bg-white/3 p-4 rounded-3xl border border-white/5">
+                                                    {/* Linha 1: Busca e Filtro de Setor */}
+                                                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                                                        <div className="relative flex-1 w-full">
+                                                            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Buscar por título, nome do arquivo, grupo ou descrição..."
+                                                                value={fileSearchQuery}
+                                                                onChange={e => {
+                                                                    const val = e.target.value;
+                                                                    setFileSearchQuery(val);
+                                                                    fetchFilesList(1, fileTypeFilter, fileGroupFilter, fileSectorFilter, val);
+                                                                }}
+                                                                className="w-full pl-10 pr-9 h-10 rounded-2xl text-xs bg-white/5 border border-white/10 text-foreground placeholder-[var(--color-text-muted)] focus:outline-none focus:border-accent-theme transition-all"
+                                                            />
+                                                            {fileSearchQuery && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setFileSearchQuery('');
+                                                                        fetchFilesList(1, fileTypeFilter, fileGroupFilter, fileSectorFilter, '');
+                                                                    }}
+                                                                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center text-[10px] cursor-pointer"
+                                                                >
+                                                                    ✕
+                                                                </button>
                                                             )}
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
 
-                                        {whatsappChannels.length > 0 && (
-                                            <p className="text-[9px] text-[var(--color-text-muted)] italic flex items-center gap-1 px-1">
-                                                <AlertTriangle className="w-3 h-3 text-yellow-500 shrink-0" />
-                                                Após adicionar ou remover canais, reinicie o projeto para que os novos servidores sejam iniciados.
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    {/* Configurações de Segurança */}
-                                    <hr className="border-white/5 my-6" />
-                                    <div className="space-y-6">
-                                        <div className="flex items-center gap-3 text-accent-theme">
-                                            <div className="p-2.5 bg-accent-theme/10 rounded-xl">
-                                                <Shield className="w-5 h-5 text-accent-theme" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-sm font-bold text-foreground">Segurança e Proteção Anti-Ban</h3>
-                                                <p className="text-[10px] text-[var(--color-text-muted)] font-medium">Controles para mitigar o risco de bloqueio da linha</p>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            {/* Toggle 1: Warn on new number */}
-                                            <div className="flex items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                                                <div className="space-y-1">
-                                                    <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                                                        Aviso ao iniciar nova conversa ativa
-                                                    </label>
-                                                    <p className="text-[10px] text-[var(--color-text-muted)]">
-                                                        Exibe um alerta de segurança na tela antes de abrir conversas com contatos novos.
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    onClick={async () => {
-                                                        const newVal = !systemSettings.whatsapp_warn_new_number;
-                                                        if (!newVal) {
-                                                            const confirmed = await askConfirm({
-                                                                title: '⚠️ Aviso de Segurança',
-                                                                message: 'Desativar o aviso visual aumenta a chance de disparos acidentais a contatos não autorizados. Deseja mesmo desativar?',
-                                                                confirmText: 'Sim, Desativar',
-                                                                cancelText: 'Cancelar',
-                                                                type: 'danger'
-                                                            });
-                                                            if (!confirmed) return;
-                                                        }
-                                                        setSystemSettings({ ...systemSettings, whatsapp_warn_new_number: newVal });
-                                                    }}
-                                                    className={clsx(
-                                                        "w-10 h-6 rounded-full p-1 transition-colors relative shrink-0",
-                                                        systemSettings.whatsapp_warn_new_number ? "bg-accent-theme" : "bg-white/10"
-                                                    )}
-                                                >
-                                                    <span className={clsx(
-                                                        "w-4 h-4 rounded-full bg-white block transition-all shadow",
-                                                        systemSettings.whatsapp_warn_new_number ? "translate-x-4" : "translate-x-0"
-                                                    )} />
-                                                </button>
-                                            </div>
-
-                                            {/* Toggle 2: Limit active chats */}
-                                            <div className="flex items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                                                <div className="space-y-1">
-                                                    <label className="text-xs font-bold text-foreground">
-                                                        Limitar novas conversas ativas por hora
-                                                    </label>
-                                                    <p className="text-[10px] text-[var(--color-text-muted)]">
-                                                        Impede disparos rápidos bloqueando o início de novos chats ativos acima de um limite definido.
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    onClick={async () => {
-                                                        const newVal = !systemSettings.whatsapp_limit_active_chats;
-                                                        if (!newVal) {
-                                                            const confirmed = await askConfirm({
-                                                                title: '⚠️ Aviso de Segurança',
-                                                                message: 'Desativar o limite de conversas por hora remove a proteção de envio em lote, elevando gravemente o risco de bloqueio da linha. Deseja prosseguir?',
-                                                                confirmText: 'Sim, Desativar',
-                                                                cancelText: 'Cancelar',
-                                                                type: 'danger'
-                                                            });
-                                                            if (!confirmed) return;
-                                                        }
-                                                        setSystemSettings({ ...systemSettings, whatsapp_limit_active_chats: newVal });
-                                                    }}
-                                                    className={clsx(
-                                                        "w-10 h-6 rounded-full p-1 transition-colors relative shrink-0",
-                                                        systemSettings.whatsapp_limit_active_chats ? "bg-accent-theme" : "bg-white/10"
-                                                    )}
-                                                >
-                                                    <span className={clsx(
-                                                        "w-4 h-4 rounded-full bg-white block transition-all shadow",
-                                                        systemSettings.whatsapp_limit_active_chats ? "translate-x-4" : "translate-x-0"
-                                                    )} />
-                                                </button>
-                                            </div>
-
-                                            {/* Limit Input */}
-                                            {systemSettings.whatsapp_limit_active_chats && (
-                                                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                                                    <div className="space-y-1">
-                                                        <label className="text-xs font-bold text-foreground">
-                                                            Limite de novos chats iniciados por hora
-                                                        </label>
-                                                        <p className="text-[10px] text-[var(--color-text-muted)]">
-                                                            Quantidade máxima de novas conversas ativas por hora, por atendente.
-                                                        </p>
+                                                        {/* Filtro por Setor Autorizado */}
+                                                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                                                            <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider shrink-0">
+                                                                Setor:
+                                                            </span>
+                                                            <select
+                                                                value={fileSectorFilter}
+                                                                onChange={e => {
+                                                                    const val = e.target.value;
+                                                                    setFileSectorFilter(val);
+                                                                    fetchFilesList(1, fileTypeFilter, fileGroupFilter, val, fileSearchQuery);
+                                                                }}
+                                                                className="h-10 px-3 rounded-2xl bg-white/5 border border-white/10 text-xs text-foreground font-medium outline-none focus:border-accent-theme cursor-pointer"
+                                                            >
+                                                                <option value="all" className="bg-slate-900 text-white">🌐 Todos os Setores</option>
+                                                                {sectors.map(sec => (
+                                                                    <option key={sec.id} value={sec.id} className="bg-slate-900 text-white">
+                                                                        🏢 {sec.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                     </div>
-                                                    <input
-                                                        type="number"
-                                                        value={systemSettings.whatsapp_limit_count || 10}
-                                                        onChange={e => setSystemSettings({ ...systemSettings, whatsapp_limit_count: Math.max(1, Number(e.target.value)) })}
-                                                        className="w-24 bg-background/50 border border-white/10 rounded-xl px-3 py-2 text-center text-sm font-mono text-foreground focus:ring-1 focus:ring-accent-theme/30 outline-none"
-                                                        min={1}
-                                                    />
+
+                                                    {/* Linha 2: Tipo de Arquivo & Grupos de Arquivos */}
+                                                    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 pt-2 border-t border-white/5">
+                                                        {/* Tipo */}
+                                                        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar w-full lg:w-auto pb-1 lg:pb-0">
+                                                            {[
+                                                                { id: 'all', label: 'Todos os Tipos' },
+                                                                { id: 'doc', label: '📄 Documentos' },
+                                                                { id: 'image', label: '🖼️ Imagens' },
+                                                                { id: 'video', label: '🎬 Vídeos' },
+                                                                { id: 'audio', label: '🎵 Áudios' }
+                                                            ].map(cat => (
+                                                                <button
+                                                                    key={cat.id}
+                                                                    onClick={() => {
+                                                                        setFileTypeFilter(cat.id);
+                                                                        fetchFilesList(1, cat.id, fileGroupFilter, fileSectorFilter, fileSearchQuery);
+                                                                    }}
+                                                                    className={clsx(
+                                                                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                                                                        fileTypeFilter === cat.id
+                                                                            ? "bg-accent-theme text-white shadow-md shadow-accent-theme/20"
+                                                                            : "bg-white/5 hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground border border-white/5"
+                                                                    )}
+                                                                >
+                                                                    {cat.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+
+                                                        {/* Grupos / Pastas */}
+                                                        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar w-full lg:w-auto pb-1 lg:pb-0">
+                                                            <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider shrink-0 mr-1">
+                                                                Grupo:
+                                                            </span>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setFileGroupFilter('all');
+                                                                    fetchFilesList(1, fileTypeFilter, 'all', fileSectorFilter, fileSearchQuery);
+                                                                }}
+                                                                className={clsx(
+                                                                    "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer",
+                                                                    fileGroupFilter === 'all'
+                                                                        ? "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+                                                                        : "bg-white/5 hover:bg-white/10 text-[var(--color-text-muted)] border border-white/5"
+                                                                )}
+                                                            >
+                                                                Todos os Grupos
+                                                            </button>
+                                                            {fileGruposList.map(g => (
+                                                                <button
+                                                                    key={g.name}
+                                                                    onClick={() => {
+                                                                        setFileGroupFilter(g.name);
+                                                                        fetchFilesList(1, fileTypeFilter, g.name, fileSectorFilter, fileSearchQuery);
+                                                                    }}
+                                                                    className={clsx(
+                                                                        "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5",
+                                                                        fileGroupFilter === g.name
+                                                                            ? "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+                                                                            : "bg-white/5 hover:bg-white/10 text-[var(--color-text-muted)] border border-white/5"
+                                                                    )}
+                                                                >
+                                                                    <span>📁 {g.name}</span>
+                                                                    <span className="text-[9px] px-1 rounded bg-white/10">{g.count}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Listagem de Arquivos */}
+                                                {loadingFiles ? (
+                                                    <div className="flex items-center justify-center gap-3 p-12 text-[var(--color-text-muted)] bg-white/5 rounded-3xl border border-white/5">
+                                                        <Loader2 className="w-5 h-5 animate-spin text-accent-theme" />
+                                                        <span className="text-sm font-medium">Carregando arquivos da biblioteca...</span>
+                                                    </div>
+                                                ) : filesList.length === 0 ? (
+                                                    <div className="flex flex-col items-center justify-center p-12 bg-white/3 rounded-3xl border border-dashed border-white/10 space-y-3 text-center">
+                                                        <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-[var(--color-text-muted)]">
+                                                            <Folder className="w-6 h-6" />
+                                                        </div>
+                                                        <p className="text-sm font-bold text-foreground">Nenhum arquivo pré-salvo cadastrado</p>
+                                                        <p className="text-xs text-[var(--color-text-muted)] max-w-md">
+                                                            {fileSearchQuery || fileGroupFilter !== 'all' || fileSectorFilter !== 'all'
+                                                                ? 'Nenhum arquivo corresponde aos filtros aplicados.'
+                                                                : 'Adicione documentos, catálogos em PDF, tabelas de preços ou vídeos institucionais para que os atendentes possam enviar aos clientes com 1 clique.'}
+                                                        </p>
+                                                        {!fileSearchQuery && fileGroupFilter === 'all' && fileSectorFilter === 'all' && (
+                                                            <button
+                                                                onClick={handleOpenNewFileModal}
+                                                                className="mt-2 flex items-center gap-2 px-4 py-2 bg-accent-theme text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-accent-theme/20"
+                                                            >
+                                                                <Plus className="w-3.5 h-3.5" />
+                                                                Cadastrar Primeiro Arquivo
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                                                        {filesList.map(f => {
+                                                            const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(f.ext);
+                                                            const isVid = ['mp4', 'webm', 'mov'].includes(f.ext);
+                                                            const isAud = ['mp3', 'ogg', 'wav', 'aac', 'opus'].includes(f.ext);
+                                                            const hasSectors = Array.isArray(f.setores) && f.setores.length > 0;
+
+                                                            return (
+                                                                <div key={f.id} className="p-4 rounded-2xl bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-white/10 transition-all flex flex-col justify-between gap-3 group">
+                                                                    <div className="space-y-2.5">
+                                                                        {/* Header do Card: Grupo & Setores */}
+                                                                        <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                                                            <span className="px-2 py-0.5 rounded-md bg-white/10 border border-white/10 text-[9px] font-bold text-slate-200 flex items-center gap-1">
+                                                                                <Folder className="w-2.5 h-2.5 text-amber-400" />
+                                                                                {f.grupo || 'Geral'}
+                                                                            </span>
+
+                                                                            {hasSectors ? (
+                                                                                <span className="px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30 text-[9px] font-bold">
+                                                                                    🏢 {f.setores?.length} setor{(f.setores?.length || 0) > 1 ? 'es' : ''}
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                                                                                    🌐 Todos os Setores
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+
+                                                                        <div className="flex items-start gap-3">
+                                                                            {/* Thumbnail / Icon */}
+                                                                            <div
+                                                                                onClick={() => setFilePreviewItem(f)}
+                                                                                className="w-14 h-14 rounded-xl bg-black/40 border border-white/10 shrink-0 flex items-center justify-center overflow-hidden cursor-pointer relative group/preview"
+                                                                            >
+                                                                                {isImg ? (
+                                                                                    <img src={f.url} alt={f.filename} className="w-full h-full object-cover group-hover/preview:scale-105 transition-transform" />
+                                                                                ) : isVid ? (
+                                                                                    <Video className="w-6 h-6 text-violet-400" />
+                                                                                ) : isAud ? (
+                                                                                    <Music className="w-6 h-6 text-cyan-400" />
+                                                                                ) : (
+                                                                                    <FileText className="w-6 h-6 text-blue-400" />
+                                                                                )}
+                                                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/preview:opacity-100 flex items-center justify-center transition-opacity">
+                                                                                    <Eye className="w-4 h-4 text-white" />
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* File Info */}
+                                                                            <div className="flex-1 min-w-0 space-y-1">
+                                                                                <p className="text-xs font-bold text-foreground truncate" title={f.titulo || f.filename}>
+                                                                                    {f.titulo || f.filename}
+                                                                                </p>
+                                                                                <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-muted)] font-mono">
+                                                                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-white font-bold uppercase">{f.ext}</span>
+                                                                                    <span>{f.size_formatted || '—'}</span>
+                                                                                </div>
+                                                                                {f.descricao && (
+                                                                                    <p className="text-[10px] text-[var(--color-text-muted)] truncate" title={f.descricao}>
+                                                                                        {f.descricao}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Actions */}
+                                                                    <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px]">
+                                                                        <span className="text-[9px] text-[var(--color-text-muted)] font-mono">
+                                                                            {f.created_at ? new Date(f.created_at).toLocaleDateString('pt-BR') : ''}
+                                                                        </span>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <button
+                                                                                onClick={() => handleOpenEditFileModal(f)}
+                                                                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                                                                title="Editar Título, Grupo e Permissões"
+                                                                            >
+                                                                                <Edit2 className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => setFilePreviewItem(f)}
+                                                                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                                                                title="Visualizar"
+                                                                            >
+                                                                                <Eye className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                            <a
+                                                                                href={f.url}
+                                                                                download={f.filename}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                className="p-1.5 rounded-lg bg-white/5 hover:bg-accent-theme/20 text-[var(--color-text-muted)] hover:text-accent-theme transition-all cursor-pointer"
+                                                                                title="Baixar Arquivo"
+                                                                            >
+                                                                                <Download className="w-3.5 h-3.5" />
+                                                                            </a>
+                                                                            <button
+                                                                                onClick={() => handleDeleteFile(f)}
+                                                                                className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-[var(--color-text-muted)] hover:text-red-400 transition-all cursor-pointer"
+                                                                                title="Excluir arquivo"
+                                                                            >
+                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+
+                                            {/* Paginação */}
+                                            {filesTotal > 12 && (
+                                                <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                                                    <span className="text-xs text-[var(--color-text-muted)]">
+                                                        Total de <strong>{filesTotal}</strong> arquivos
+                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            disabled={filesPage <= 1}
+                                                            onClick={() => fetchFilesList(filesPage - 1, fileTypeFilter, fileGroupFilter, fileSectorFilter, fileSearchQuery)}
+                                                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold disabled:opacity-30 transition-all cursor-pointer"
+                                                        >
+                                                            Anterior
+                                                        </button>
+                                                        <span className="text-xs font-mono font-bold px-2">Página {filesPage}</span>
+                                                        <button
+                                                            disabled={filesPage * 12 >= filesTotal}
+                                                            onClick={() => fetchFilesList(filesPage + 1, fileTypeFilter, fileGroupFilter, fileSectorFilter, fileSearchQuery)}
+                                                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold disabled:opacity-30 transition-all cursor-pointer"
+                                                        >
+                                                            Próxima
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             )}
-                                        </div>
-
-                                        <div className="pt-2">
-                                            <button
-                                                onClick={handleSaveWhatsappSafetySettings}
-                                                disabled={isSavingWhatsappSafety}
-                                                className="premium-gradient text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
-                                            >
-                                                {isSavingWhatsappSafety ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                                Salvar Configurações de Segurança
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Modal: Adicionar/Editar Canal */}
-                                    <AnimatePresence>
-                                        {isChannelModalOpen && (
-                                            <motion.div
-                                                initial={{ opacity: 0 }}
-                                                animate={{ opacity: 1 }}
-                                                exit={{ opacity: 0 }}
-                                                transition={{ duration: 0.2 }}
-                                                className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4"
-                                                onClick={(e) => { if (e.target === e.currentTarget) setIsChannelModalOpen(false); }}
-                                            >
-                                                <motion.div
-                                                    initial={{ opacity: 0, scale: 0.93, y: 20 }}
-                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                    exit={{ opacity: 0, scale: 0.93, y: 20 }}
-                                                    transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                                                    className="relative w-full max-w-md overflow-hidden rounded-3xl shadow-2xl border border-white/10"
-                                                    style={{ background: 'var(--color-card)' }}
-                                                >
-                                                    {/* Gradient Header */}
-                                                    <div
-                                                        className="relative px-8 pt-8 pb-6 overflow-hidden"
-                                                        style={{ background: `linear-gradient(135deg, ${channelForm.color || '#8b5cf6'}22 0%, transparent 60%)` }}
-                                                    >
-                                                        {/* Background glow */}
-                                                        <div
-                                                            className="absolute -top-6 -right-6 w-32 h-32 rounded-full opacity-20 blur-2xl pointer-events-none"
-                                                            style={{ backgroundColor: channelForm.color || '#8b5cf6' }}
-                                                        />
-
-                                                        <div className="flex items-start justify-between relative z-10">
-                                                            <div className="flex items-center gap-4">
-                                                                {/* Live Avatar Preview */}
-                                                                <div
-                                                                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-lg transition-all duration-300 shrink-0 select-none"
-                                                                    style={{
-                                                                        backgroundColor: channelForm.color || '#8b5cf6',
-                                                                        boxShadow: `0 8px 24px ${channelForm.color || '#8b5cf6'}50`
-                                                                    }}
-                                                                >
-                                                                    {channelForm.name?.charAt(0).toUpperCase() || <MessageSquare className="w-6 h-6" />}
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1">
-                                                                        {editingChannel ? 'Editando canal' : 'Novo canal'}
-                                                                    </p>
-                                                                    <h3 className="text-xl font-black italic uppercase tracking-tight text-foreground leading-none">
-                                                                        {channelForm.name || <span className="text-[var(--color-text-muted)] font-normal not-italic normal-case tracking-normal text-sm">Digite o nome abaixo</span>}
-                                                                    </h3>
-                                                                    {channelForm.port && (
-                                                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono mt-1">porta {channelForm.port}</p>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <button
-                                                                onClick={() => setIsChannelModalOpen(false)}
-                                                                className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all -mt-1 -mr-1"
-                                                            >
-                                                                <XCircle className="w-5 h-5" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Separator */}
-                                                    <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-
-                                                    {/* Form Body */}
-                                                    <div className="px-8 py-6 space-y-5">
-
-                                                        {/* Nome */}
-                                                        <div>
-                                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
-                                                                <Tag className="w-3 h-3" />
-                                                                Nome do Canal
-                                                                <span className="text-accent-theme">*</span>
-                                                            </label>
-                                                            <input
-                                                                type="text"
-                                                                autoFocus
-                                                                placeholder="Ex: Suporte, Comercial, Administrativo"
-                                                                value={channelForm.name || ''}
-                                                                onChange={e => setChannelForm(p => ({ ...p, name: e.target.value }))}
-                                                                className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
-                                                            />
-                                                        </div>
-
-                                                        {/* Porta + Cor */}
-                                                        <div className="grid grid-cols-2 gap-4">
-                                                            <div>
-                                                                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
-                                                                    <Link2 className="w-3 h-3" />
-                                                                    Porta
-                                                                    <span className="text-accent-theme">*</span>
-                                                                </label>
-                                                                <input
-                                                                    type="number"
-                                                                    placeholder="5000"
-                                                                    value={channelForm.port || ''}
-                                                                    onChange={e => setChannelForm(p => ({ ...p, port: Number(e.target.value) }))}
-                                                                    className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm font-mono placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
-                                                                />
-                                                                <p className="text-[9px] text-[var(--color-text-muted)]/60 mt-1.5 font-mono">Deve ser única por canal</p>
-                                                            </div>
-                                                            <div>
-                                                                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
-                                                                    <Palette className="w-3 h-3" />
-                                                                    Cor do Canal
-                                                                </label>
-                                                                {/* Color Swatches */}
-                                                                <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                    {['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4','#f97316'].map(color => (
-                                                                        <button
-                                                                            key={color}
-                                                                            type="button"
-                                                                            onClick={() => setChannelForm(p => ({ ...p, color }))}
-                                                                            className="w-6 h-6 rounded-lg transition-all hover:scale-110 active:scale-95"
-                                                                            style={{
-                                                                                backgroundColor: color,
-                                                                                outline: channelForm.color === color ? `2px solid white` : '2px solid transparent',
-                                                                                outlineOffset: '2px',
-                                                                                boxShadow: channelForm.color === color ? `0 0 8px ${color}90` : 'none'
-                                                                            }}
-                                                                            title={color}
-                                                                        />
-                                                                    ))}
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <input
-                                                                        type="color"
-                                                                        value={channelForm.color || '#8b5cf6'}
-                                                                        onChange={e => setChannelForm(p => ({ ...p, color: e.target.value }))}
-                                                                        className="w-8 h-8 rounded-lg border border-white/10 bg-transparent cursor-pointer shrink-0 overflow-hidden"
-                                                                        title="Cor personalizada"
-                                                                    />
-                                                                    <input
-                                                                        type="text"
-                                                                        value={channelForm.color || '#8b5cf6'}
-                                                                        onChange={e => setChannelForm(p => ({ ...p, color: e.target.value }))}
-                                                                        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground text-[10px] font-mono focus:ring-1 focus:ring-accent-theme/30 outline-none"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Setor Vinculado */}
-                                                        <div>
-                                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
-                                                                <Layers className="w-3 h-3" />
-                                                                Setor Vinculado
-                                                            </label>
-                                                            <div className="relative">
-                                                                <select
-                                                                    value={channelForm.sector_id ?? ''}
-                                                                    onChange={e => setChannelForm(p => ({ ...p, sector_id: e.target.value ? Number(e.target.value) : null }))}
-                                                                    className="w-full appearance-none bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all pr-10"
-                                                                >
-                                                                    <option value="">— Nenhum setor vinculado —</option>
-                                                                    {sectors.map(s => (
-                                                                        <option key={s.id} value={s.id}>{s.name}</option>
-                                                                    ))}
-                                                                </select>
-                                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)] pointer-events-none" />
-                                                            </div>
-                                                            <p className="text-[9px] text-[var(--color-text-muted)]/60 mt-1.5">Tickets criados via este canal entrarão neste setor</p>
-                                                        </div>
-
-                                                        {/* Descrição */}
-                                                        <div>
-                                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
-                                                                <Edit2 className="w-3 h-3" />
-                                                                Descrição
-                                                                <span className="text-[var(--color-text-muted)]/50 font-normal normal-case tracking-normal">(opcional)</span>
-                                                            </label>
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Ex: Atendimento ao cliente, Vendas..."
-                                                                value={channelForm.description || ''}
-                                                                onChange={e => setChannelForm(p => ({ ...p, description: e.target.value }))}
-                                                                className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Footer Buttons */}
-                                                    <div className="px-8 pb-8 flex items-center gap-3">
-                                                        <button
-                                                            onClick={() => setIsChannelModalOpen(false)}
-                                                            className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl text-xs font-black uppercase tracking-widest text-[var(--color-text-muted)] hover:text-foreground transition-all"
-                                                        >
-                                                            Cancelar
-                                                        </button>
-                                                        <button
-                                                            onClick={handleSaveChannel}
-                                                            disabled={savingChannel || !channelForm.name || !channelForm.port}
-                                                            className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
-                                                            style={{
-                                                                background: channelForm.color
-                                                                    ? `linear-gradient(135deg, ${channelForm.color}, ${channelForm.color}bb)`
-                                                                    : 'var(--color-accent)',
-                                                                boxShadow: (!savingChannel && channelForm.name && channelForm.port)
-                                                                    ? `0 4px 20px ${channelForm.color || '#8b5cf6'}50`
-                                                                    : 'none'
-                                                            }}
-                                                        >
-                                                            {savingChannel
-                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                : <Check className="w-3.5 h-3.5" />
-                                                            }
-                                                            {editingChannel ? 'Salvar Alterações' : 'Criar Canal'}
-                                                        </button>
-                                                    </div>
-                                                </motion.div>
                                             </motion.div>
                                         )}
+
+                                        {/* ========================================================================= */}
+                                        {/* SUB-ABA 3: MENSAGENS RÁPIDAS GLOBAIS (GRUPOS E SETORES)                  */}
+                                        {/* ========================================================================= */}
+                                        {whatsappSubTab === 'quick_replies' && (
+                                            <motion.div
+                                                key="quick_replies"
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                                                className="space-y-8"
+                                            >
+                                                {/* Header */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                                                <div className="flex items-center gap-3 text-accent-theme">
+                                                    <div className="p-2.5 bg-accent-theme/10 rounded-xl">
+                                                        <Zap className="w-6 h-6 text-accent-theme" />
+                                                    </div>
+                                                    <div>
+                                                        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground">
+                                                            Central de <span className="text-accent-theme">Mensagens Rápidas</span>
+                                                        </h2>
+                                                        <p className="text-xs text-[var(--color-text-muted)]">
+                                                            Organize templates da empresa em grupos e defina o controle de acesso por setor
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => openQrModal()}
+                                                    className="flex items-center gap-2 px-4 py-2.5 bg-accent-theme hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-accent-theme/20 cursor-pointer"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                    Nova Mensagem Rápida
+                                                </button>
+                                            </div>
+
+                                            {/* Barra de Filtros: Setores, Busca e Grupos */}
+                                            <div className="space-y-3.5 bg-white/3 p-4 rounded-3xl border border-white/5">
+                                                {/* Linha 1: Busca e Setor */}
+                                                <div className="flex flex-col sm:flex-row items-center gap-3">
+                                                    {/* Busca */}
+                                                    <div className="relative flex-1 w-full">
+                                                        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Buscar por título, atalho (/pix), grupo ou conteúdo..."
+                                                            value={qrSearchQuery}
+                                                            onChange={e => setQrSearchQuery(e.target.value)}
+                                                            className="w-full pl-10 pr-4 h-10 rounded-2xl text-xs bg-white/5 border border-white/10 text-foreground placeholder-[var(--color-text-muted)] focus:outline-none focus:border-accent-theme transition-all"
+                                                        />
+                                                    </div>
+
+                                                    {/* Filtro de Setor */}
+                                                    <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                                                        <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider shrink-0">
+                                                            Setor:
+                                                        </span>
+                                                        <select
+                                                            value={qrSectorFilter}
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                setQrSectorFilter(val);
+                                                                fetchQuickReplies(qrGroupFilter, val);
+                                                            }}
+                                                            className="h-10 px-3 rounded-2xl bg-white/5 border border-white/10 text-xs text-foreground font-medium outline-none focus:border-accent-theme cursor-pointer"
+                                                        >
+                                                            <option value="all" className="bg-slate-900 text-white">🌐 Todos os Setores</option>
+                                                            {sectors.map(sec => (
+                                                                <option key={sec.id} value={sec.id} className="bg-slate-900 text-white">
+                                                                    🏢 {sec.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                {/* Linha 2: Grupos / Categorias de Mensagens Rápidas */}
+                                                <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pt-2 border-t border-white/5 pb-1">
+                                                    <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider shrink-0 mr-1">
+                                                        Grupo:
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setQrGroupFilter('ALL');
+                                                            fetchQuickReplies('ALL', qrSectorFilter);
+                                                        }}
+                                                        className={clsx(
+                                                            "px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                                                            qrGroupFilter === 'ALL'
+                                                                ? "bg-accent-theme text-white shadow-md shadow-accent-theme/20"
+                                                                : "bg-white/5 hover:bg-white/10 text-[var(--color-text-muted)] border border-white/5"
+                                                        )}
+                                                    >
+                                                        Todos os Grupos
+                                                    </button>
+                                                    {Array.from(new Set(quickReplies.map(r => r.grupo || r.categoria || 'Geral'))).map(g => (
+                                                        <button
+                                                            key={g}
+                                                            onClick={() => {
+                                                                setQrGroupFilter(g);
+                                                                fetchQuickReplies(g, qrSectorFilter);
+                                                            }}
+                                                            className={clsx(
+                                                                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5",
+                                                                qrGroupFilter === g
+                                                                    ? "bg-accent-theme text-white shadow-md shadow-accent-theme/20"
+                                                                    : "bg-white/5 hover:bg-white/10 text-[var(--color-text-muted)] border border-white/5"
+                                                            )}
+                                                        >
+                                                            <span>📁 {g}</span>
+                                                            <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/10">
+                                                                {quickReplies.filter(r => (r.grupo || r.categoria || 'Geral') === g).length}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Listagem de Mensagens Rápidas */}
+                                            {loadingQuickReplies ? (
+                                                <div className="flex items-center justify-center gap-3 p-12 text-[var(--color-text-muted)] bg-white/5 rounded-3xl border border-white/5">
+                                                    <Loader2 className="w-5 h-5 animate-spin text-accent-theme" />
+                                                    <span className="text-sm font-medium">Carregando mensagens rápidas...</span>
+                                                </div>
+                                            ) : (
+                                                (() => {
+                                                    let filtered = quickReplies;
+                                                    if (qrSearchQuery.trim()) {
+                                                        const s = qrSearchQuery.toLowerCase().trim();
+                                                        filtered = filtered.filter(r =>
+                                                            r.titulo.toLowerCase().includes(s) ||
+                                                            (r.atalho && r.atalho.toLowerCase().includes(s)) ||
+                                                            r.conteudo.toLowerCase().includes(s) ||
+                                                            ((r.grupo || r.categoria) && (r.grupo || r.categoria).toLowerCase().includes(s))
+                                                        );
+                                                    }
+
+                                                    if (filtered.length === 0) {
+                                                        return (
+                                                            <div className="flex flex-col items-center justify-center p-12 bg-white/3 rounded-3xl border border-dashed border-white/10 space-y-3 text-center">
+                                                                <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-amber-400">
+                                                                    <Zap className="w-6 h-6" />
+                                                                </div>
+                                                                <p className="text-sm font-bold text-foreground">Nenhuma mensagem rápida encontrada</p>
+                                                                <p className="text-xs text-[var(--color-text-muted)] max-w-sm">
+                                                                    Crie templates globais com <strong>/atalho</strong> e vincule aos setores para agilizar o atendimento da equipe.
+                                                                </p>
+                                                                <button
+                                                                    onClick={() => openQrModal()}
+                                                                    className="flex items-center gap-2 px-4 py-2 bg-accent-theme text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
+                                                                >
+                                                                    <Plus className="w-3.5 h-3.5" />
+                                                                    Criar Primeira Mensagem
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            {filtered.map(qr => {
+                                                                const hasSectors = Array.isArray(qr.setores) && qr.setores.length > 0;
+
+                                                                return (
+                                                                    <div
+                                                                        key={qr.id}
+                                                                        className="p-5 rounded-2xl bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-white/10 transition-all flex flex-col justify-between gap-4 group"
+                                                                    >
+                                                                        <div className="space-y-2.5">
+                                                                            {/* Header do Card */}
+                                                                            <div className="flex items-start justify-between gap-2">
+                                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                                    <span className="px-2 py-0.5 rounded-md bg-white/10 border border-white/10 text-[9px] font-bold text-slate-200 flex items-center gap-1">
+                                                                                        <Folder className="w-2.5 h-2.5 text-amber-400" />
+                                                                                        {qr.grupo || qr.categoria || 'Geral'}
+                                                                                    </span>
+
+                                                                                    {hasSectors ? (
+                                                                                        <span className="px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30 text-[9px] font-bold">
+                                                                                            🏢 {qr.setores?.length} setor{(qr.setores?.length || 0) > 1 ? 'es' : ''}
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                                                                                            🌐 Todos os Setores
+                                                                                        </span>
+                                                                                    )}
+
+                                                                                    {qr.blocos && qr.blocos.length > 1 && (
+                                                                                        <span className="px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[9px] font-bold flex items-center gap-1">
+                                                                                            <Layers className="w-2.5 h-2.5" />
+                                                                                            {qr.blocos.length} passos ({qr.blocos.filter(b => b.tipo === 'texto').length} textos, {qr.blocos.filter(b => b.tipo === 'arquivo').length} anexos)
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {qr.blocos && qr.blocos.length === 1 && qr.blocos[0].tipo === 'arquivo' && (
+                                                                                        <span className="px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[9px] font-bold flex items-center gap-1">
+                                                                                            <Paperclip className="w-2.5 h-2.5" /> 1 arquivo
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {qr.atalho && (
+                                                                                    <span className="px-2 py-0.5 rounded-lg bg-accent-theme/15 text-accent-theme border border-accent-theme/25 font-mono text-xs font-bold">
+                                                                                        {qr.atalho}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {/* Título */}
+                                                                            <h4 className="text-sm font-bold text-foreground">{qr.titulo}</h4>
+
+                                                                            {/* Conteúdo */}
+                                                                            <p className="text-xs text-[var(--color-text-muted)] bg-black/20 p-3 rounded-xl border border-white/5 line-clamp-3 font-normal leading-relaxed">
+                                                                                "{qr.conteudo}"
+                                                                            </p>
+                                                                        </div>
+
+                                                                        {/* Footer com Ações */}
+                                                                        <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px]">
+                                                                            <span className="text-[9px] text-[var(--color-text-muted)]">
+                                                                                Template global para a equipe
+                                                                            </span>
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <button
+                                                                                    onClick={() => openQrModal(qr)}
+                                                                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                                                                    title="Editar mensagem"
+                                                                                >
+                                                                                    <Edit2 className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                                <button
+                                                                                    onClick={() => handleDeleteQuickReply(qr)}
+                                                                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-[var(--color-text-muted)] hover:text-red-400 transition-all cursor-pointer"
+                                                                                    title="Excluir mensagem"
+                                                                                >
+                                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                </div>
+                                            );
+                                        })()
+                                    )}
+                                </motion.div>
+                            )}
                                     </AnimatePresence>
 
                                 </motion.div>
@@ -4114,6 +5332,1469 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 )}
+                {/* ========================================================================= */}
+                {/* MODAIS WHATSAPP (Nível Raiz para cobrir 100% da viewport/sidebar)         */}
+                {/* ========================================================================= */}
+
+                {/* Modal WhatsApp: Cadastrar Novo Arquivo Pré-Salvo na Biblioteca */}
+                <AnimatePresence>
+                    {isNewFileModalOpen && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[3000] flex items-center justify-center p-4"
+                            onClick={(e) => { if (e.target === e.currentTarget && !uploadingFile) setIsNewFileModalOpen(false); }}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.94, y: 15 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.94, y: 15 }}
+                                className="relative w-full max-w-lg bg-card rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+                                style={{ background: 'var(--color-card)' }}
+                            >
+                                <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-accent-theme/15 text-accent-theme rounded-xl">
+                                            <Upload className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black italic uppercase tracking-tight text-foreground">
+                                                Novo Arquivo Pré-Salvo
+                                            </h3>
+                                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                Cadastre um documento ou mídia para envio rápido nos atendimentos
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        disabled={uploadingFile}
+                                        onClick={() => setIsNewFileModalOpen(false)}
+                                        className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer disabled:opacity-50"
+                                    >
+                                        <XCircle className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <form onSubmit={handleUploadNewFile} className="p-6 space-y-4 max-h-[72vh] overflow-y-auto custom-scrollbar">
+                                    {/* Selecionar Arquivo */}
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                            Arquivo / Documento <span className="text-accent-theme">*</span>
+                                        </label>
+                                        <div
+                                            onClick={() => document.getElementById('new-file-upload-input')?.click()}
+                                            className={clsx(
+                                                "p-5 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center text-center cursor-pointer",
+                                                selectedUploadFile
+                                                    ? "border-accent-theme/50 bg-accent-theme/5"
+                                                    : "border-white/15 hover:border-accent-theme/50 bg-white/5 hover:bg-white/[0.08]"
+                                            )}
+                                        >
+                                            <input
+                                                id="new-file-upload-input"
+                                                type="file"
+                                                className="hidden"
+                                                onChange={e => {
+                                                    const f = e.target.files?.[0];
+                                                    if (f) {
+                                                        setSelectedUploadFile(f);
+                                                        if (!newFileForm.titulo) {
+                                                            setNewFileForm(p => ({ ...p, titulo: f.name.replace(/\.[^/.]+$/, '') }));
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                            {selectedUploadFile ? (
+                                                <div className="space-y-1">
+                                                    <div className="w-10 h-10 rounded-xl bg-accent-theme/20 text-accent-theme flex items-center justify-center mx-auto mb-1.5">
+                                                        <Check className="w-5 h-5" />
+                                                    </div>
+                                                    <p className="text-xs font-bold text-foreground truncate max-w-xs">{selectedUploadFile.name}</p>
+                                                    <p className="text-[10px] text-[var(--color-text-muted)] font-mono">
+                                                        {(selectedUploadFile.size / (1024 * 1024)).toFixed(2)} MB · Clique para trocar
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-1">
+                                                    <div className="w-10 h-10 rounded-xl bg-white/10 text-[var(--color-text-muted)] flex items-center justify-center mx-auto mb-1.5">
+                                                        <Upload className="w-5 h-5" />
+                                                    </div>
+                                                    <p className="text-xs font-bold text-foreground">Clique para escolher ou arraste o arquivo</p>
+                                                    <p className="text-[10px] text-[var(--color-text-muted)]">PDF, DOC, XLS, Imagens, Vídeos, Áudios (até 50MB)</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Título de Apresentação */}
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                            Título de Exibição <span className="text-accent-theme">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ex: Tabela de Preços 2026, Catálogo de Produtos..."
+                                            value={newFileForm.titulo}
+                                            onChange={e => setNewFileForm(p => ({ ...p, titulo: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                        />
+                                    </div>
+
+                                    {/* Grupo / Pasta */}
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                            Grupo / Pasta de Organização <span className="text-accent-theme">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            list="file-group-suggestions"
+                                            placeholder="Ex: Manuais, Tabelas de Preço, Comercial, Contratos..."
+                                            value={newFileForm.grupo}
+                                            onChange={e => setNewFileForm(p => ({ ...p, grupo: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                        />
+                                    </div>
+
+                                    {/* Controle de Acesso por Setor */}
+                                    <div className="space-y-2">
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">
+                                            Controle de Acesso por Setor
+                                        </label>
+
+                                        {/* Checkbox Todos os Setores */}
+                                        <div
+                                            onClick={() => setNewFileForm(p => ({
+                                                ...p,
+                                                allSectors: !p.allSectors,
+                                                setores: !p.allSectors ? [] : p.setores
+                                            }))}
+                                            className={clsx(
+                                                "flex items-center gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer select-none",
+                                                newFileForm.allSectors
+                                                    ? "bg-accent-theme/15 border-accent-theme/60 shadow-sm shadow-accent-theme/10"
+                                                    : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                                            )}
+                                        >
+                                            <div className={clsx(
+                                                "w-5 h-5 rounded-lg border flex items-center justify-center transition-all shrink-0",
+                                                newFileForm.allSectors
+                                                    ? "bg-accent-theme border-accent-theme text-white shadow-md shadow-accent-theme/30"
+                                                    : "border-white/25 bg-white/5"
+                                            )}>
+                                                {newFileForm.allSectors && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                    🌐 <span>Acesso Livre para Todos os Setores</span>
+                                                </p>
+                                                <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">Qualquer atendente poderá ver e enviar este arquivo.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Seleção de Setores Específicos com Animação Suave */}
+                                        <AnimatePresence>
+                                            {!newFileForm.allSectors && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                    animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                                                    exit={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                    transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                                                    className="overflow-hidden"
+                                                >
+                                                    <div className="p-3.5 rounded-2xl bg-black/25 border border-white/10 space-y-2 mt-1">
+                                                        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                                                            Selecione os setores autorizados:
+                                                        </p>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {sectors.map(sec => {
+                                                                const isSelected = newFileForm.setores.includes(sec.id);
+                                                                return (
+                                                                    <button
+                                                                        key={sec.id}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setNewFileForm(p => ({
+                                                                                ...p,
+                                                                                setores: isSelected
+                                                                                    ? p.setores.filter(id => id !== sec.id)
+                                                                                    : [...p.setores, sec.id]
+                                                                            }));
+                                                                        }}
+                                                                        className={clsx(
+                                                                            "p-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between cursor-pointer select-none",
+                                                                            isSelected
+                                                                                ? "bg-accent-theme/20 border-accent-theme text-foreground shadow-sm shadow-accent-theme/10"
+                                                                                : "bg-white/5 border-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-foreground"
+                                                                        )}
+                                                                    >
+                                                                        <span className="truncate flex items-center gap-1.5">🏢 {sec.name}</span>
+                                                                        <div className={clsx(
+                                                                            "w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0",
+                                                                            isSelected
+                                                                                ? "bg-accent-theme border-accent-theme text-white"
+                                                                                : "border-white/20 bg-white/5"
+                                                                        )}>
+                                                                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                                                        </div>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    {/* Descrição Interna */}
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                            Observação / Descrição Interna
+                                        </label>
+                                        <textarea
+                                            rows={2}
+                                            placeholder="Notas internas sobre quando usar ou enviar este arquivo..."
+                                            value={newFileForm.descricao}
+                                            onChange={e => setNewFileForm(p => ({ ...p, descricao: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                        />
+                                    </div>
+
+                                    <div className="pt-2 flex items-center justify-end gap-3">
+                                        <button
+                                            type="button"
+                                            disabled={uploadingFile}
+                                            onClick={() => setIsNewFileModalOpen(false)}
+                                            className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-[var(--color-text-muted)] transition-all cursor-pointer"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={uploadingFile || !selectedUploadFile}
+                                            className="px-5 py-2.5 rounded-xl bg-accent-theme hover:opacity-90 text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-accent-theme/20 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {uploadingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                                            Cadastrar Arquivo
+                                        </button>
+                                    </div>
+                                </form>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Modal WhatsApp: Editar Metadados e Permissões do Arquivo */}
+                <AnimatePresence>
+                    {isEditFileModalOpen && editingFile && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[3000] flex items-center justify-center p-4"
+                            onClick={(e) => { if (e.target === e.currentTarget) setIsEditFileModalOpen(false); }}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.94, y: 15 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.94, y: 15 }}
+                                className="relative w-full max-w-lg bg-card rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+                                style={{ background: 'var(--color-card)' }}
+                            >
+                                <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-accent-theme/15 text-accent-theme rounded-xl">
+                                            <Folder className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black italic uppercase tracking-tight text-foreground">
+                                                Editar Arquivo
+                                            </h3>
+                                            <p className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[280px]">
+                                                {editingFile.filename}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsEditFileModalOpen(false)}
+                                        className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                    >
+                                        <XCircle className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                                    {/* Título de Exibição */}
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                            Título de Exibição <span className="text-accent-theme">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: Tabela de Preços 2026..."
+                                            value={fileMetaForm.titulo}
+                                            onChange={e => setFileMetaForm(p => ({ ...p, titulo: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                        />
+                                    </div>
+
+                                    {/* Grupo / Pasta */}
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                            Grupo / Pasta de Organização <span className="text-accent-theme">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            list="file-group-suggestions"
+                                            placeholder="Ex: Manuais, Contratos, Comprovantes, Comercial"
+                                            value={fileMetaForm.grupo}
+                                            onChange={e => setFileMetaForm(p => ({ ...p, grupo: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                        />
+                                        <datalist id="file-group-suggestions">
+                                            <option value="Manuais & Documentação" />
+                                            <option value="Contratos & Modelos" />
+                                            <option value="Comprovantes & Financeiro" />
+                                            <option value="Tabelas de Preço & Comercial" />
+                                            <option value="Institucional" />
+                                            <option value="Geral" />
+                                        </datalist>
+                                    </div>
+
+                                    {/* Controle de Acesso por Setor */}
+                                    <div className="space-y-2">
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">
+                                            Controle de Acesso por Setores
+                                        </label>
+
+                                        {/* Checkbox Todos os Setores */}
+                                        <div
+                                            onClick={() => setFileMetaForm(p => ({
+                                                ...p,
+                                                allSectors: !p.allSectors,
+                                                setores: !p.allSectors ? [] : p.setores
+                                            }))}
+                                            className={clsx(
+                                                "flex items-center gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer select-none",
+                                                fileMetaForm.allSectors
+                                                    ? "bg-accent-theme/15 border-accent-theme/60 shadow-sm shadow-accent-theme/10"
+                                                    : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                                            )}
+                                        >
+                                            <div className={clsx(
+                                                "w-5 h-5 rounded-lg border flex items-center justify-center transition-all shrink-0",
+                                                fileMetaForm.allSectors
+                                                    ? "bg-accent-theme border-accent-theme text-white shadow-md shadow-accent-theme/30"
+                                                    : "border-white/25 bg-white/5"
+                                            )}>
+                                                {fileMetaForm.allSectors && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                    🌐 <span>Acesso Livre para Todos os Setores</span>
+                                                </p>
+                                                <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">Disponível para todos os atendentes.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Seleção de Setores Específicos com Animação Suave */}
+                                        <AnimatePresence>
+                                            {!fileMetaForm.allSectors && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                    animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                                                    exit={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                    transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                                                    className="overflow-hidden"
+                                                >
+                                                    <div className="p-3.5 rounded-2xl bg-black/25 border border-white/10 space-y-2 mt-1">
+                                                        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                                                            Selecione os setores autorizados:
+                                                        </p>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {sectors.map(sec => {
+                                                                const isSelected = fileMetaForm.setores.includes(sec.id);
+                                                                return (
+                                                                    <button
+                                                                        key={sec.id}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setFileMetaForm(p => ({
+                                                                                ...p,
+                                                                                setores: isSelected
+                                                                                    ? p.setores.filter(id => id !== sec.id)
+                                                                                    : [...p.setores, sec.id]
+                                                                            }));
+                                                                        }}
+                                                                        className={clsx(
+                                                                            "p-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between cursor-pointer select-none",
+                                                                            isSelected
+                                                                                ? "bg-accent-theme/20 border-accent-theme text-foreground shadow-sm shadow-accent-theme/10"
+                                                                                : "bg-white/5 border-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-foreground"
+                                                                        )}
+                                                                    >
+                                                                        <span className="truncate flex items-center gap-1.5">🏢 {sec.name}</span>
+                                                                        <div className={clsx(
+                                                                            "w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0",
+                                                                            isSelected
+                                                                                ? "bg-accent-theme border-accent-theme text-white"
+                                                                                : "border-white/20 bg-white/5"
+                                                                        )}>
+                                                                            {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                                                        </div>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    {/* Descrição Interna */}
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                            Observação / Descrição Interna
+                                        </label>
+                                        <textarea
+                                            rows={2}
+                                            placeholder="Notas sobre o arquivo para a equipe..."
+                                            value={fileMetaForm.descricao}
+                                            onChange={e => setFileMetaForm(p => ({ ...p, descricao: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="p-6 border-t border-white/10 flex items-center justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEditFileModalOpen(false)}
+                                        className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-[var(--color-text-muted)] transition-all cursor-pointer"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={savingFileMeta}
+                                        onClick={handleSaveFileMetadata}
+                                        className="px-5 py-2.5 rounded-xl bg-accent-theme hover:opacity-90 text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-accent-theme/20 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {savingFileMeta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                        Salvar Alterações
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Modal WhatsApp: Visualizar Arquivo (Lightbox) */}
+                <AnimatePresence>
+                    {filePreviewItem && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/85 backdrop-blur-md z-[3000] flex items-center justify-center p-4"
+                            onClick={(e) => { if (e.target === e.currentTarget) setFilePreviewItem(null); }}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                className="relative w-full max-w-2xl bg-card rounded-3xl border border-white/10 p-6 space-y-4 shadow-2xl overflow-hidden"
+                                style={{ background: 'var(--color-card)' }}
+                            >
+                                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                                    <div className="min-w-0 flex-1 pr-4">
+                                        <h3 className="text-sm font-bold text-foreground truncate">{filePreviewItem.titulo || filePreviewItem.filename}</h3>
+                                        <p className="text-[10px] text-[var(--color-text-muted)] font-mono">{filePreviewItem.size_formatted}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setFilePreviewItem(null)}
+                                        className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                    >
+                                        <XCircle className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center justify-center min-h-[240px] max-h-[60vh] overflow-hidden rounded-2xl bg-black/40 border border-white/5">
+                                    {['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(filePreviewItem.ext) ? (
+                                        <img src={filePreviewItem.url} alt={filePreviewItem.filename} className="max-h-[60vh] w-auto object-contain" />
+                                    ) : ['mp4', 'webm', 'mov'].includes(filePreviewItem.ext) ? (
+                                        <video src={filePreviewItem.url} controls className="max-h-[60vh] w-full" />
+                                    ) : ['mp3', 'ogg', 'wav', 'opus', 'aac'].includes(filePreviewItem.ext) ? (
+                                        <audio src={filePreviewItem.url} controls className="w-full p-4" />
+                                    ) : (
+                                        <div className="p-8 text-center space-y-3">
+                                            <FileText className="w-12 h-12 mx-auto text-blue-400" />
+                                            <p className="text-xs text-foreground font-bold">Arquivo de Documento</p>
+                                            <a
+                                                href={filePreviewItem.url}
+                                                download={filePreviewItem.filename}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-theme text-white text-xs font-bold cursor-pointer"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                                Baixar Arquivo
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Modal WhatsApp: Criar/Editar Mensagem Rápida com Layout 2 Colunas (Configurações à Esquerda, Preview WhatsApp à Direita) */}
+                <AnimatePresence>
+                    {isQrModalOpen && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/85 backdrop-blur-md z-[3000] flex items-center justify-center p-3 sm:p-5"
+                            onClick={(e) => { if (e.target === e.currentTarget) setIsQrModalOpen(false); }}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                                className="relative w-full max-w-5xl max-h-[92vh] bg-card rounded-3xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+                                style={{ background: 'var(--color-card)' }}
+                            >
+                                {/* Header do Modal */}
+                                <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-accent-theme/15 text-accent-theme rounded-xl">
+                                            <Zap className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black italic uppercase tracking-tight text-foreground">
+                                                {editingQr ? 'Editar Mensagem Rápida' : 'Nova Mensagem Rápida'}
+                                            </h3>
+                                            <p className="text-[10px] text-[var(--color-text-muted)] font-medium">
+                                                Configure os parâmetros à esquerda e acompanhe a pré-visualização em tempo real à direita
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsQrModalOpen(false)}
+                                        className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                    >
+                                        <XCircle className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                {/* Corpo em 2 Colunas */}
+                                <div className="grid grid-cols-1 lg:grid-cols-12 flex-1 min-h-0 overflow-hidden">
+                                    
+                                    {/* COLUNA ESQUERDA: Formulário & Sequência de Blocos (7 colunas) */}
+                                    <div className="lg:col-span-7 p-6 space-y-4 overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-white/10">
+                                        {/* Título & Atalho */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                                    Título / Nome <span className="text-accent-theme">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Ex: Chave Pix Financeiro"
+                                                    value={qrForm.titulo}
+                                                    onChange={e => setQrForm(p => ({ ...p, titulo: e.target.value }))}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                                    Atalho de Teclado
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Ex: /pix ou /ola"
+                                                    value={qrForm.atalho}
+                                                    onChange={e => {
+                                                        let val = e.target.value;
+                                                        if (val && !val.startsWith('/')) val = `/${val}`;
+                                                        setQrForm(p => ({ ...p, atalho: val }));
+                                                    }}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Grupo / Categoria */}
+                                        <div>
+                                            <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1.5">
+                                                Grupo / Pasta de Agrupamento <span className="text-accent-theme">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                list="qr-group-suggestions"
+                                                placeholder="Ex: 👋 Atendimento Inicial, 💳 Financeiro, ⏳ Em Análise"
+                                                value={qrForm.grupo}
+                                                onChange={e => setQrForm(p => ({ ...p, grupo: e.target.value, categoria: e.target.value }))}
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                            />
+                                            <datalist id="qr-group-suggestions">
+                                                <option value="👋 Atendimento Inicial" />
+                                                <option value="⏳ Em Análise / Aguarde" />
+                                                <option value="📄 Documentos & Comprovantes" />
+                                                <option value="💳 Financeiro / Cobrança" />
+                                                <option value="✅ Finalização" />
+                                                <option value="📍 Informações Gerais" />
+                                                <option value="🛠️ Suporte Técnico" />
+                                            </datalist>
+                                        </div>
+
+                                        {/* Controle de Acesso por Setores */}
+                                        <div className="space-y-2">
+                                            <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                Controle de Acesso por Setores
+                                            </label>
+
+                                            <div
+                                                onClick={() => setQrForm(p => ({
+                                                    ...p,
+                                                    allSectors: !p.allSectors,
+                                                    setores: !p.allSectors ? [] : p.setores
+                                                }))}
+                                                className={clsx(
+                                                    "flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer select-none",
+                                                    qrForm.allSectors
+                                                        ? "bg-accent-theme/15 border-accent-theme/60 shadow-sm shadow-accent-theme/10"
+                                                        : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                                                )}
+                                            >
+                                                <div className={clsx(
+                                                    "w-5 h-5 rounded-lg border flex items-center justify-center transition-all shrink-0",
+                                                    qrForm.allSectors
+                                                        ? "bg-accent-theme border-accent-theme text-white shadow-md shadow-accent-theme/30"
+                                                        : "border-white/25 bg-white/5"
+                                                )}>
+                                                    {qrForm.allSectors && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                        🌐 <span>Acesso Livre para Todos os Setores</span>
+                                                    </p>
+                                                    <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">Disponível no chat para todos os atendentes da empresa.</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Seleção de Setores Específicos com Animação Suave */}
+                                            <AnimatePresence>
+                                                {!qrForm.allSectors && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                        animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                                                        exit={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                                                        className="overflow-hidden"
+                                                    >
+                                                        <div className="p-3 rounded-2xl bg-black/25 border border-white/10 space-y-2 mt-1">
+                                                            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                                                                Selecione os setores autorizados:
+                                                            </p>
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                {sectors.map(sec => {
+                                                                    const isSelected = qrForm.setores.includes(sec.id);
+                                                                    return (
+                                                                        <button
+                                                                            key={sec.id}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setQrForm(p => ({
+                                                                                    ...p,
+                                                                                    setores: isSelected
+                                                                                        ? p.setores.filter(id => id !== sec.id)
+                                                                                        : [...p.setores, sec.id]
+                                                                                }));
+                                                                            }}
+                                                                            className={clsx(
+                                                                                "p-2 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between cursor-pointer select-none",
+                                                                                isSelected
+                                                                                    ? "bg-accent-theme/20 border-accent-theme text-foreground shadow-sm shadow-accent-theme/10"
+                                                                                    : "bg-white/5 border-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-foreground"
+                                                                            )}
+                                                                        >
+                                                                            <span className="truncate flex items-center gap-1.5">🏢 {sec.name}</span>
+                                                                            <div className={clsx(
+                                                                                "w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0",
+                                                                                isSelected
+                                                                                    ? "bg-accent-theme border-accent-theme text-white"
+                                                                                    : "border-white/20 bg-white/5"
+                                                                            )}>
+                                                                                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                                                            </div>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+
+                                        {/* Sequência de Mensagens & Arquivos (Pipeline de Blocos) */}
+                                        <div className="space-y-3 pt-1">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                        Sequência de Envio (Pipeline de Blocos) <span className="text-accent-theme">*</span>
+                                                    </label>
+                                                    <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                        Organize os passos na ordem exata de entrega.
+                                                    </p>
+                                                </div>
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent-theme/15 text-accent-theme border border-accent-theme/20">
+                                                    {qrForm.blocos.length} passo{qrForm.blocos.length > 1 ? 's' : ''}
+                                                </span>
+                                            </div>
+
+                                            {/* Lista de Blocos Ordenados */}
+                                            <div className="space-y-2.5">
+                                                {qrForm.blocos.map((block, idx) => (
+                                                    <div
+                                                        key={block.id}
+                                                        className="p-3.5 rounded-2xl bg-black/25 border border-white/10 space-y-2.5 animate-in fade-in duration-150 relative group/block"
+                                                    >
+                                                        {/* Header do Bloco */}
+                                                        <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="px-2 py-0.5 rounded-lg bg-white/10 text-white font-mono text-[10px] font-bold">
+                                                                    #{idx + 1}
+                                                                </span>
+                                                                <span className={clsx(
+                                                                    "text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border flex items-center gap-1.5",
+                                                                    block.tipo === 'texto'
+                                                                        ? "bg-blue-500/15 text-blue-300 border-blue-500/30"
+                                                                        : "bg-purple-500/15 text-purple-300 border-purple-500/30"
+                                                                )}>
+                                                                    {block.tipo === 'texto' ? <FileText className="w-3 h-3" /> : <Paperclip className="w-3 h-3" />}
+                                                                    {block.tipo === 'texto' ? 'Texto' : `Arquivo (${(block as any).ext || 'Anexo'})`}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Ações do Bloco: Subir, Descer, Remover */}
+                                                            <div className="flex items-center gap-1">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={idx === 0}
+                                                                    onClick={() => moveQrBlock(idx, 'up')}
+                                                                    title="Mover para cima"
+                                                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[var(--color-text-muted)] hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                                                                >
+                                                                    <ArrowUp className="w-3 h-3" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={idx === qrForm.blocos.length - 1}
+                                                                    onClick={() => moveQrBlock(idx, 'down')}
+                                                                    title="Mover para baixo"
+                                                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-[var(--color-text-muted)] hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                                                                >
+                                                                    <ArrowDown className="w-3 h-3" />
+                                                                </button>
+                                                                {qrForm.blocos.length > 1 && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => removeQrBlock(block.id)}
+                                                                        title="Remover este passo"
+                                                                        className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-[var(--color-text-muted)] hover:text-red-400 transition-all ml-1 cursor-pointer"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Conteúdo do Bloco: Texto vs Arquivo */}
+                                                        {block.tipo === 'texto' ? (
+                                                            <div className="space-y-2">
+                                                                <textarea
+                                                                    rows={3}
+                                                                    placeholder={`Digite o texto do passo #${idx + 1}...`}
+                                                                    value={block.texto}
+                                                                    onChange={e => updateQrBlock(block.id, { texto: e.target.value })}
+                                                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all leading-relaxed custom-scrollbar"
+                                                                />
+
+                                                                {/* Variáveis Dinâmicas para este bloco */}
+                                                                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                                                    <span className="text-[9px] text-[var(--color-text-muted)] font-bold uppercase mr-1">
+                                                                        + Variáveis:
+                                                                    </span>
+                                                                    {[
+                                                                        { tag: '{cliente_nome}', label: 'Cliente' },
+                                                                        { tag: '{atendente_nome}', label: 'Atendente' },
+                                                                        { tag: '{saudacao}', label: 'Saudação' },
+                                                                        { tag: '{data_atual}', label: 'Data' }
+                                                                    ].map(v => (
+                                                                        <button
+                                                                            key={v.tag}
+                                                                            type="button"
+                                                                            onClick={() => insertVariableInBlock(block.id, v.tag)}
+                                                                            className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-accent-theme/20 hover:text-accent-theme border border-white/10 text-[9px] font-mono text-[var(--color-text-muted)] transition-all cursor-pointer"
+                                                                        >
+                                                                            {v.tag}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="space-y-2.5">
+                                                                {/* Card do Arquivo Anexado */}
+                                                                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between gap-3">
+                                                                    <div className="flex items-center gap-3 min-w-0">
+                                                                        <div className="w-9 h-9 rounded-lg bg-accent-theme/15 flex items-center justify-center text-accent-theme shrink-0">
+                                                                            {['jpg', 'jpeg', 'png', 'webp', 'gif'].includes((block.ext || '').toLowerCase()) ? (
+                                                                                <Image className="w-5 h-5" />
+                                                                            ) : ['mp4', 'webm', 'mov'].includes((block.ext || '').toLowerCase()) ? (
+                                                                                <Video className="w-5 h-5" />
+                                                                            ) : ['mp3', 'ogg', 'wav'].includes((block.ext || '').toLowerCase()) ? (
+                                                                                <Music className="w-5 h-5" />
+                                                                            ) : (
+                                                                                <FileText className="w-5 h-5" />
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-xs font-bold text-foreground truncate">
+                                                                                {block.titulo || block.filename}
+                                                                            </p>
+                                                                            <p className="text-[10px] text-[var(--color-text-muted)] font-mono">
+                                                                                {block.filename} • {block.size_formatted || 'Arquivo'}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setIsQrFilePickerOpen(true)}
+                                                                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-bold text-[var(--color-text-muted)] hover:text-foreground border border-white/10 transition-all shrink-0 cursor-pointer"
+                                                                    >
+                                                                        Trocar Arquivo
+                                                                    </button>
+                                                                </div>
+
+                                                                {/* Legenda Opcional */}
+                                                                <div>
+                                                                    <label className="block text-[9px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">
+                                                                        Legenda do Arquivo no WhatsApp (Opcional):
+                                                                    </label>
+                                                                    <input
+                                                                        type="text"
+                                                                        placeholder="Ex: Segue a tabela com as condições atualizadas..."
+                                                                        value={block.legenda || ''}
+                                                                        onChange={e => updateQrBlock(block.id, { legenda: e.target.value })}
+                                                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-foreground placeholder-[var(--color-text-muted)]/50 focus:border-accent-theme outline-none transition-all"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Botões para Adicionar Novos Passos */}
+                                            <div className="flex items-center gap-2 pt-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={addQrTextBlock}
+                                                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-dashed border-white/15 hover:border-accent-theme/40 text-xs font-bold text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5 text-accent-theme" />
+                                                    + Adicionar Texto
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        fetchFilesList(1, 'all', 'all', 'all', '');
+                                                        setIsQrFilePickerOpen(true);
+                                                    }}
+                                                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-accent-theme/10 hover:bg-accent-theme/20 border border-dashed border-accent-theme/30 hover:border-accent-theme/60 text-xs font-bold text-accent-theme transition-all cursor-pointer"
+                                                >
+                                                    <Paperclip className="w-3.5 h-3.5" />
+                                                    + Anexar do Banco de Arquivos
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* COLUNA DIREITA: Preview em Tempo Real no WhatsApp (5 colunas) */}
+                                    <div className="lg:col-span-5 p-6 bg-black/40 flex flex-col justify-between overflow-y-auto custom-scrollbar border-t lg:border-t-0">
+                                        <div className="space-y-4">
+                                            {/* Cabeçalho do Preview */}
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400">
+                                                        <Smartphone className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black uppercase tracking-wider text-foreground">
+                                                            Pré-visualização WhatsApp
+                                                        </p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                            Visualização exata recebida pelo cliente
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                                                    ● Ao Vivo
+                                                </span>
+                                            </div>
+
+                                            {/* Card Mockup de Telefone / Conversa */}
+                                            <div className="rounded-3xl border border-white/10 bg-[#0c1317] overflow-hidden shadow-2xl flex flex-col">
+                                                {/* WhatsApp Header Mockup */}
+                                                <div className="bg-[#202c33] px-4 py-3 border-b border-white/5 flex items-center justify-between shrink-0">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center font-black text-xs text-white shadow-sm">
+                                                            MS
+                                                        </div>
+                                                        <div className="leading-tight">
+                                                            <p className="text-xs font-bold text-white">Maria Silva (Cliente)</p>
+                                                            <p className="text-[10px] text-emerald-400 font-medium">online</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-slate-400">
+                                                        <Video className="w-4 h-4" />
+                                                        <Phone className="w-3.5 h-3.5" />
+                                                    </div>
+                                                </div>
+
+                                                {/* WhatsApp Chat Area (Wallpaper) */}
+                                                <div
+                                                    className="p-4 space-y-3.5 min-h-[260px] max-h-[380px] overflow-y-auto custom-scrollbar flex flex-col justify-end"
+                                                    style={{
+                                                        backgroundColor: '#0b141a',
+                                                        backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 0)',
+                                                        backgroundSize: '16px 16px'
+                                                    }}
+                                                >
+                                                    {/* Data Chip */}
+                                                    <div className="flex justify-center">
+                                                        <span className="px-2.5 py-0.5 rounded-lg bg-[#182229] text-[10px] text-slate-400 shadow-sm">
+                                                            Hoje
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Balões da Sequência */}
+                                                    {qrForm.blocos.map((block, idx) => {
+                                                        const isLast = idx === qrForm.blocos.length - 1;
+
+                                                        if (block.tipo === 'texto') {
+                                                            const resolved = resolvePreviewVariables(block.texto);
+                                                            return (
+                                                                <div key={block.id} className="space-y-1">
+                                                                    <div className="flex justify-end">
+                                                                        <div className="relative max-w-[85%] p-3 rounded-2xl rounded-tr-xs bg-[#005c4b] text-white shadow-md space-y-1">
+                                                                            <p className="text-xs font-normal leading-relaxed whitespace-pre-wrap">
+                                                                                {resolved || <span className="italic text-white/50">Texto do passo #{idx + 1}...</span>}
+                                                                            </p>
+                                                                            <div className="flex items-center justify-end gap-1 text-[9px] text-emerald-200/70 pt-0.5">
+                                                                                <span>14:32</span>
+                                                                                <CheckCheck className="w-3 h-3 text-cyan-300" />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    {!isLast && (
+                                                                        <div className="flex items-center justify-end gap-1 text-[9px] text-[var(--color-text-muted)] pr-1">
+                                                                            <Clock className="w-2.5 h-2.5 text-amber-400" />
+                                                                            <span>intervalo seguro ~1s</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        } else {
+                                                            const captionResolved = resolvePreviewVariables(block.legenda || '');
+                                                            return (
+                                                                <div key={block.id} className="space-y-1">
+                                                                    <div className="flex justify-end">
+                                                                        <div className="relative max-w-[85%] p-2 rounded-2xl rounded-tr-xs bg-[#005c4b] text-white shadow-md space-y-2">
+                                                                            {/* Card Interno do Arquivo */}
+                                                                            <div className="p-2.5 rounded-xl bg-black/20 border border-white/10 flex items-center gap-2.5">
+                                                                                <div className="w-8 h-8 rounded-lg bg-emerald-700/60 flex items-center justify-center text-white shrink-0">
+                                                                                    {['jpg', 'jpeg', 'png', 'webp', 'gif'].includes((block.ext || '').toLowerCase()) ? (
+                                                                                        <Image className="w-4 h-4" />
+                                                                                    ) : ['mp4', 'webm', 'mov'].includes((block.ext || '').toLowerCase()) ? (
+                                                                                        <Video className="w-4 h-4" />
+                                                                                    ) : (
+                                                                                        <FileText className="w-4 h-4" />
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="text-xs font-bold text-white truncate">
+                                                                                        {block.titulo || block.filename || 'Documento'}
+                                                                                    </p>
+                                                                                    <p className="text-[9px] text-emerald-200/80 font-mono truncate">
+                                                                                        {block.filename} {block.size_formatted ? `• ${block.size_formatted}` : ''}
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Legenda (se preenchida) */}
+                                                                            {captionResolved && (
+                                                                                <p className="text-xs leading-relaxed px-1 text-white/95">
+                                                                                    {captionResolved}
+                                                                                </p>
+                                                                            )}
+
+                                                                            <div className="flex items-center justify-end gap-1 text-[9px] text-emerald-200/70 pt-0.5 px-1">
+                                                                                <span>14:32</span>
+                                                                                <CheckCheck className="w-3 h-3 text-cyan-300" />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    {!isLast && (
+                                                                        <div className="flex items-center justify-end gap-1 text-[9px] text-[var(--color-text-muted)] pr-1">
+                                                                            <Clock className="w-2.5 h-2.5 text-amber-400" />
+                                                                            <span>intervalo seguro ~1s</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Nota Informativa no Rodapé do Preview */}
+                                        <div className="p-3 rounded-2xl bg-white/5 border border-white/5 mt-4 space-y-1">
+                                            <p className="text-[10px] font-bold text-foreground flex items-center gap-1.5">
+                                                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                                <span>Pipeline Sequencial Seguro</span>
+                                            </p>
+                                            <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
+                                                Cada bloco é despachado separadamente com pausa simulada de digitação para garantir conformidade e evitar bloqueios.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                </div>
+
+                                {/* Footer do Modal */}
+                                <div className="p-4 px-6 border-t border-white/10 flex items-center justify-between bg-black/15 shrink-0">
+                                    <span className="text-[11px] text-[var(--color-text-muted)] hidden sm:inline">
+                                        Atalho ativo: <strong className="text-foreground font-mono">{qrForm.atalho || '(nenhum)'}</strong>
+                                    </span>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsQrModalOpen(false)}
+                                            className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={savingQr}
+                                            onClick={handleSaveQuickReply}
+                                            className="px-6 py-2.5 rounded-xl bg-accent-theme hover:opacity-90 text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-accent-theme/20 transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {savingQr ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                            {editingQr ? 'Salvar Alterações' : 'Criar Mensagem'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Modal WhatsApp: Seletor do Banco de Arquivos para Respostas Rápidas */}
+                <AnimatePresence>
+                    {isQrFilePickerOpen && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/85 backdrop-blur-md z-[3100] flex items-center justify-center p-4"
+                            onClick={(e) => { if (e.target === e.currentTarget) setIsQrFilePickerOpen(false); }}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.94, y: 15 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.94, y: 15 }}
+                                className="relative w-full max-w-2xl bg-card rounded-3xl border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+                                style={{ background: 'var(--color-card)' }}
+                            >
+                                {/* Header */}
+                                <div className="p-6 border-b border-white/10 flex items-center justify-between shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-accent-theme/15 text-accent-theme rounded-xl">
+                                            <HardDrive className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black italic uppercase tracking-tight text-foreground">
+                                                Banco de Arquivos Pré-Salvos
+                                            </h3>
+                                            <p className="text-[10px] text-[var(--color-text-muted)] font-medium">
+                                                Selecione um arquivo da biblioteca para incluir na sequência da resposta rápida
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsQrFilePickerOpen(false)}
+                                        className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                    >
+                                        <XCircle className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                {/* Lista de Arquivos com Busca */}
+                                <div className="p-6 overflow-y-auto space-y-3 custom-scrollbar flex-1">
+                                    {filesList.length === 0 ? (
+                                        <div className="p-12 text-center space-y-3">
+                                            <Folder className="w-10 h-10 mx-auto text-[var(--color-text-muted)]" />
+                                            <p className="text-xs font-bold text-foreground">Nenhum arquivo pré-salvo cadastrado</p>
+                                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                                                Cadastre novos arquivos na aba "Banco de Arquivos" para usá-los nas mensagens rápidas.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {filesList.map(file => (
+                                                <div
+                                                    key={file.id}
+                                                    onClick={() => addQrFileBlock(file)}
+                                                    className="p-3.5 rounded-2xl bg-white/5 hover:bg-accent-theme/15 border border-white/5 hover:border-accent-theme/50 transition-all cursor-pointer flex items-center justify-between gap-3 group/fcard"
+                                                >
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <div className="w-10 h-10 rounded-xl bg-white/5 group-hover/fcard:bg-accent-theme/20 flex items-center justify-center text-accent-theme shrink-0 transition-all">
+                                                            {['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(file.ext) ? (
+                                                                <Image className="w-5 h-5" />
+                                                            ) : ['mp4', 'webm', 'mov'].includes(file.ext) ? (
+                                                                <Video className="w-5 h-5" />
+                                                            ) : ['mp3', 'ogg', 'wav'].includes(file.ext) ? (
+                                                                <Music className="w-5 h-5" />
+                                                            ) : (
+                                                                <FileText className="w-5 h-5" />
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-bold text-foreground truncate group-hover/fcard:text-accent-theme transition-colors">
+                                                                {file.titulo || file.filename}
+                                                            </p>
+                                                            <p className="text-[10px] text-[var(--color-text-muted)] truncate">
+                                                                {file.grupo || 'Geral'} • {file.size_formatted}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="px-2.5 py-1 rounded-lg bg-white/5 group-hover/fcard:bg-accent-theme group-hover/fcard:text-white text-[10px] font-bold text-[var(--color-text-muted)] transition-all shrink-0">
+                                                        + Anexar
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Footer */}
+                                <div className="p-4 border-t border-white/10 flex items-center justify-between text-[11px] text-[var(--color-text-muted)] px-6 shrink-0">
+                                    <span>Total: {filesList.length} arquivos disponíveis</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsQrFilePickerOpen(false)}
+                                        className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-foreground transition-all cursor-pointer"
+                                    >
+                                        Fechar
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Modal WhatsApp: Adicionar/Editar Canal */}
+                <AnimatePresence>
+                    {isChannelModalOpen && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[3000] flex items-center justify-center p-4"
+                            onClick={(e) => { if (e.target === e.currentTarget) setIsChannelModalOpen(false); }}
+                        >
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.93, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.93, y: 20 }}
+                                transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                                className="relative w-full max-w-md overflow-hidden rounded-3xl shadow-2xl border border-white/10"
+                                style={{ background: 'var(--color-card)' }}
+                            >
+                                {/* Header */}
+                                <div className="p-8 pb-6">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div
+                                                className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-xl transition-transform"
+                                                style={{
+                                                    backgroundColor: channelForm.color || '#8b5cf6',
+                                                    boxShadow: `0 8px 24px ${channelForm.color || '#8b5cf6'}40`
+                                                }}
+                                            >
+                                                {channelForm.name?.charAt(0).toUpperCase() || <MessageSquare className="w-6 h-6" />}
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-1">
+                                                    {editingChannel ? 'Editando canal' : 'Novo canal'}
+                                                </p>
+                                                <h3 className="text-xl font-black italic uppercase tracking-tight text-foreground leading-none">
+                                                    {channelForm.name || <span className="text-[var(--color-text-muted)] font-normal not-italic normal-case tracking-normal text-sm">Digite o nome abaixo</span>}
+                                                </h3>
+                                                {channelForm.port && (
+                                                    <p className="text-[10px] text-[var(--color-text-muted)] font-mono mt-1">porta {channelForm.port}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setIsChannelModalOpen(false)}
+                                            className="p-2 rounded-xl hover:bg-white/10 text-[var(--color-text-muted)] hover:text-foreground transition-all -mt-1 -mr-1 cursor-pointer"
+                                        >
+                                            <XCircle className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Separator */}
+                                <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+                                {/* Form Body */}
+                                <div className="px-8 py-6 space-y-5">
+
+                                    {/* Nome */}
+                                    <div>
+                                        <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                            <Tag className="w-3 h-3" />
+                                            Nome do Canal
+                                            <span className="text-accent-theme">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            autoFocus
+                                            placeholder="Ex: Suporte, Comercial, Administrativo"
+                                            value={channelForm.name || ''}
+                                            onChange={e => setChannelForm(p => ({ ...p, name: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
+                                        />
+                                    </div>
+
+                                    {/* Porta + Cor */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                                <Link2 className="w-3 h-3" />
+                                                Porta
+                                                <span className="text-accent-theme">*</span>
+                                            </label>
+                                            <input
+                                                type="number"
+                                                placeholder="5000"
+                                                value={channelForm.port || ''}
+                                                onChange={e => setChannelForm(p => ({ ...p, port: Number(e.target.value) }))}
+                                                className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-3 text-foreground text-sm font-mono placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
+                                            />
+                                            <p className="text-[9px] text-[var(--color-text-muted)]/60 mt-1.5 font-mono">Deve ser única por canal</p>
+                                        </div>
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                                <Palette className="w-3 h-3" />
+                                                Cor de Identificação
+                                            </label>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="color"
+                                                    value={channelForm.color || '#8b5cf6'}
+                                                    onChange={e => setChannelForm(p => ({ ...p, color: e.target.value }))}
+                                                    className="w-10 h-10 rounded-xl cursor-pointer bg-transparent border-0 p-0"
+                                                />
+                                                <span className="text-xs font-mono text-[var(--color-text-muted)] uppercase">{channelForm.color || '#8b5cf6'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Setores Vinculados */}
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)]">
+                                                <Layers className="w-3 h-3" />
+                                                Setores Vinculados
+                                            </label>
+                                            <span className="text-[9px] text-[var(--color-text-muted)] font-medium">
+                                                1 setor só pode pertencer a 1 conexão
+                                            </span>
+                                        </div>
+
+                                        {/* Checkbox Todos os Setores */}
+                                        {(() => {
+                                            const isOccupiedGlobally = Object.keys(occupiedSectorsMap).length > 0;
+                                            return (
+                                                <div
+                                                    onClick={() => {
+                                                        if (isOccupiedGlobally) return;
+                                                        setChannelForm(p => ({
+                                                            ...p,
+                                                            allSectors: !p.allSectors,
+                                                            sector_ids: !p.allSectors ? [] : p.sector_ids
+                                                        }));
+                                                    }}
+                                                    className={clsx(
+                                                        "flex items-center gap-3 p-3.5 rounded-2xl border transition-all select-none",
+                                                        isOccupiedGlobally
+                                                            ? "bg-white/[0.02] border-white/5 opacity-60 cursor-not-allowed"
+                                                            : channelForm.allSectors
+                                                                ? "bg-accent-theme/15 border-accent-theme/60 shadow-sm shadow-accent-theme/10 cursor-pointer"
+                                                                : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 cursor-pointer"
+                                                    )}
+                                                >
+                                                    <div className={clsx(
+                                                        "w-5 h-5 rounded-lg border flex items-center justify-center transition-all shrink-0",
+                                                        isOccupiedGlobally
+                                                            ? "border-white/10 bg-white/5 opacity-50"
+                                                            : channelForm.allSectors
+                                                                ? "bg-accent-theme border-accent-theme text-white shadow-md shadow-accent-theme/30"
+                                                                : "border-white/25 bg-white/5"
+                                                    )}>
+                                                        {channelForm.allSectors && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                            🌐 <span>Utilizar em Todos os Setores (Geral)</span>
+                                                        </p>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+                                                            {isOccupiedGlobally
+                                                                ? 'Indisponível pois já existem outros canais com setores vinculados.'
+                                                                : 'Todos os operadores da empresa poderão atender por este número.'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+
+                                        {/* Seleção de Setores Individuais com Animação Suave */}
+                                        <AnimatePresence>
+                                            {!channelForm.allSectors && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                    animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                                                    exit={{ opacity: 0, height: 0, scale: 0.98 }}
+                                                    transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                                                    className="overflow-hidden"
+                                                >
+                                                    <div className="p-3.5 rounded-2xl bg-black/25 border border-white/10 space-y-2 mt-1">
+                                                        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                                                            Selecione os setores deste canal:
+                                                        </p>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {sectors.map(sec => {
+                                                                const isSelected = channelForm.sector_ids.includes(sec.id);
+                                                                const occupiedByOther = Boolean(occupiedSectorsMap[sec.id] && occupiedSectorsMap[sec.id] !== editingChannel?.id);
+                                                                const occupiedChannelName = occupiedByOther ? (whatsappChannels.find(c => c.id === occupiedSectorsMap[sec.id])?.name || 'Outro canal') : '';
+
+                                                                return (
+                                                                    <button
+                                                                        key={sec.id}
+                                                                        type="button"
+                                                                        disabled={occupiedByOther}
+                                                                        onClick={() => {
+                                                                            setChannelForm(p => ({
+                                                                                ...p,
+                                                                                sector_ids: isSelected
+                                                                                    ? p.sector_ids.filter(id => id !== sec.id)
+                                                                                    : [...p.sector_ids, sec.id]
+                                                                            }));
+                                                                        }}
+                                                                        title={occupiedByOther ? `Já vinculado ao canal "${occupiedChannelName}"` : ''}
+                                                                        className={clsx(
+                                                                            "p-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between select-none",
+                                                                            occupiedByOther
+                                                                                ? "bg-white/[0.02] border-white/5 opacity-40 cursor-not-allowed text-slate-500"
+                                                                                : isSelected
+                                                                                    ? "bg-accent-theme/20 border-accent-theme text-foreground cursor-pointer shadow-sm shadow-accent-theme/10"
+                                                                                    : "bg-white/5 border-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-foreground cursor-pointer"
+                                                                        )}
+                                                                    >
+                                                                        <span className="truncate flex items-center gap-1.5">🏢 {sec.name}</span>
+                                                                        <div className="flex items-center gap-1 shrink-0">
+                                                                            {occupiedByOther ? (
+                                                                                <span className="text-[8px] text-amber-400 font-normal">Ocupado</span>
+                                                                            ) : (
+                                                                                <div className={clsx(
+                                                                                    "w-4 h-4 rounded-md border flex items-center justify-center transition-all",
+                                                                                    isSelected
+                                                                                        ? "bg-accent-theme border-accent-theme text-white"
+                                                                                        : "border-white/20 bg-white/5"
+                                                                                )}>
+                                                                                    {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    {/* Descrição Opcional */}
+                                    <div>
+                                        <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[var(--color-text-muted)] mb-2">
+                                            Descrição / Observação
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: Canal principal de suporte ao cliente"
+                                            value={channelForm.description || ''}
+                                            onChange={e => setChannelForm(p => ({ ...p, description: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-accent-theme/50 rounded-xl px-4 py-2.5 text-foreground text-xs placeholder-[var(--color-text-muted)]/50 focus:ring-2 focus:ring-accent-theme/20 outline-none transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Footer */}
+                                <div className="px-8 py-5 border-t border-white/10 flex items-center justify-end gap-3 bg-black/20">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsChannelModalOpen(false)}
+                                        className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-[var(--color-text-muted)] hover:text-foreground transition-all cursor-pointer"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={savingChannel || !channelForm.name || !channelForm.port}
+                                        onClick={handleSaveChannel}
+                                        className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg cursor-pointer"
+                                        style={{
+                                            backgroundColor: (!savingChannel && channelForm.name && channelForm.port)
+                                                ? (channelForm.color || 'var(--color-accent)')
+                                                : 'var(--color-accent)',
+                                            boxShadow: (!savingChannel && channelForm.name && channelForm.port)
+                                                ? `0 4px 20px ${channelForm.color || '#8b5cf6'}50`
+                                                : 'none'
+                                        }}
+                                    >
+                                        {savingChannel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                        {editingChannel ? 'Salvar Alterações' : 'Criar Canal'}
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </main >
         </div >
     );

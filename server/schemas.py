@@ -467,6 +467,7 @@ class SystemSettingsBase(BaseModel):
     whatsapp_warn_new_number: bool = True
     whatsapp_limit_active_chats: bool = True
     whatsapp_limit_count: int = 10
+    whatsapp_send_signature: bool = True
 
 class SystemSettingsUpdate(BaseModel):
     """Schema para alteração das configurações visuais."""
@@ -478,6 +479,7 @@ class SystemSettingsUpdate(BaseModel):
     whatsapp_warn_new_number: Optional[bool] = None
     whatsapp_limit_active_chats: Optional[bool] = None
     whatsapp_limit_count: Optional[int] = None
+    whatsapp_send_signature: Optional[bool] = None
 
 class SystemSettings(SystemSettingsBase):
     """Schema completo das configurações do sistema."""

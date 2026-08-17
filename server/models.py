@@ -334,6 +334,7 @@ class SystemSettings(Base):
     whatsapp_warn_new_number = Column(Boolean, default=True, nullable=False)
     whatsapp_limit_active_chats = Column(Boolean, default=True, nullable=False)
     whatsapp_limit_count = Column(Integer, default=10, nullable=False)
+    whatsapp_send_signature = Column(Boolean, default=True, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Atualização de relacionamento tardio para evitar dependência circular

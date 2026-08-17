@@ -5,6 +5,10 @@
     "color": "#8b5cf6",
     "description": "TESTE",
     "sector_id": 1,
+    "sector_ids": [
+      1
+    ],
+    "all_sectors": false,
     "id": "teste"
   }
 ]

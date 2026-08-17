@@ -151,6 +151,13 @@ def seed_db():
         # Garante que existam Categoria e Status padrão
         crud.get_or_create_default_category(db, sector_id=support_sector.id)
         crud.get_or_create_default_status(db, sector_id=support_sector.id)
+
+        # Garante colunas adicionais no system_settings
+        try:
+            db.execute(text("ALTER TABLE system_settings ADD COLUMN whatsapp_send_signature BOOLEAN DEFAULT 1"))
+            db.commit()
+        except Exception:
+            db.rollback()
         
     except Exception as e:
         # Caso o banco ainda não exista fisicamente, o erro é ignorado para ser tratado na primeira execução

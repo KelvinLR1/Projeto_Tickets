@@ -12,6 +12,8 @@ type WhatsAppChannel = {
     color: string;
     description?: string;
     sector_id?: number | null;
+    sector_ids?: number[] | null;
+    all_sectors?: boolean;
 };
 
 function buildIframeUrl(channel: WhatsAppChannel, user: any, theme: string): string {
@@ -56,16 +58,43 @@ export default function WhatsAppPage() {
             if (res.ok) {
                 const data: WhatsAppChannel[] = await res.json();
                 if (data && data.length > 0) {
-                    setChannels(data);
-                    if (!data.some(c => c.id === activeChannelId)) {
-                        setActiveChannelId(data[0].id);
+                    let accessibleChannels = data;
+
+                    // Se o usuário não for ADMIN/ROOT, filtrar canais autorizados para os seus setores
+                    const isSuperUser = user?.role === 'ADMIN' || user?.role === 'ROOT';
+                    if (!isSuperUser && user?.sectors && user.sectors.length > 0) {
+                        const userSectorIds = user.sectors.map(s => Number(s.id));
+                        accessibleChannels = data.filter(c => {
+                            // Canal livre para todos os setores
+                            if (c.all_sectors || (!c.sector_ids?.length && !c.sector_id)) {
+                                return true;
+                            }
+                            // Canal com múltiplos setores vinculados
+                            if (Array.isArray(c.sector_ids) && c.sector_ids.length > 0) {
+                                return c.sector_ids.some(secId => userSectorIds.includes(Number(secId)));
+                            }
+                            // Canal com setor único legado
+                            if (c.sector_id) {
+                                return userSectorIds.includes(Number(c.sector_id));
+                            }
+                            return true;
+                        });
+                    }
+
+                    if (accessibleChannels.length > 0) {
+                        setChannels(accessibleChannels);
+                        if (!accessibleChannels.some(c => c.id === activeChannelId)) {
+                            setActiveChannelId(accessibleChannels[0].id);
+                        }
+                    } else {
+                        setChannels([]);
                     }
                 }
             }
         } catch {
             // Permanece com o canal padrão
         }
-    }, [activeChannelId]);
+    }, [activeChannelId, user]);
 
     useEffect(() => {
         fetchChannels();

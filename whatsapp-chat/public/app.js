@@ -26,6 +26,7 @@ let currentChatMessages = [];
 let isQrBypassed = sessionStorage.getItem('tf_qr_bypassed') === 'true';
 let allowedSectors = [];
 let selectedSectorsFilter = [];
+let isSignatureToClientEnabled = localStorage.getItem('tf_signature_to_client') !== 'false';
 
 // Elementos da DOM
 const qrModal = document.getElementById('qr-modal');
@@ -56,6 +57,27 @@ const chatClientAvatar = document.getElementById('chat-client-avatar');
 const messagesContainer = document.getElementById('chat-messages-container');
 const chatInput = document.getElementById('chat-input');
 
+if (messagesContainer) {
+  messagesContainer.addEventListener('scroll', handleChatScroll, { passive: true });
+
+  messagesContainer.addEventListener('mousemove', (e) => {
+    const trigger = messagesContainer.querySelector('.chat-top-history-trigger');
+    if (!trigger) return;
+    const rect = messagesContainer.getBoundingClientRect();
+    const distanceFromTop = e.clientY - rect.top;
+    if (distanceFromTop >= 0 && distanceFromTop <= 55) {
+      trigger.classList.add('is-near-top');
+    } else {
+      trigger.classList.remove('is-near-top');
+    }
+  });
+
+  messagesContainer.addEventListener('mouseleave', () => {
+    const trigger = messagesContainer.querySelector('.chat-top-history-trigger');
+    if (trigger) trigger.classList.remove('is-near-top');
+  });
+}
+
 const statusBadge = document.getElementById('connection-status-badge');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
@@ -68,6 +90,9 @@ function updateBadge(badge, count) {
     badge.classList.remove('hidden');
   } else {
     badge.classList.add('hidden');
+  }
+  if (typeof window.forceUpdateIndicators === 'function') {
+    requestAnimationFrame(window.forceUpdateIndicators);
   }
 }
 
@@ -137,6 +162,22 @@ function initOperator() {
 
   // Inicializa os setores
   initSectors();
+
+  // Sincroniza a configuração global de assinatura do backend (apenas se não houver preferência local)
+  if (localStorage.getItem('tf_signature_to_client') === null) {
+    fetch('http://localhost:8080/system-settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(settings => {
+        if (settings && typeof settings.whatsapp_send_signature === 'boolean') {
+          isSignatureToClientEnabled = settings.whatsapp_send_signature;
+        }
+        updateSignatureOptionUI();
+      })
+      .catch(() => updateSignatureOptionUI());
+  } else {
+    // Inicializa estado visual da opção de assinatura
+    updateSignatureOptionUI();
+  }
 }
 
 function initSectors() {
@@ -274,10 +315,14 @@ function updateTabIndicator(activeBtn) {
   
   const relativeLeft = btnRect.left - containerRect.left;
   const width = btnRect.width;
+  const height = btnRect.height;
+  const relativeTop = btnRect.top - containerRect.top;
   
   if (width > 0) {
     indicator.style.left = `${relativeLeft}px`;
     indicator.style.width = `${width}px`;
+    indicator.style.top = `${relativeTop}px`;
+    indicator.style.height = `${height}px`;
     indicator.classList.remove('opacity-0', 'hidden');
   }
 }
@@ -327,19 +372,36 @@ function switchSidebarTab(tab) {
 
   buttons.forEach(item => {
     if (item.name === tab) {
-      item.btn.classList.remove('text-slate-400', 'hover:text-slate-200', 'hover:scale-[1.01]', 'active:scale-[0.98]');
-      item.btn.classList.add('text-white', 'scale-[1.02]');
-      item.container.classList.remove('hidden');
-      void item.container.offsetWidth; // Force browser reflow to restart keyframe animation
-      item.container.classList.add('tab-content-active');
-      updateTabIndicator(item.btn);
+      if (item.btn) {
+        item.btn.classList.remove('text-slate-400', 'hover:text-slate-200', 'hover:scale-[1.01]', 'active:scale-[0.98]');
+        item.btn.classList.add('text-white', 'scale-[1.02]');
+      }
+      if (item.container) {
+        item.container.classList.remove('hidden');
+        void item.container.offsetWidth; // Force browser reflow to restart keyframe animation
+        item.container.classList.add('tab-content-active');
+      }
+      if (item.btn) updateTabIndicator(item.btn);
     } else {
-      item.btn.classList.remove('text-white', 'scale-[1.02]');
-      item.btn.classList.add('text-slate-400', 'hover:text-slate-200', 'hover:scale-[1.01]', 'active:scale-[0.98]');
-      item.container.classList.add('hidden');
-      item.container.classList.remove('tab-content-active');
+      if (item.btn) {
+        item.btn.classList.remove('text-white', 'scale-[1.02]');
+        item.btn.classList.add('text-slate-400', 'hover:text-slate-200', 'hover:scale-[1.01]', 'active:scale-[0.98]');
+      }
+      if (item.container) {
+        item.container.classList.add('hidden');
+        item.container.classList.remove('tab-content-active');
+      }
     }
   });
+
+  if (tab === 'active') {
+    const activeFilterBtn = activeFilterType === 'all' ? btnActiveFilterAll : (activeFilterType === 'unread' ? btnActiveFilterUnread : (activeFilterType === 'groups' ? btnActiveFilterGroups : null));
+    if (activeFilterBtn) updateActiveFilterIndicator(activeFilterBtn);
+  }
+
+  if (selectedChatJid) {
+    updateActiveCardSelection(selectedChatJid);
+  }
 }
 
 // ==============================================================================
@@ -361,6 +423,11 @@ function bypassQR() {
   isQrBypassed = true;
   sessionStorage.setItem('tf_qr_bypassed', 'true');
   qrModal.classList.add('hidden');
+  setTimeout(() => {
+    if (typeof window.forceUpdateIndicators === 'function') {
+      window.forceUpdateIndicators();
+    }
+  }, 50);
 }
 
 async function handleNewChatSubmit(e) {
@@ -433,8 +500,8 @@ socket.on('whatsapp_status', ({ status, qr }) => {
     qrModal.classList.add('hidden');
     
     // Badge do Header -> Verde
-    statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
-    statusText.textContent = 'Conectado';
+    if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse';
+    if (statusText) statusText.textContent = 'Conectado';
   } else if (status === 'aguardando_qr') {
     // Exibe Modal do QR Code se não estiver em bypass
     if (!isQrBypassed) {
@@ -449,8 +516,8 @@ socket.on('whatsapp_status', ({ status, qr }) => {
     qrStatusText.textContent = 'Aguardando leitura pelo celular...';
     
     // Badge do Header -> Laranja
-    statusDot.className = 'w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse';
-    statusText.textContent = 'QR Code Pendente';
+    if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse';
+    if (statusText) statusText.textContent = 'QR Code Pendente';
   } else {
     // Desconectado / Carregando
     if (!isQrBypassed) {
@@ -461,8 +528,8 @@ socket.on('whatsapp_status', ({ status, qr }) => {
     qrStatusText.textContent = 'Inicializando WhatsApp local...';
     
     // Badge do Header -> Vermelho
-    statusDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
-    statusText.textContent = 'Desconectado';
+    if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+    if (statusText) statusText.textContent = 'Desconectado';
   }
 });
 
@@ -570,32 +637,35 @@ function renderQueueList() {
     return;
   }
 
-  queueContainer.innerHTML = filtered.map(chat => `
-    <div oncontextmenu="openChatContextMenu(event, '${chat.cliente_jid}')" class="glass-card rounded-2xl p-4 flex flex-col gap-3 relative fade-in border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-300">
-      <div class="flex items-center gap-3">
-        ${renderContactAvatarHTML(chat, false)}
-        <div class="leading-tight text-left flex-1 min-w-0">
-          <p class="text-xs font-semibold text-slate-100 truncate" title="${chat.cliente_nome}">${chat.cliente_nome}</p>
-          <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+  queueContainer.innerHTML = filtered.map(chat => {
+    const isSelected = selectedChatJid === chat.cliente_jid;
+    return `
+      <div oncontextmenu="openChatContextMenu(event, '${chat.cliente_jid}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex flex-col gap-3 relative fade-in border ${isSelected ? 'active' : 'border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.03]'} transition-all duration-300">
+        <div class="flex items-center gap-3">
+          ${renderContactAvatarHTML(chat, isSelected)}
+          <div class="leading-tight text-left flex-1 min-w-0">
+            <p class="text-xs font-semibold text-slate-100 truncate" title="${chat.cliente_nome}">${chat.cliente_nome}</p>
+            <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+          </div>
+          <!-- Ícones de Ação da Fila -->
+          <div class="flex items-center gap-1 shrink-0">
+            <!-- Ícone de Informações -->
+            <button onclick="openClientInfoDrawer('${chat.cliente_jid}', '${chat.cliente_nome}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shadow-sm" title="Informações do contato">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            </button>
+            <!-- Ícone de Mensagens (Modo Leitura) -->
+            <button onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shadow-sm" title="Visualizar conversa (Modo Leitura)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </button>
+          </div>
         </div>
-        <!-- Ícones de Ação da Fila -->
-        <div class="flex items-center gap-1 shrink-0">
-          <!-- Ícone de Informações -->
-          <button onclick="openClientInfoDrawer('${chat.cliente_jid}', '${chat.cliente_nome}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shadow-sm" title="Informações do contato">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
-          <!-- Ícone de Mensagens (Modo Leitura) -->
-          <button onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shadow-sm" title="Visualizar conversa (Modo Leitura)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </button>
-        </div>
+        
+        <button onclick="takeChat('${chat.cliente_jid}')" class="w-full h-9 rounded-xl bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/20 hover:border-transparent text-amber-400 text-xs font-bold transition-all duration-200 active:scale-[0.98]">
+          Atender Cliente
+        </button>
       </div>
-      
-      <button onclick="takeChat('${chat.cliente_jid}')" class="w-full h-9 rounded-xl bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/20 hover:border-transparent text-amber-400 text-xs font-bold transition-all duration-200 active:scale-[0.98]">
-        Atender Cliente
-      </button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 // Assume conversa da fila
@@ -703,16 +773,18 @@ function renderHistoryChats() {
 
   historyListContainer.innerHTML = filtered.map(chat => {
     const isSelected = selectedChatJid === chat.cliente_jid;
+    const dateVal = chat.finished_at || chat.started_at || chat.created_at || chat.timestamp;
+    const formattedDate = dateVal ? new Date(dateVal).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
     return `
-      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
+      <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 border ${isSelected ? 'active' : ''} hover:border-white/[0.08]">
         ${renderContactAvatarHTML(chat, isSelected)}
         <div class="leading-tight text-left flex-1 min-w-0">
           <p class="text-xs font-semibold text-slate-200 truncate" title="${chat.cliente_nome}">${chat.cliente_nome}</p>
           <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
         </div>
         <div class="flex flex-col items-end gap-1.5 shrink-0 text-right">
-          <span class="text-[8px] bg-slate-800 text-slate-400 font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider">Finalizado</span>
-          <span class="text-[7px] text-slate-600 font-mono">${chat.started_at ? new Date(chat.started_at).toLocaleDateString([], {day: '2-digit', month: '2-digit'}) : ''}</span>
+          <span class="text-[9px] bg-slate-800/80 text-slate-400 font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border border-white/5">Finalizado</span>
+          <span class="text-[11px] font-semibold text-slate-300 font-mono tracking-tight">${formattedDate}</span>
         </div>
       </div>
     `;
@@ -951,25 +1023,24 @@ function closeActiveChatAreaWithAnimation(targetJid) {
   if (!activeChatArea) return;
 
   if (!targetJid || selectedChatJid === targetJid) {
+    selectedChatJid = null;
+    selectedChatName = '';
+    updateActiveCardSelection(null);
+
     // 1. Aplica classe de saída suave
     activeChatArea.classList.add('chat-viewport-exit');
 
     // 2. Aguarda o encerramento fluido da transição
     setTimeout(() => {
-      if (!targetJid || selectedChatJid === targetJid) {
-        selectedChatJid = null;
-        selectedChatName = '';
+      activeChatArea.classList.add('hidden');
+      activeChatArea.classList.remove('chat-viewport-exit');
 
-        activeChatArea.classList.add('hidden');
-        activeChatArea.classList.remove('chat-viewport-exit');
-
-        if (emptyChatState) {
-          emptyChatState.classList.remove('hidden');
-          emptyChatState.classList.add('empty-state-enter');
-          setTimeout(() => {
-            if (emptyChatState) emptyChatState.classList.remove('empty-state-enter');
-          }, 450);
-        }
+      if (emptyChatState) {
+        emptyChatState.classList.remove('hidden');
+        emptyChatState.classList.add('empty-state-enter');
+        setTimeout(() => {
+          if (emptyChatState) emptyChatState.classList.remove('empty-state-enter');
+        }, 450);
       }
     }, 400);
   }
@@ -1512,13 +1583,34 @@ function renderActiveChats() {
       } else {
         cardEl.classList.remove('active');
       }
+
+      // Sincroniza o indicador de mensagem não lida
+      const existingDot = cardEl.querySelector('[title="Nova mensagem não lida"]');
+      if (chat.unread === 1 && !isSelected) {
+        if (!existingDot) {
+          const dotWrapper = document.createElement('div');
+          dotWrapper.className = 'flex items-center gap-1.5 shrink-0';
+          dotWrapper.title = 'Nova mensagem não lida';
+          dotWrapper.innerHTML = `
+            <div class="relative flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
+            </div>
+          `;
+          cardEl.appendChild(dotWrapper);
+        }
+      } else {
+        if (existingDot) {
+          existingDot.remove();
+        }
+      }
     });
     return;
   }
 
   activeListContainer.innerHTML = filtered.map(chat => {
     const isSelected = selectedChatJid === chat.cliente_jid;
-    const isUnread = chat.unread === 1;
+    const isUnread = chat.unread === 1 && !isSelected;
     const isGroup = chat.cliente_jid && chat.cliente_jid.endsWith('@g.us');
     return `
       <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" oncontextmenu="openChatContextMenu(event, '${chat.cliente_jid}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer border ${isSelected ? 'active' : ''}">
@@ -1532,18 +1624,14 @@ function renderActiveChats() {
           </div>
           <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
-          ${isUnread ? `
-            <div class="relative flex h-2 w-2" title="Mensagem não lida">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+        ${isUnread ? `
+          <div class="flex items-center gap-1.5 shrink-0" title="Nova mensagem não lida">
+            <div class="relative flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
             </div>
-          ` : ''}
-          <div class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </div>
-        </div>
+        ` : ''}
       </div>
     `;
   }).join('');
@@ -1551,11 +1639,13 @@ function renderActiveChats() {
 
 // Atualiza o destaque ativo dos cards na sidebar sem destruir/recriar o DOM
 function updateActiveCardSelection(selectedJid) {
-  document.querySelectorAll('#active-chats-list .glass-card, #queue-list-container .glass-card, #history-list-container .glass-card').forEach(card => {
+  document.querySelectorAll('#active-list .glass-card, #queue-list-container .glass-card, #history-list .glass-card, [data-client-jid]').forEach(card => {
     const cardJid = card.getAttribute('data-client-jid');
-    if (cardJid === selectedJid) {
+    if (cardJid && cardJid === selectedJid) {
       card.classList.add('active');
-    } else {
+      const unreadDot = card.querySelector('[title="Nova mensagem não lida"]');
+      if (unreadDot) unreadDot.remove();
+    } else if (cardJid) {
       card.classList.remove('active');
     }
   });
@@ -1563,15 +1653,48 @@ function updateActiveCardSelection(selectedJid) {
 
 let isUserSwitchingChat = false;
 
+let pendingUnreadCheck = false;
+let unreadDividerMsgId = null;
+
+function createUnreadDividerElement() {
+  const divider = document.createElement('div');
+  divider.className = 'w-full flex items-center justify-center gap-3 my-4 py-1 select-none animate-in fade-in duration-300';
+  divider.innerHTML = `
+    <div class="flex-1 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/35 to-transparent"></div>
+    <span class="text-[10px] font-black uppercase tracking-widest text-emerald-400 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)] flex items-center gap-1.5">
+      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-emerald-400"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+      <span>MENSAGENS NÃO LIDAS</span>
+    </span>
+    <div class="flex-1 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/35 to-transparent"></div>
+  `;
+  return divider;
+}
+
 // Seleciona um chat ativo
 function selectChat(jid, name) {
   const isChanging = selectedChatJid !== jid;
   selectedChatJid = jid;
   selectedChatName = name;
 
+  // Verifica se o chat tinha mensagens não lidas antes de zerar
+  const chatObj = activeChats.find(c => c.cliente_jid === jid);
+  const wasUnread = chatObj && chatObj.unread === 1;
+  if (wasUnread) {
+    pendingUnreadCheck = true;
+  } else if (isChanging) {
+    unreadDividerMsgId = null;
+    pendingUnreadCheck = false;
+  }
+
+  // Zera unread localmente de forma imediata
+  if (chatObj) {
+    chatObj.unread = 0;
+  }
+
   // 1. Limpar rascunho de texto e estado de áudio da conversa anterior ao trocar
   if (isChanging) {
     isUserSwitchingChat = true;
+    isShowingOlderMessages = false;
     if (chatInput) chatInput.value = '';
     resetAudioState();
     cancelReply();
@@ -1617,52 +1740,41 @@ function selectChat(jid, name) {
 // 💬 RENDERIZAÇÃO DE MENSAGENS E HISTÓRICO
 // ==============================================================================
 
-// Recebe Histórico do Chat Selecionado
-socket.on('chat_history', ({ cliente_jid, messages }) => {
-  if (selectedChatJid !== cliente_jid) return;
+let isShowingOlderMessages = false;
 
-  const isAlreadyUpToDate = !isUserSwitchingChat &&
-    currentChatMessages.length === messages.length &&
-    messages.length > 0 &&
-    currentChatMessages[messages.length - 1]?.id === messages[messages.length - 1]?.id;
-
-  currentChatMessages = messages;
-
-  if (!isAlreadyUpToDate) {
-    messagesContainer.innerHTML = '<div id="chat-scroll-anchor" class="h-10 w-full shrink-0 pointer-events-none"></div>';
-    messages.forEach(msg => {
-      appendMessageHTML(msg);
-    });
-    scrollToBottom();
+function splitMessagesBySession(messages) {
+  if (!messages || messages.length === 0) {
+    return { older: [], current: [] };
   }
 
-  // Executa animação de entrada graciosa apenas quando o usuário troca de conversa
-  if (isUserSwitchingChat) {
-    isUserSwitchingChat = false;
-    if (activeChatArea) {
-      activeChatArea.classList.remove('chat-switch-out');
-      void activeChatArea.offsetWidth; // Force reflow para reinício do keyframe
-      activeChatArea.classList.add('chat-switch-in');
+  // 1. Procura por mensagens de sistema indicando encerramento de atendimento anterior
+  let splitIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.remetente === 'sistema' && (
+      (m.texto && m.texto.toLowerCase().includes('finalizado')) ||
+      (m.texto && m.texto.toLowerCase().includes('encerrado'))
+    )) {
+      // Se a última mensagem for o próprio encerramento (conversa finalizada no histórico), procura a anterior
+      if (i === messages.length - 1) {
+        continue;
+      }
+      splitIndex = i;
+      break;
     }
   }
-});
 
-// Recebe Nova Mensagem
-socket.on('new_message', (msg) => {
-  // Se for mensagem do chat selecionado
-  if (selectedChatJid === msg.cliente_jid) {
-    currentChatMessages.push(msg);
-    appendMessageHTML(msg);
-    scrollToBottom();
-    // Avisa o servidor que já visualizamos a mensagem para limpar o status "não lido"
-    if (currentOperator) {
-      socket.emit('select_chat', { cliente_jid: selectedChatJid, atendente_id: currentOperator.id });
-    }
+  if (splitIndex !== -1 && splitIndex < messages.length - 1) {
+    return {
+      older: messages.slice(0, splitIndex + 1),
+      current: messages.slice(splitIndex + 1)
+    };
   }
-});
 
-// Adiciona HTML de mensagem à tela
-function appendMessageHTML(msg) {
+  return { older: [], current: messages };
+}
+
+function createMessageElement(msg) {
   const isSystem = msg.remetente === 'sistema';
   const isClient = msg.remetente === 'cliente';
   
@@ -1701,53 +1813,48 @@ function appendMessageHTML(msg) {
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <span>Nota Interna da Equipe</span>
             </div>
-            <span class="text-[10px] text-violet-400/80 font-mono">${formattedTime}</span>
+            <span class="text-[9px] text-violet-400/70 font-mono">${formattedTime}</span>
           </div>
-          <p class="whitespace-pre-wrap leading-relaxed text-xs text-violet-100/90 font-medium">${cleanText}</p>
+          <p class="text-xs text-violet-200 leading-relaxed break-words font-medium">${cleanText}</p>
         </div>
       `;
-      messagesContainer.appendChild(msgDiv);
-      return;
+      return msgDiv;
     }
 
-    // Parser de citação de resposta
-    let textToShow = msg.texto;
+    // Processa citação / resposta (reply_to)
     let quoteHTML = '';
-    if (msg.texto && msg.texto.startsWith('*Respondendo a:*')) {
-      const match = msg.texto.match(/^\*Respondendo a:\*\s*_"([\s\S]*?)"_\n\n([\s\S]*)$/);
-      if (match) {
-        const quotedText = match[1];
-        const replyText = match[2];
-        quoteHTML = `
-          <div class="mb-2 p-2 rounded-lg bg-black/20 border-l-4 border-white/40 text-[11px] opacity-80 italic max-h-16 overflow-y-auto custom-scrollbar text-left text-slate-100">
-            ${quotedText}
-          </div>
-        `;
-        textToShow = replyText;
-      }
+    if (msg.reply_to_text) {
+      quoteHTML = `
+        <div class="p-2 mb-1.5 rounded-lg bg-black/20 border-l-4 border-indigo-500 text-[11px] text-slate-300 opacity-90 truncate max-w-xs select-none">
+          <span class="font-bold text-[10px] text-indigo-400 block">${msg.reply_to_sender || 'Mensagem'}</span>
+          <span class="truncate block">${msg.reply_to_text}</span>
+        </div>
+      `;
     }
 
-    // Renderizador de reação (Suporte a Múltiplos Emojis e Contadores estilo WhatsApp)
-    let reactionHTML = renderReactionBadgeHTML(msg.id, msg.reacao);
-
-    // Renderizador de conteúdo (anexo, áudio de voz vs texto)
-    let contentHTML = `<p class="whitespace-pre-wrap leading-relaxed">${textToShow}</p>`;
+    // Processa mídia ou áudio ou texto simples
+    let contentHTML = `<p class="whitespace-pre-wrap leading-relaxed text-[13px]">${msg.texto || ''}</p>`;
     
-    if (textToShow && textToShow.startsWith('[ANEXO] ')) {
-      // Parser para [ANEXO] url \n legenda
-      const parts = textToShow.substring(8).split('\n');
-      const url = parts[0].trim();
-      const caption = parts.slice(1).join('\n').trim();
-      
-      const ext = url.split('.').pop().toLowerCase();
-      const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
-      const isVideo = ['mp4', 'webm', 'ogg'].includes(ext);
+    if (msg.media_url || (msg.texto && (msg.texto.startsWith('http') || msg.texto.startsWith('/media/') || msg.texto.startsWith('data:image/')) && !msg.texto.includes(' '))) {
+      const url = msg.media_url || msg.texto;
+      const isImg = url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || url.startsWith('data:image/');
+      const isPdf = url.match(/\.pdf($|\?)/i);
+      const isVideo = url.match(/\.(mp4|webm|mov)($|\?)/i);
+      const caption = msg.caption || '';
       
       let mediaHtml = '';
-      if (isImage) {
-        mediaHtml = `<img src="${url}" class="max-w-[240px] md:max-w-xs max-h-64 rounded-lg object-contain cursor-pointer shadow-md mb-1 hover:brightness-110 transition-all" onclick="window.open('${url}', '_blank')" />`;
+      if (isImg) {
+        mediaHtml = `
+          <div class="relative group/media overflow-hidden rounded-xl cursor-pointer max-w-[260px] md:max-w-xs mb-1" onclick="openMediaPreview('${url}', 'image')">
+            <img src="${url}" class="w-full h-auto object-cover max-h-60 rounded-xl transition-transform duration-300 group-hover/media:scale-105" loading="lazy" alt="Mídia">
+          </div>
+        `;
       } else if (isVideo) {
-        mediaHtml = `<video src="${url}" controls class="max-w-[240px] md:max-w-xs max-h-64 rounded-lg shadow-md mb-1"></video>`;
+        mediaHtml = `
+          <div class="rounded-xl overflow-hidden max-w-[260px] md:max-w-xs mb-1">
+            <video src="${url}" controls class="w-full h-auto max-h-60 rounded-xl"></video>
+          </div>
+        `;
       } else {
         const filename = url.split('/').pop();
         mediaHtml = `
@@ -1780,44 +1887,63 @@ function appendMessageHTML(msg) {
             <button type="button" onclick="cycleAudioPlaybackRate(this, ${msg.id})" class="w-9 h-5 flex items-center justify-center rounded-md text-[9px] font-bold font-mono tracking-tight transition-all opacity-75 hover:opacity-100 bg-black/20 hover:bg-black/40 border border-white/10 cursor-pointer shrink-0" title="Velocidade de Reprodução">1x</button>
           </div>
 
-          <div class="relative flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-black/20 border border-white/10 shadow-inner">
-            <audio id="msg-audio-${msg.id}" src="${msg.texto}" preload="auto" onloadedmetadata="updateMsgAudioPlayer(${msg.id})" ondurationchange="updateMsgAudioPlayer(${msg.id})" oncanplay="updateMsgAudioPlayer(${msg.id})" ontimeupdate="updateMsgAudioPlayer(${msg.id})" onended="resetMsgAudioPlayer(${msg.id})"></audio>
-
-            <button type="button" id="msg-audio-btn-${msg.id}" onclick="toggleMsgAudioPlay(${msg.id})" class="w-8 h-8 rounded-full bg-[var(--color-primary-theme)] text-white flex items-center justify-center shrink-0 shadow-[0_0_12px_var(--color-primary-theme)] hover:scale-105 active:scale-95 transition-all cursor-pointer">
-              <svg id="msg-audio-play-icon-${msg.id}" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="ml-0.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              <svg id="msg-audio-pause-icon-${msg.id}" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          <div class="flex items-center gap-2.5">
+            <button type="button" onclick="toggleMsgAudio(${msg.id})" id="btn-audio-play-${msg.id}" class="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/15 text-white transition-all duration-200 active:scale-90 cursor-pointer shadow-md shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" id="icon-audio-play-${msg.id}"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             </button>
 
-            <span id="msg-audio-timer-${msg.id}" class="text-[10px] font-mono font-bold tracking-tight text-white/90 shrink-0 select-none">00:00 / 00:00</span>
-
-            <div id="msg-audio-track-${msg.id}" onmousedown="startMsgAudioDrag(${msg.id}, event)" ontouchstart="startMsgAudioDrag(${msg.id}, event)" onclick="seekMsgAudio(${msg.id}, event)" class="relative flex-1 h-4 rounded-full cursor-pointer py-1 group/track flex items-center select-none">
-              <div class="w-full h-1.5 rounded-full relative overflow-hidden" style="background: color-mix(in srgb, var(--color-foreground) 20%, transparent);">
-                <div id="msg-audio-bar-${msg.id}" class="absolute top-0 left-0 h-full rounded-full bg-[var(--color-primary-theme)] shadow-[0_0_8px_var(--color-primary-theme)]" style="width: 0%;"></div>
+            <div class="flex-1 flex flex-col justify-center min-w-0">
+              <div class="w-full h-4 relative flex items-center cursor-pointer group/track" onclick="seekMsgAudio(event, ${msg.id})" onmousedown="startMsgAudioScrub(event, ${msg.id})" ontouchstart="startMsgAudioScrubTouch(event, ${msg.id})">
+                <div class="w-full h-1.5 rounded-full bg-white/15 overflow-hidden relative">
+                  <div id="track-audio-fill-${msg.id}" class="h-full rounded-full transition-[width] duration-75" style="width: 0%; background: var(--color-primary-theme, #6366f1); box-shadow: 0 0 8px var(--color-primary-theme, #6366f1);"></div>
+                </div>
+                <div id="thumb-audio-pin-${msg.id}" class="absolute w-3 h-3 rounded-full bg-white border-2 border-slate-900 shadow-md transform -translate-x-1/2 pointer-events-none transition-transform duration-100 group-hover/track:scale-125" style="left: 0%;"></div>
               </div>
-              <div id="msg-audio-pin-${msg.id}" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-[var(--color-primary-theme)] shadow-[0_0_8px_var(--color-primary-theme)] group-hover/track:scale-125 transition-transform duration-75" style="left: 0%;"></div>
+
+              <div class="flex items-center justify-between text-[10px] font-mono opacity-70 mt-0.5 select-none">
+                <span id="time-audio-current-${msg.id}">0:00</span>
+                <span id="time-audio-duration-${msg.id}">--:--</span>
+              </div>
             </div>
+
+            <audio id="msg-audio-${msg.id}" src="${msg.texto}" ontimeupdate="updateMsgAudioProgress(${msg.id})" onended="onMsgAudioEnded(${msg.id})" onloadedmetadata="onMsgAudioLoaded(${msg.id})"></audio>
           </div>
         </div>
       `;
     }
 
+    let reactionHTML = '';
+    if (msg.reacao) {
+      reactionHTML = renderReactionBadgeHTML(msg.id, msg.reacao);
+    }
+
     const statusCheckSVG = (!isClient && !isSystem) ? `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="inline opacity-85 shrink-0"><path d="M20 6 9 17l-5-5"/></svg>` : '';
 
-    msgDiv.innerHTML = `
-      <div class="${bubbleClass}">
-        ${quoteHTML}
-        ${contentHTML}
-        <span class="msg-time">${formattedTime}${statusCheckSVG}</span>
-        ${reactionHTML}
-      </div>
-    `;
-  }
+    let attendantHeaderHTML = '';
+    if (!isClient && !isSystem) {
+      const opName = msg.atendente_nome || (msg.remetente !== 'cliente' && msg.remetente !== 'sistema' && msg.remetente !== 'bot' ? msg.remetente : 'Atendente');
+      const isSigned = msg.assinado_cliente === 1 || msg.assinado_cliente === true || msg.assinado_cliente === '1';
+      
+      attendantHeaderHTML = `
+        <div class="flex items-center justify-between gap-2 pb-1 mb-1 border-b border-white/10 text-[10px] font-bold select-none">
+          <div class="flex items-center gap-1 opacity-90 truncate text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span class="truncate">${opName}</span>
+          </div>
+          ${isSigned ? `
+            <span class="inline-flex items-center justify-center w-4 h-4 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 shrink-0 cursor-default" title="Assinado (nome do atendente enviado)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+          ` : `
+            <span class="inline-flex items-center justify-center w-4 h-4 rounded-md bg-white/5 border border-white/10 text-white/40 shrink-0 cursor-default" title="Não assinado">
+              <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            </span>
+          `}
+        </div>
+      `;
+    }
 
-  const anchor = document.getElementById('chat-scroll-anchor');
-  if (anchor) {
-    messagesContainer.insertBefore(msgDiv, anchor);
-  } else {
-    messagesContainer.appendChild(msgDiv);
+    msgDiv.innerHTML = `<div class="${bubbleClass}">${attendantHeaderHTML}${quoteHTML}${contentHTML}<span class="msg-time">${formattedTime}${statusCheckSVG}</span>${reactionHTML}</div>`;
   }
 
   // Precarrega metadados do áudio imediatamente para exibir a duração real (MM:SS) sem precisar dar play
@@ -1827,17 +1953,338 @@ function appendMessageHTML(msg) {
     audioEl.load();
     loadMsgAudioDuration(msg.id, msg.texto);
   }
+
+  return msgDiv;
 }
+
+function appendMessageHTML(msg) {
+  const msgDiv = createMessageElement(msg);
+  const anchor = document.getElementById('chat-scroll-anchor');
+  if (anchor) {
+    messagesContainer.insertBefore(msgDiv, anchor);
+  } else {
+    messagesContainer.appendChild(msgDiv);
+  }
+}
+
+function renderChatMessages(autoScroll = true, animateOlder = false) {
+  if (!messagesContainer) return;
+
+  const { older, current } = splitMessagesBySession(currentChatMessages);
+
+  older.forEach(m => { m._isOlder = true; });
+  current.forEach(m => { m._isOlder = false; });
+
+  // Limpa o contêiner
+  messagesContainer.innerHTML = '';
+
+  // Se houver mensagens de atendimentos anteriores
+  if (older.length > 0) {
+    if (isShowingOlderMessages) {
+      // 1. Cria container drawer para expansão ultra suave (contém botão recolher, mensagens e divisor)
+      const drawer = document.createElement('div');
+      drawer.id = 'older-messages-drawer';
+      drawer.className = 'older-messages-drawer w-full flex flex-col space-y-3.5';
+
+      if (animateOlder) {
+        drawer.style.maxHeight = '0px';
+        drawer.style.opacity = '0';
+        drawer.style.transform = 'translateY(-12px)';
+      }
+
+      // Botão para recolher no topo (Flutuante com altura zero, oculto por padrão, visível somente no hover da área superior)
+      const collapseTrigger = document.createElement('div');
+      collapseTrigger.className = 'chat-top-history-trigger select-none';
+      collapseTrigger.innerHTML = `
+        <button type="button" onclick="collapseOlderMessages()" class="group/btn load-history-pill flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold shadow-xl transition-all duration-300 cursor-pointer transform hover:scale-[1.03] active:scale-95">
+          <div class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent); color: var(--color-primary-theme, #ef4444);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+          </div>
+          <span>Ocultar conversas anteriores</span>
+        </button>
+      `;
+      drawer.appendChild(collapseTrigger);
+
+      // Renderiza todas as mensagens antigas
+      older.forEach((msg, idx) => {
+        const el = createMessageElement(msg);
+        if (animateOlder) {
+          el.classList.add('older-msg-cascade');
+          el.style.animationDelay = `${Math.min(idx * 0.03, 0.25)}s`;
+        }
+        drawer.appendChild(el);
+      });
+
+      // 2. Divisor elegante de Início do Atendimento Atual
+      const sessionDivider = document.createElement('div');
+      sessionDivider.className = 'w-full flex items-center justify-center gap-3 my-4 py-2 select-none';
+      sessionDivider.innerHTML = `
+        <div class="flex-1 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent"></div>
+        <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 shadow-[0_0_12px_rgba(245,158,11,0.15)] flex items-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Início do Atendimento Atual
+        </span>
+        <div class="flex-1 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent"></div>
+      `;
+      drawer.appendChild(sessionDivider);
+
+      messagesContainer.appendChild(drawer);
+
+      if (animateOlder) {
+        requestAnimationFrame(() => {
+          const fullH = drawer.scrollHeight + 30;
+          drawer.style.maxHeight = fullH + 'px';
+          drawer.style.opacity = '1';
+          drawer.style.transform = 'translateY(0)';
+
+          setTimeout(() => {
+            if (drawer) drawer.style.maxHeight = 'none';
+          }, 500);
+        });
+      }
+    } else {
+      // 1. Botão no topo para carregar mensagens anteriores (WhatsApp style - Oculto por padrão, visível no hover da área superior)
+      const loadBox = document.createElement('div');
+      loadBox.className = 'chat-top-history-trigger select-none';
+      loadBox.innerHTML = `
+        <button type="button" onclick="revealOlderMessages()" class="group/btn load-history-pill flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold shadow-xl transition-all duration-300 cursor-pointer transform hover:scale-[1.03] active:scale-95">
+          <div class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent); color: var(--color-primary-theme, #ef4444);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          </div>
+          <span>Carregar conversas anteriores</span>
+        </button>
+      `;
+      messagesContainer.appendChild(loadBox);
+    }
+  }
+
+  // Renderiza as mensagens do atendimento atual
+  current.forEach(msg => {
+    if (unreadDividerMsgId && String(msg.id) === String(unreadDividerMsgId)) {
+      messagesContainer.appendChild(createUnreadDividerElement());
+    }
+    messagesContainer.appendChild(createMessageElement(msg));
+  });
+
+  // Âncora de rolagem no final
+  const anchor = document.createElement('div');
+  anchor.id = 'chat-scroll-anchor';
+  anchor.className = 'h-10 w-full shrink-0 pointer-events-none';
+  messagesContainer.appendChild(anchor);
+
+  if (autoScroll) {
+    scrollToBottom();
+  }
+}
+
+function revealOlderMessages() {
+  if (!messagesContainer) return;
+
+  const pillBtn = messagesContainer.querySelector('.load-history-pill');
+  if (pillBtn) {
+    pillBtn.classList.add('is-loading');
+    pillBtn.innerHTML = `
+      <svg class="animate-spin shrink-0" style="color: var(--color-primary-theme, #ef4444);" xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      <span class="text-[11px] font-bold" style="color: var(--color-primary-theme, #ef4444);">Carregando conversas anteriores...</span>
+    `;
+  }
+
+  setTimeout(() => {
+    isShowingOlderMessages = true;
+    renderChatMessages(false, true);
+  }, 320);
+}
+
+function collapseOlderMessages() {
+  const drawer = document.getElementById('older-messages-drawer');
+
+  if (drawer) {
+    drawer.style.maxHeight = drawer.scrollHeight + 'px';
+    requestAnimationFrame(() => {
+      drawer.style.maxHeight = '0px';
+      drawer.style.opacity = '0';
+      drawer.style.transform = 'translateY(-14px)';
+    });
+
+    setTimeout(() => {
+      isShowingOlderMessages = false;
+      drawer.remove();
+
+      // Insere o disparador de carregar no topo sem reconstruir o container
+      const { older } = splitMessagesBySession(currentChatMessages);
+      if (older.length > 0 && !messagesContainer.querySelector('.chat-top-history-trigger')) {
+        const loadBox = document.createElement('div');
+        loadBox.className = 'chat-top-history-trigger select-none';
+        loadBox.innerHTML = `
+          <button type="button" onclick="revealOlderMessages()" class="group/btn load-history-pill flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold shadow-xl transition-all duration-300 cursor-pointer transform hover:scale-[1.03] active:scale-95">
+            <div class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent); color: var(--color-primary-theme, #ef4444);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </div>
+            <span>Carregar conversas anteriores</span>
+          </button>
+        `;
+        messagesContainer.prepend(loadBox);
+      }
+    }, 480);
+  } else {
+    isShowingOlderMessages = false;
+    renderChatMessages(false, false);
+  }
+}
+
+// Recebe Histórico do Chat Selecionado
+socket.on('chat_history', ({ cliente_jid, messages }) => {
+  if (selectedChatJid !== cliente_jid) return;
+
+  if (pendingUnreadCheck && messages.length > 0) {
+    const { current } = splitMessagesBySession(messages);
+    if (current.length > 0) {
+      let firstUnreadIdx = -1;
+      for (let i = current.length - 1; i >= 0; i--) {
+        if (current[i].remetente === 'cliente') {
+          firstUnreadIdx = i;
+        } else {
+          break;
+        }
+      }
+      if (firstUnreadIdx !== -1) {
+        unreadDividerMsgId = current[firstUnreadIdx].id;
+      }
+    }
+    pendingUnreadCheck = false;
+  }
+
+  const isAlreadyUpToDate = !isUserSwitchingChat &&
+    currentChatMessages.length === messages.length &&
+    messages.length > 0 &&
+    currentChatMessages[messages.length - 1]?.id === messages[messages.length - 1]?.id;
+
+  currentChatMessages = messages;
+
+  if (!isAlreadyUpToDate) {
+    renderChatMessages(true);
+  }
+
+  // Executa animação de entrada graciosa apenas quando o usuário troca de conversa
+  if (isUserSwitchingChat) {
+    isUserSwitchingChat = false;
+    if (activeChatArea) {
+      activeChatArea.classList.remove('chat-switch-out');
+      void activeChatArea.offsetWidth; // Force reflow para reinício do keyframe
+      activeChatArea.classList.add('chat-switch-in');
+    }
+  }
+});
+
+// ==============================================================================
+// 🎯 CONTROLE DO BOTÃO FLUTUANTE DE ROLAR PARA O FIM (MENSAGENS RECENTES)
+// ==============================================================================
+let newMessagesWhileScrolledCount = 0;
+let scrollBottomHideTimeout = null;
+
+function isChatScrolledUp() {
+  if (!messagesContainer) return false;
+  return (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) > 160;
+}
+
+function handleChatScroll() {
+  if (!messagesContainer) return;
+  const isScrolledUp = isChatScrolledUp();
+
+  if (isScrolledUp) {
+    showScrollBottomButton();
+  } else {
+    hideScrollBottomButton();
+    resetScrollBottomUnreadCount();
+  }
+}
+
+function showScrollBottomButton() {
+  const container = document.getElementById('chat-scroll-bottom-container');
+  if (!container) return;
+  clearTimeout(scrollBottomHideTimeout);
+
+  if (container.classList.contains('hidden')) {
+    container.classList.remove('hidden');
+    void container.offsetWidth; // force reflow
+  }
+  container.classList.remove('opacity-0', 'translate-y-3');
+  container.classList.add('opacity-100', 'translate-y-0');
+}
+
+function hideScrollBottomButton() {
+  const container = document.getElementById('chat-scroll-bottom-container');
+  if (!container || container.classList.contains('hidden')) return;
+
+  clearTimeout(scrollBottomHideTimeout);
+  container.classList.remove('opacity-100', 'translate-y-0');
+  container.classList.add('opacity-0', 'translate-y-3');
+
+  scrollBottomHideTimeout = setTimeout(() => {
+    if (!isChatScrolledUp()) {
+      container.classList.add('hidden');
+    }
+  }, 240);
+}
+
+function resetScrollBottomUnreadCount() {
+  newMessagesWhileScrolledCount = 0;
+  const badge = document.getElementById('scroll-bottom-unread-badge');
+  if (badge) {
+    badge.textContent = '0';
+    badge.classList.add('hidden');
+  }
+}
+
+function incrementScrollBottomUnreadCount() {
+  newMessagesWhileScrolledCount++;
+  const badge = document.getElementById('scroll-bottom-unread-badge');
+  if (badge) {
+    badge.textContent = newMessagesWhileScrolledCount > 99 ? '99+' : newMessagesWhileScrolledCount;
+    badge.classList.remove('hidden');
+  }
+}
+
+// Recebe Nova Mensagem
+socket.on('new_message', (msg) => {
+  // Se for mensagem do chat selecionado
+  if (selectedChatJid === msg.cliente_jid) {
+    currentChatMessages.push(msg);
+    appendMessageHTML(msg);
+
+    // Se o atendente estiver lendo mensagens anteriores lá em cima, não dar scroll brusco
+    if (isChatScrolledUp()) {
+      incrementScrollBottomUnreadCount();
+      showScrollBottomButton();
+    } else {
+      scrollToBottom(true);
+    }
+
+    // Avisa o servidor que já visualizamos a mensagem para limpar o status "não lido"
+    if (currentOperator) {
+      socket.emit('select_chat', { cliente_jid: selectedChatJid, atendente_id: currentOperator.id });
+    }
+  }
+});
 
 // Rola o contêiner de mensagens para o final (mantém a última mensagem visível acima do campo de entrada)
 function scrollToBottom(smooth = false) {
   if (!messagesContainer) return;
+  resetScrollBottomUnreadCount();
+  hideScrollBottomButton();
+
   requestAnimationFrame(() => {
     const anchor = document.getElementById('chat-scroll-anchor');
     if (anchor) {
       anchor.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
     } else {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      messagesContainer.scrollTo({
+        top: messagesContainer.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto'
+      });
     }
   });
 }
@@ -2098,6 +2545,25 @@ function hideAllContextMenus() {
   if (reactModal) reactModal.classList.add('hidden');
 }
 
+// Verifica se a mensagem pertence a um atendimento em aberto e à sessão atual (não anterior)
+function canReactOrDeleteMsg(msg) {
+  if (!msg) return false;
+  const targetJid = msg.cliente_jid || selectedChatJid;
+  const isChatActive = activeChats.some(c => c.cliente_jid === targetJid);
+  if (!isChatActive) return false;
+  if (msg._isOlder === true) return false;
+  if (msg._isOlder === false) return true;
+
+  // Fallback de segurança se _isOlder não estiver marcado
+  if (currentChatMessages && currentChatMessages.length > 0) {
+    const { older } = splitMessagesBySession(currentChatMessages);
+    if (older && older.some(m => String(m.id) === String(msg.id))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Abre o menu de contexto da mensagem ao clicar com o botão direito
 function openMessageContextMenu(e, msg) {
   e.preventDefault();
@@ -2109,20 +2575,38 @@ function openMessageContextMenu(e, msg) {
   const menu = document.getElementById('message-context-menu');
   if (!menu) return;
 
-  // Preencher reações rápidas
+  const canReactOrDelete = canReactOrDeleteMsg(msg);
   const reactionsContainer = document.getElementById('context-recent-reactions');
-  if (reactionsContainer) {
-    const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
-    reactionsContainer.innerHTML = quickEmojis.map(emoji => `
-      <button onclick="applyReaction('${emoji}')" class="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-base transition-transform hover:scale-125 cursor-pointer">${emoji}</button>
-    `).join('');
+  const reactBtn = document.getElementById('context-react-btn');
+  const deleteBtn = document.getElementById('context-delete-btn');
+  const deleteDivider = document.getElementById('context-delete-divider');
+
+  if (canReactOrDelete) {
+    if (reactionsContainer) {
+      reactionsContainer.classList.remove('hidden');
+      const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+      reactionsContainer.innerHTML = quickEmojis.map(emoji => `
+        <button onclick="applyReaction('${emoji}')" class="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-base transition-transform hover:scale-125 cursor-pointer">${emoji}</button>
+      `).join('');
+    }
+    if (reactBtn) reactBtn.classList.remove('hidden');
+    if (deleteBtn) deleteBtn.classList.remove('hidden');
+    if (deleteDivider) deleteDivider.classList.remove('hidden');
+  } else {
+    if (reactionsContainer) {
+      reactionsContainer.classList.add('hidden');
+      reactionsContainer.innerHTML = '';
+    }
+    if (reactBtn) reactBtn.classList.add('hidden');
+    if (deleteBtn) deleteBtn.classList.add('hidden');
+    if (deleteDivider) deleteDivider.classList.add('hidden');
   }
 
   showContextMainView();
 
   menu.classList.remove('hidden');
   const menuWidth = 240;
-  const menuHeight = 280;
+  const menuHeight = canReactOrDelete ? 280 : 170;
 
   let x = e.clientX;
   let y = e.clientY;
@@ -2558,7 +3042,7 @@ function updateMsgReactionBadgeInDOM(msgId, reacaoRaw) {
 
 function applyReaction(emoji) {
   hideAllContextMenus();
-  if (!activeContextMsgData) return;
+  if (!activeContextMsgData || !canReactOrDeleteMsg(activeContextMsgData)) return;
 
   const msgId = activeContextMsgData.id;
   const targetJid = activeContextMsgData.cliente_jid || selectedChatJid;
@@ -2594,7 +3078,7 @@ function applyReaction(emoji) {
 
 function removeReaction(msgId, emojiToRemove) {
   const msgObj = currentChatMessages.find(m => String(m.id) === String(msgId)) || (activeContextMsgData && String(activeContextMsgData.id) === String(msgId) ? activeContextMsgData : null);
-  if (!msgObj) return;
+  if (!msgObj || !canReactOrDeleteMsg(msgObj)) return;
 
   const targetJid = msgObj.cliente_jid || selectedChatJid;
   let reactions = parseReactions(msgObj.reacao);
@@ -2734,11 +3218,14 @@ function renderReactionParticipantList(msgId, reactions, filterEmoji) {
   const userListEl = document.getElementById('reaction-modal-user-list');
   if (!userListEl) return;
 
+  const msgObj = getMsgReactionData(msgId);
+  const canInteract = canReactOrDeleteMsg(msgObj);
+
   const filtered = filterEmoji === 'all' ? reactions : reactions.filter(r => r.emoji === filterEmoji);
 
   userListEl.innerHTML = filtered.map(r => {
     const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
-    const isMe = r.nome === 'Você' || r.remetente === myOperatorId;
+    const isMe = (r.nome === 'Você' || r.remetente === myOperatorId) && canInteract;
     const initial = r.nome ? r.nome.charAt(0).toUpperCase() : 'U';
     return `
       <div onclick="${isMe ? `removeReactionFromModal('${msgId}', '${r.emoji}')` : ''}" class="flex items-center justify-between p-2.5 rounded-xl reaction-user-item ${isMe ? 'cursor-pointer group' : ''}">
@@ -2804,7 +3291,9 @@ function forwardToChat(targetJid) {
   socket.emit('send_message', {
     cliente_jid: targetJid,
     texto: `↪️ *[ENCAMINHADA]* ${activeContextMsgData.texto || ''}`,
-    atendente_id: currentOperator ? currentOperator.id : 'sistema'
+    atendente_id: currentOperator ? currentOperator.id : 'sistema',
+    atendente_nome: currentOperator ? (currentOperator.name || currentOperator.id) : 'sistema',
+    send_signature: isSignatureToClientEnabled
   });
   playMessageSentSound();
   showToast('Mensagem encaminhada com sucesso!', 'Encaminhado', 'success');
@@ -2825,7 +3314,7 @@ function submitForwardToPhone() {
 // Handler para Apagar Mensagem
 function handleContextDelete() {
   hideAllContextMenus();
-  if (!activeContextMsgData) return;
+  if (!activeContextMsgData || !canReactOrDeleteMsg(activeContextMsgData)) return;
 
   socket.emit('delete_message', {
     message_id: activeContextMsgData.id,
@@ -2933,49 +3422,255 @@ function closeChatOptionsDropdown() {
   dropdown.classList.add('animate-popover-out');
   if (btn) btn.classList.remove('btn-options-active');
 
+  closeFileBankPanel();
+  closeQuickRepliesPanel();
+
   setTimeout(() => {
     dropdown.classList.add('hidden');
     dropdown.classList.remove('animate-popover-out');
   }, 190);
 }
 
-// Fechar menus ao clicar fora (fecha os dois juntos)
+// Fechar menus ao clicar fora (fecha os cards juntos)
 window.addEventListener('click', (e) => {
   const dropdown = document.getElementById('chat-options-dropdown');
   const filePanel = document.getElementById('file-bank-panel');
+  const quickPanel = document.getElementById('quick-replies-panel');
   const btn = document.getElementById('btn-chat-options');
 
   const clickedInsideMenu = (dropdown && dropdown.contains(e.target)) ||
                             (filePanel && filePanel.contains(e.target)) ||
+                            (quickPanel && quickPanel.contains(e.target)) ||
                             (btn && btn.contains(e.target));
 
   if (!clickedInsideMenu) {
     if (dropdown && !dropdown.classList.contains('hidden')) closeChatOptionsDropdown();
     if (filePanel && !filePanel.classList.contains('hidden')) closeFileBankPanel();
+    if (quickPanel && !quickPanel.classList.contains('hidden')) closeQuickRepliesPanel();
   }
 });
 
 function selectChatOption(type) {
   if (type === 'quick_reply') {
-    closeChatOptionsDropdown();
-    openQuickRepliesModal();
+    // Fecha o painel de arquivos se aberto e abre o painel lateral de respostas rápidas
+    closeFileBankPanel();
+    openQuickRepliesPanel();
   } else if (type === 'internal_note') {
-    closeChatOptionsDropdown();
+    // Mantém o menu principal ABERTO ao alternar Nota Interna (igual à Assinatura)
     toggleInternalNoteMode();
   } else if (type === 'file_bank') {
-    // Mantém o menu principal ABERTO e mostra o segundo card ao lado
+    // Fecha o painel de respostas rápidas se aberto e abre o banco de arquivos
+    closeQuickRepliesPanel();
     openFileBankPanel();
   }
 }
 
+// ==============================================================================
+// ⚡ RESPOSTAS RÁPIDAS (Quick Replies & Favoritas)
+// ==============================================================================
+
+const defaultQuickRepliesList = [
+  { id: 'qr_1', category: '👋 Atendimento Inicial', text: 'Olá! Seja bem-vindo(a). Como posso ajudar você hoje?', favorite: true },
+  { id: 'qr_2', category: '👋 Atendimento Inicial', text: 'Olá! Meu nome é atendente do suporte. Em que posso ser útil?', favorite: true },
+  { id: 'qr_3', category: '⏳ Em Análise / Aguarde', text: 'Um momento, por favor. Estou verificando seu cadastro e pedido em nosso sistema.', favorite: true },
+  { id: 'qr_4', category: '⏳ Em Análise / Aguarde', text: 'Agradeço a paciência! Já estou finalizando a análise da sua solicitação.', favorite: false },
+  { id: 'qr_5', category: '📄 Documentos & Comprovantes', text: 'Por favor, me envie a foto do documento ou comprovante para dar prosseguimento ao atendimento.', favorite: true },
+  { id: 'qr_6', category: '📄 Documentos & Comprovantes', text: 'Poderia confirmar o número do seu CPF ou CNPJ cadastrado, por favor?', favorite: false },
+  { id: 'qr_7', category: '✅ Finalização', text: 'Atendimento concluído com sucesso. Qualquer nova dúvida, estamos à inteira disposição! Obrigado!', favorite: true },
+  { id: 'qr_8', category: '✅ Finalização', text: 'Muito obrigado pelo contato! Tenha um excelente dia.', favorite: false },
+  { id: 'qr_9', category: '💳 Financeiro / Cobrança', text: 'Segue o código de barras e o boleto atualizado para pagamento.', favorite: false },
+  { id: 'qr_10', category: '💳 Financeiro / Cobrança', text: 'O comprovante de pagamento foi recebido com sucesso e já está sendo processado.', favorite: false }
+];
+
+let activeQuickRepliesCategoryFilter = 'ALL';
+
+async function syncQuickRepliesFromBackend() {
+  try {
+    const userId = (typeof currentOperator !== 'undefined' && currentOperator?.id) ? currentOperator.id : '';
+    const sectorId = (typeof currentOperator !== 'undefined' && currentOperator?.sector_id) ? currentOperator.sector_id : '';
+    let query = `/api/quick-replies?usuario_id=${userId}`;
+    if (sectorId) query += `&setor_id=${sectorId}`;
+
+    const res = await fetch(query);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.quick_replies && data.quick_replies.length > 0) {
+        const mapped = data.quick_replies.map(r => ({
+          id: String(r.id),
+          category: r.grupo || r.categoria || 'Geral',
+          text: r.conteudo,
+          title: r.titulo,
+          shortcut: r.atalho,
+          scope: r.escopo || 'global',
+          sectors: r.setores || null,
+          blocks: r.blocos || [{ id: 'b_' + r.id, tipo: 'texto', texto: r.conteudo }],
+          favorite: Boolean(r.favorito)
+        }));
+        saveStoredQuickReplies(mapped);
+      }
+    }
+  } catch (e) {
+    console.warn('Usando respostas rápidas locais:', e);
+  }
+}
+
+function replaceQuickReplyVariables(text) {
+  if (!text) return '';
+  const now = new Date();
+  const hours = now.getHours();
+  let greeting = 'Olá';
+  if (hours >= 5 && hours < 12) greeting = 'Bom dia';
+  else if (hours >= 12 && hours < 18) greeting = 'Boa tarde';
+  else greeting = 'Boa noite';
+
+  const clientName = (typeof selectedChatName !== 'undefined' && selectedChatName) ? selectedChatName : 'Cliente';
+  const opName = (typeof currentOperator !== 'undefined' && currentOperator?.name) ? currentOperator.name : 'Atendente';
+  const todayStr = now.toLocaleDateString('pt-BR');
+
+  return text
+    .replace(/\{cliente_nome\}/gi, clientName)
+    .replace(/\{atendente_nome\}/gi, opName)
+    .replace(/\{saudacao\}/gi, greeting)
+    .replace(/\{data_atual\}/gi, todayStr);
+}
+
+function getStoredQuickReplies() {
+  try {
+    const raw = localStorage.getItem('tf_quick_replies_v1');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error('Erro ao ler quick replies:', e);
+  }
+  return defaultQuickRepliesList;
+}
+
+function saveStoredQuickReplies(list) {
+  try {
+    localStorage.setItem('tf_quick_replies_v1', JSON.stringify(list));
+  } catch (e) {
+    console.error('Erro ao salvar quick replies:', e);
+  }
+}
+
+function toggleFavoriteQuickReply(id, e) {
+  if (e) e.stopPropagation();
+  const list = getStoredQuickReplies();
+  const item = list.find(r => r.id === id);
+  if (item) {
+    item.favorite = !item.favorite;
+    saveStoredQuickReplies(list);
+    renderQuickRepliesFavorites();
+    renderQuickRepliesCategoryTabs();
+    renderAllQuickRepliesModal(document.getElementById('quick-replies-search-input')?.value || '');
+  }
+}
+
+function openQuickRepliesPanel() {
+  const panel = document.getElementById('quick-replies-panel');
+  if (!panel) return;
+
+  // Fecha o banco de arquivos se estiver aberto
+  closeFileBankPanel();
+
+  const isHidden = panel.classList.contains('hidden');
+  if (isHidden) {
+    panel.classList.remove('hidden', 'animate-popover-out');
+    void panel.offsetWidth;
+    panel.classList.add('animate-popover-in');
+    renderQuickRepliesFavorites();
+    syncQuickRepliesFromBackend().then(() => {
+      renderQuickRepliesFavorites();
+    });
+  } else {
+    closeQuickRepliesPanel();
+  }
+}
+
+function closeQuickRepliesPanel() {
+  const panel = document.getElementById('quick-replies-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+
+  panel.classList.remove('animate-popover-in');
+  panel.classList.add('animate-popover-out');
+
+  setTimeout(() => {
+    panel.classList.add('hidden');
+    panel.classList.remove('animate-popover-out');
+  }, 190);
+}
+
+function renderQuickRepliesFavorites() {
+  const container = document.getElementById('quick-replies-favorites-list');
+  if (!container) return;
+
+  const list = getStoredQuickReplies();
+  const favorites = list.filter(r => r.favorite);
+
+  if (favorites.length === 0) {
+    container.innerHTML = `
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 12px; text-align:center; color:var(--color-text-muted, #94a3b8); font-size:11px; gap:8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:rgba(245,158,11,0.5);"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <p style="color:var(--color-foreground, #f8fafc); font-weight:600;">Nenhuma resposta favoritada</p>
+        <p style="color:var(--color-text-muted, #94a3b8); font-size:10px;">Clique em "Ver Todas as Respostas" para favoritar com ⭐</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  favorites.forEach((r, idx) => {
+    if (idx > 0) {
+      html += `<div class="qr-separator"></div>`;
+    }
+    const isMultiBlock = r.blocks && (r.blocks.length > 1 || r.blocks.some(b => b.tipo === 'arquivo'));
+    const stepCount = (r.blocks && r.blocks.length) || 1;
+
+    html += `
+      <div onclick="triggerQuickReply('${r.id}')" class="qr-card-item group/qr">
+        <div style="display: flex; flex-direction: column; min-width: 0; flex: 1; padding-right: 6px;">
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+            <span class="qr-category-badge">${r.category}</span>
+            ${isMultiBlock ? `<span style="font-size:9px; font-weight:800; padding:1px 5px; border-radius:6px; background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3);">⚡ ${stepCount} passos</span>` : ''}
+          </div>
+          <span style="font-size: 11.5px; color: var(--color-foreground, #f8fafc); line-height: 1.4; font-weight: 500;" class="group-hover/qr:text-amber-200 line-clamp-2">
+            ${r.title ? `<strong>${r.title}:</strong> ` : ''}${r.text}
+          </span>
+        </div>
+        <button type="button" onclick="toggleFavoriteQuickReply('${r.id}', event)" title="Desfavoritar" class="qr-star-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
 function openQuickRepliesModal() {
+  closeQuickRepliesPanel();
+  closeChatOptionsDropdown();
   const modal = document.getElementById('modal-quick-replies');
   if (!modal) return;
+
+  const searchInput = document.getElementById('quick-replies-search-input');
+  if (searchInput) searchInput.value = '';
+
+  activeQuickRepliesCategoryFilter = 'ALL';
+  closeQuickReplyEditor();
+
   modal.classList.remove('hidden');
   void modal.offsetWidth;
   modal.classList.remove('opacity-0');
   const content = modal.querySelector('div');
   if (content) content.classList.remove('scale-95');
+
+  renderQuickRepliesSidebarCategories();
+  renderAllQuickRepliesModal();
+
+  syncQuickRepliesFromBackend().then(() => {
+    renderQuickRepliesSidebarCategories();
+    renderAllQuickRepliesModal(document.getElementById('quick-replies-search-input')?.value || '');
+  });
 }
 
 function closeQuickRepliesModal() {
@@ -2986,112 +3681,703 @@ function closeQuickRepliesModal() {
   if (content) content.classList.add('scale-95');
   setTimeout(() => {
     modal.classList.add('hidden');
-  }, 300);
+  }, 200);
 }
 
-function insertQuickReply(text) {
+function filterQuickRepliesModal(query) {
+  renderAllQuickRepliesModal(query);
+}
+
+function setQuickRepliesCategoryFilter(category) {
+  activeQuickRepliesCategoryFilter = category;
+  renderQuickRepliesSidebarCategories();
+  renderAllQuickRepliesModal(document.getElementById('quick-replies-search-input')?.value || '');
+}
+
+function renderQuickRepliesSidebarCategories() {
+  const container = document.getElementById('quick-replies-sidebar-categories');
+  const totalBadge = document.getElementById('quick-replies-total-badge');
+  const datalist = document.getElementById('quick-reply-category-suggestions');
+  if (!container) return;
+
+  const list = getStoredQuickReplies();
+  if (totalBadge) totalBadge.textContent = list.length;
+
+  const categories = [...new Set(list.map(r => r.category))];
+  const favCount = list.filter(r => r.favorite).length;
+
+  // Atualiza sugestões no datalist do editor
+  if (datalist) {
+    datalist.innerHTML = categories.map(c => `<option value="${c}"></option>`).join('');
+  }
+
+  let html = `
+    <button type="button" onclick="setQuickRepliesCategoryFilter('ALL')" class="qr-sidebar-nav-item ${activeQuickRepliesCategoryFilter === 'ALL' ? 'active' : ''}">
+      <span class="flex items-center gap-2 truncate">
+        <span class="text-amber-400">✨</span>
+        <span class="truncate">Todas as Respostas</span>
+      </span>
+      <span class="qr-sidebar-badge">${list.length}</span>
+    </button>
+    <button type="button" onclick="setQuickRepliesCategoryFilter('FAV')" class="qr-sidebar-nav-item ${activeQuickRepliesCategoryFilter === 'FAV' ? 'active' : ''}">
+      <span class="flex items-center gap-2 truncate">
+        <span class="text-amber-400">⭐</span>
+        <span class="truncate">Favoritas / Fixadas</span>
+      </span>
+      <span class="qr-sidebar-badge">${favCount}</span>
+    </button>
+    <div style="height:1px; background:var(--border-color, rgba(255,255,255,0.08)); margin:6px 0;"></div>
+  `;
+
+  categories.forEach(cat => {
+    const count = list.filter(r => r.category === cat).length;
+    const isActive = activeQuickRepliesCategoryFilter === cat;
+    html += `
+      <button type="button" onclick="setQuickRepliesCategoryFilter('${encodeURIComponent(cat)}')" class="qr-sidebar-nav-item ${isActive ? 'active' : ''}">
+        <span class="truncate pr-1">${cat}</span>
+        <span class="qr-sidebar-badge">${count}</span>
+      </button>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function openQuickReplyEditor(replyId = null, event = null) {
+  if (event) event.stopPropagation();
+
+  const box = document.getElementById('quick-reply-editor-box');
+  const titleEl = document.getElementById('quick-reply-editor-title');
+  const idInput = document.getElementById('quick-reply-edit-id');
+  const catInput = document.getElementById('quick-reply-input-category');
+  const textInput = document.getElementById('quick-reply-input-text');
+  const favInput = document.getElementById('quick-reply-input-favorite');
+
+  if (!box || !idInput || !catInput || !textInput || !favInput) return;
+
+  if (replyId) {
+    const list = getStoredQuickReplies();
+    const item = list.find(r => r.id === replyId);
+    if (item) {
+      if (titleEl) titleEl.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Editar Resposta Rápida
+      `;
+      idInput.value = item.id;
+      catInput.value = item.category;
+      textInput.value = item.text;
+      favInput.checked = Boolean(item.favorite);
+    }
+  } else {
+    if (titleEl) titleEl.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nova Resposta Rápida
+    `;
+    idInput.value = '';
+    catInput.value = (activeQuickRepliesCategoryFilter !== 'ALL' && activeQuickRepliesCategoryFilter !== 'FAV') 
+      ? decodeURIComponent(activeQuickRepliesCategoryFilter) 
+      : '👋 Atendimento Inicial';
+    textInput.value = '';
+    favInput.checked = false;
+  }
+
+  box.classList.remove('hidden');
+  textInput.focus();
+}
+
+function closeQuickReplyEditor() {
+  const box = document.getElementById('quick-reply-editor-box');
+  if (box) box.classList.add('hidden');
+}
+
+function saveQuickReplyFromEditor() {
+  const idInput = document.getElementById('quick-reply-edit-id');
+  const catInput = document.getElementById('quick-reply-input-category');
+  const textInput = document.getElementById('quick-reply-input-text');
+  const favInput = document.getElementById('quick-reply-input-favorite');
+
+  const category = (catInput?.value || '').trim() || 'Geral';
+  const text = (textInput?.value || '').trim();
+  const favorite = Boolean(favInput?.checked);
+  const id = idInput?.value || '';
+
+  if (!text) {
+    alert('Por favor, digite o texto da resposta rápida.');
+    textInput?.focus();
+    return;
+  }
+
+  let list = getStoredQuickReplies();
+
+  if (id) {
+    // Edição
+    const index = list.findIndex(r => r.id === id);
+    if (index !== -1) {
+      list[index] = { ...list[index], category, text, favorite };
+    }
+  } else {
+    // Criação de nova resposta
+    const newId = 'qr_' + Date.now();
+    list.unshift({ id: newId, category, text, favorite });
+  }
+
+  saveStoredQuickReplies(list);
+  closeQuickReplyEditor();
+  renderQuickRepliesSidebarCategories();
+  renderQuickRepliesFavorites();
+  renderAllQuickRepliesModal(document.getElementById('quick-replies-search-input')?.value || '');
+}
+
+function deleteQuickReply(replyId, event) {
+  if (event) event.stopPropagation();
+
+  if (!confirm('Deseja realmente excluir esta resposta rápida?')) {
+    return;
+  }
+
+  let list = getStoredQuickReplies();
+  list = list.filter(r => r.id !== replyId);
+
+  saveStoredQuickReplies(list);
+  renderQuickRepliesSidebarCategories();
+  renderQuickRepliesFavorites();
+  renderAllQuickRepliesModal(document.getElementById('quick-replies-search-input')?.value || '');
+}
+
+function renderAllQuickRepliesModal(searchQuery = '') {
+  const container = document.getElementById('quick-replies-modal-list');
+  const panelTitle = document.getElementById('quick-replies-panel-title');
+  const panelCount = document.getElementById('quick-replies-panel-count');
+  if (!container) return;
+
+  const list = getStoredQuickReplies();
+  const query = (searchQuery || '').trim().toLowerCase();
+
+  let filtered = list;
+
+  // Filtro por busca de texto ou categoria
+  if (query) {
+    filtered = filtered.filter(r => r.text.toLowerCase().includes(query) || r.category.toLowerCase().includes(query));
+  }
+
+  // Filtro por Aba de Categoria selecionada
+  let currentTitle = 'Todas as Respostas';
+  if (activeQuickRepliesCategoryFilter === 'FAV') {
+    filtered = filtered.filter(r => r.favorite);
+    currentTitle = '⭐ Respostas Favoritas';
+  } else if (activeQuickRepliesCategoryFilter !== 'ALL') {
+    const selectedCat = decodeURIComponent(activeQuickRepliesCategoryFilter);
+    filtered = filtered.filter(r => r.category === selectedCat);
+    currentTitle = selectedCat;
+  }
+
+  if (panelTitle) panelTitle.textContent = query ? `Busca: "${searchQuery}"` : currentTitle;
+  if (panelCount) panelCount.textContent = `${filtered.length} modelo${filtered.length === 1 ? '' : 's'}`;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; color:var(--color-text-muted, #94a3b8); font-size:12px; gap:10px; text-align:center;">
+        <div class="w-12 h-12 rounded-2xl flex items-center justify-center bg-white/5 border border-white/10 text-amber-400/60">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <div>
+          <p class="font-bold text-slate-200 text-sm">Nenhuma resposta encontrada</p>
+          <p class="text-[11px] opacity-70 mt-0.5">Clique no botão "+ Nova Resposta" acima para cadastrar neste grupo.</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  filtered.forEach((r) => {
+    const isFav = r.favorite;
+    const isGlobal = r.scope === 'global';
+
+    html += `
+      <div onclick="insertQuickReply('${encodeURIComponent(r.text)}', true)"
+           class="qr-modal-card group/qr"
+           style="
+             background-color: var(--color-card, rgba(255,255,255,0.04));
+             border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+             border-radius: 14px;
+             padding: 12px 14px;
+             display: flex;
+             align-items: flex-start;
+             justify-content: space-between;
+             gap: 12px;
+             cursor: pointer;
+           "
+      >
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+            ${isGlobal
+              ? `<span style="font-size:9px; font-weight:800; text-transform:uppercase; padding:2px 7px; border-radius:999px; background:rgba(139,92,246,0.15); color:#c4b5fd; border:1px solid rgba(139,92,246,0.3);">🌍 Global</span>`
+              : `<span style="font-size:9px; font-weight:800; text-transform:uppercase; padding:2px 7px; border-radius:999px; background:rgba(16,185,129,0.15); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3);">👤 Pessoal</span>`
+            }
+            ${r.shortcut ? `<span style="font-size:10px; font-family:monospace; font-weight:700; color:var(--color-primary-theme, #ef4444); background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:6px;">${r.shortcut}</span>` : ''}
+            <span class="qr-category-badge">${r.category}</span>
+            ${(r.blocks && (r.blocks.length > 1 || r.blocks.some(b => b.tipo === 'arquivo'))) ? `<span style="font-size:9px; font-weight:800; padding:1px 6px; border-radius:6px; background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3);">⚡ Sequência (${r.blocks.length} passos)</span>` : ''}
+          </div>
+          ${r.title ? `<p style="font-size: 12.5px; font-weight: 700; color: var(--color-foreground, #f8fafc); margin-bottom: 2px;">${r.title}</p>` : ''}
+          <p style="font-size: 12px; color: var(--color-text-muted, #94a3b8); line-height: 1.45; font-weight: 400;" class="group-hover/qr:text-slate-200">
+            ${r.text}
+          </p>
+        </div>
+        
+        <!-- Botões de Ação: Editar, Excluir e Favoritar -->
+        <div class="flex items-center gap-1.5 shrink-0" onclick="event.stopPropagation()">
+          <button type="button" onclick="openQuickReplyEditor('${r.id}', event)" title="Editar resposta" class="qr-action-icon-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button type="button" onclick="deleteQuickReply('${r.id}', event)" title="Excluir resposta" class="qr-action-icon-btn danger">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+          <button type="button" onclick="toggleFavoriteQuickReply('${r.id}', event)" title="${isFav ? 'Remover das favoritas' : 'Adicionar às favoritas'}" class="qr-star-btn ${isFav ? '' : 'qr-star-btn-unfav'}" style="width:26px !important; height:26px !important; margin:0 !important;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+let activeSequenceQuickReply = null;
+let isSendingSequence = false;
+
+function triggerQuickReply(idOrText, isEncoded = false) {
+  let allReplies = getStoredQuickReplies();
+  let found = allReplies.find(r => r.id === String(idOrText));
+  
+  if (!found && typeof idOrText === 'string') {
+    const raw = isEncoded ? decodeURIComponent(idOrText) : idOrText;
+    found = allReplies.find(r => r.text === raw || r.shortcut === raw);
+  }
+
+  if (found && found.blocks && (found.blocks.length > 1 || found.blocks.some(b => b.tipo === 'arquivo'))) {
+    openQuickReplySequenceModal(found);
+    return;
+  }
+
+  const textToInsert = found ? found.text : (isEncoded ? decodeURIComponent(idOrText) : idOrText);
+  insertQuickReply(textToInsert, false);
+}
+
+function openQuickReplySequenceModal(qr) {
+  activeSequenceQuickReply = qr;
   closeQuickRepliesModal();
+  closeQuickRepliesPanel();
+  closeChatOptionsDropdown();
+
+  const modal = document.getElementById('modal-qr-sequence');
+  if (!modal) return;
+
+  const titleEl = document.getElementById('qr-sequence-modal-title');
+  const countEl = document.getElementById('qr-sequence-modal-count');
+  const listEl = document.getElementById('qr-sequence-modal-steps');
+  const btnSend = document.getElementById('btn-qr-sequence-send');
+  const progressEl = document.getElementById('qr-sequence-progress');
+
+  if (titleEl) titleEl.textContent = qr.title || qr.text;
+  if (countEl) countEl.textContent = `${(qr.blocks || []).length} passos`;
+  if (progressEl) progressEl.classList.add('hidden');
+  if (btnSend) {
+    btnSend.disabled = false;
+    btnSend.innerHTML = `<span>🚀 Enviar Sequência Completa</span>`;
+  }
+
+  if (listEl) {
+    let stepsHtml = '';
+    (qr.blocks || []).forEach((block, idx) => {
+      if (block.tipo === 'texto') {
+        const previewText = replaceQuickReplyVariables(block.texto);
+        stepsHtml += `
+          <div class="p-3.5 rounded-2xl bg-black/25 border border-white/10 space-y-1.5">
+            <div class="flex items-center justify-between text-[10px]">
+              <span class="font-mono font-bold text-amber-400">Passo #${idx + 1} • 📝 Mensagem de Texto</span>
+            </div>
+            <p class="text-xs text-white/90 whitespace-pre-wrap leading-relaxed">${previewText}</p>
+          </div>
+        `;
+      } else if (block.tipo === 'arquivo') {
+        const captionPreview = replaceQuickReplyVariables(block.legenda || '');
+        stepsHtml += `
+          <div class="p-3.5 rounded-2xl bg-black/25 border border-white/10 space-y-2">
+            <div class="flex items-center justify-between text-[10px]">
+              <span class="font-mono font-bold text-purple-400">Passo #${idx + 1} • 📎 Arquivo Anexo</span>
+            </div>
+            <div class="flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
+              <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold text-xs uppercase">
+                ${block.ext || 'DOC'}
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-bold text-white truncate">${block.titulo || block.filename}</p>
+                <p class="text-[10px] text-slate-400 font-mono">${block.filename} ${block.size_formatted ? `• ${block.size_formatted}` : ''}</p>
+              </div>
+            </div>
+            ${captionPreview ? `<p class="text-[11px] text-slate-300 italic pl-1">Legenda: "${captionPreview}"</p>` : ''}
+          </div>
+        `;
+      }
+    });
+    listEl.innerHTML = stepsHtml;
+  }
+
+  modal.classList.remove('hidden');
+  void modal.offsetWidth;
+  modal.classList.remove('opacity-0');
+}
+
+function closeQuickReplySequenceModal() {
+  const modal = document.getElementById('modal-qr-sequence');
+  if (!modal) return;
+  modal.classList.add('opacity-0');
+  setTimeout(() => {
+    modal.classList.add('hidden');
+    activeSequenceQuickReply = null;
+  }, 200);
+}
+
+async function executeQuickReplySequence() {
+  if (!activeSequenceQuickReply || isSendingSequence) return;
+  if (!selectedChatJid) {
+    alert('Nenhuma conversa selecionada no chat.');
+    return;
+  }
+
+  const blocks = activeSequenceQuickReply.blocks || [];
+  if (blocks.length === 0) return;
+
+  isSendingSequence = true;
+  const btnSend = document.getElementById('btn-qr-sequence-send');
+  const progressEl = document.getElementById('qr-sequence-progress');
+  const progressBar = document.getElementById('qr-sequence-progress-bar');
+  const progressText = document.getElementById('qr-sequence-progress-text');
+
+  if (btnSend) btnSend.disabled = true;
+  if (progressEl) progressEl.classList.remove('hidden');
+
+  try {
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      const stepNum = i + 1;
+
+      if (progressText) progressText.textContent = `Enviando passo ${stepNum} de ${blocks.length}...`;
+      if (progressBar) progressBar.style.width = `${Math.round((stepNum / blocks.length) * 100)}%`;
+
+      if (block.tipo === 'texto') {
+        const textToSend = replaceQuickReplyVariables(block.texto);
+        if (textToSend.trim()) {
+          socket.emit('send_message', {
+            cliente_jid: selectedChatJid,
+            texto: textToSend,
+            atendente_id: currentOperator ? currentOperator.id : 'atendente_1',
+            atendente_nome: currentOperator ? currentOperator.name : 'Atendente',
+            send_signature: true
+          });
+        }
+      } else if (block.tipo === 'arquivo') {
+        const captionToSend = replaceQuickReplyVariables(block.legenda || '');
+        socket.emit('send_message', {
+          cliente_jid: selectedChatJid,
+          texto: captionToSend,
+          atendente_id: currentOperator ? currentOperator.id : 'atendente_1',
+          atendente_nome: currentOperator ? currentOperator.name : 'Atendente',
+          send_signature: true,
+          attachments: [{
+            url: block.url,
+            filename: block.filename,
+            mimetype: block.mimetype,
+            caption: captionToSend
+          }]
+        });
+      }
+
+      // Intervalo seguro anti-bloqueio entre mensagens da sequência (900ms a 1300ms)
+      if (i < blocks.length - 1) {
+        const jitter = 900 + Math.floor(Math.random() * 400);
+        await new Promise(r => setTimeout(r, jitter));
+      }
+    }
+
+    if (progressText) progressText.textContent = `✅ Sequência enviada com sucesso!`;
+    setTimeout(() => {
+      closeQuickReplySequenceModal();
+      isSendingSequence = false;
+    }, 600);
+  } catch (err) {
+    console.error('Erro no envio da sequência:', err);
+    alert('Erro ao enviar parte da sequência.');
+    isSendingSequence = false;
+    if (btnSend) btnSend.disabled = false;
+  }
+}
+
+function insertQuickReply(encodedOrRawText, isEncoded = false) {
+  let raw = isEncoded ? decodeURIComponent(encodedOrRawText) : encodedOrRawText;
+  const processed = replaceQuickReplyVariables(raw);
+
+  closeQuickRepliesModal();
+  closeQuickRepliesPanel();
+  closeChatOptionsDropdown();
+
   if (!chatInput) return;
 
-  chatInput.value = text;
+  chatInput.value = processed;
   adjustChatInputHeight();
   chatInput.focus();
 }
 
 // ==============================================================================
-// 📁 BANCO DE ARQUIVOS
+// 📁 BANCO DE ARQUIVOS (PREMIUM CONTROLLER & UI)
 // ==============================================================================
 
-let fileBankFilter = 'all'; // 'all' | 'current'
+let fileBankFilter = 'all'; // 'all' | 'current' (painel lateral)
 let fileBankModalType = 'all';
+let fileBankScope = 'all'; // 'all' | 'chat'
+let fileBankViewMode = 'grid'; // 'grid' | 'list'
 let fileBankModalPage = 1;
 let fileBankSearchTimer = null;
+let fileBankCachedData = null;
 
-// Helpers de tipo de arquivo
+// Helpers de metadados e categorização visual de arquivos
 function getFileTypeInfo(ext) {
+  ext = (ext || '').toLowerCase();
   const images = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
   const videos = ['mp4', 'webm', 'mov', 'avi', 'mkv'];
   const audios = ['mp3', 'ogg', 'wav', 'aac', 'm4a', 'opus'];
-  const docs   = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'];
-  if (images.includes(ext)) return { type: 'image', color: '#22d3ee', bg: 'rgba(6,182,212,0.15)', emoji: '🖼️' };
-  if (videos.includes(ext)) return { type: 'video', color: '#a78bfa', bg: 'rgba(139,92,246,0.15)', emoji: '🎥' };
-  if (audios.includes(ext)) return { type: 'audio', color: '#34d399', bg: 'rgba(52,211,153,0.15)', emoji: '🎵' };
-  if (docs.includes(ext))   return { type: 'doc',   color: '#fb923c', bg: 'rgba(251,146,60,0.15)', emoji: '📄' };
-  return { type: 'other', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', emoji: '📎' };
+
+  if (images.includes(ext)) {
+    return { type: 'image', color: '#38bdf8', bg: 'rgba(56,189,248,0.1)', border: 'rgba(56,189,248,0.3)', badgeBg: 'rgba(2,132,199,0.3)', label: 'Imagem', emoji: '🖼️' };
+  }
+  if (videos.includes(ext)) {
+    return { type: 'video', color: '#a78bfa', bg: 'rgba(167,139,250,0.1)', border: 'rgba(167,139,250,0.3)', badgeBg: 'rgba(124,58,237,0.3)', label: 'Vídeo', emoji: '🎬' };
+  }
+  if (audios.includes(ext)) {
+    return { type: 'audio', color: '#34d399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.3)', badgeBg: 'rgba(5,150,105,0.3)', label: 'Áudio', emoji: '🎵' };
+  }
+  if (ext === 'pdf') {
+    return { type: 'doc', color: '#f87171', bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.3)', badgeBg: 'rgba(220,38,38,0.3)', label: 'PDF', emoji: '📕' };
+  }
+  if (['xls', 'xlsx', 'csv'].includes(ext)) {
+    return { type: 'doc', color: '#4ade80', bg: 'rgba(74,222,128,0.1)', border: 'rgba(74,222,128,0.3)', badgeBg: 'rgba(22,163,74,0.3)', label: 'Planilha', emoji: '📊' };
+  }
+  if (['doc', 'docx'].includes(ext)) {
+    return { type: 'doc', color: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.3)', badgeBg: 'rgba(37,99,235,0.3)', label: 'Documento', emoji: '📝' };
+  }
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+    return { type: 'doc', color: '#fb923c', bg: 'rgba(251,146,60,0.1)', border: 'rgba(251,146,60,0.3)', badgeBg: 'rgba(234,88,12,0.3)', label: 'Compactado', emoji: '🗜️' };
+  }
+  return { type: 'other', color: '#94a3b8', bg: 'rgba(148,163,184,0.08)', border: 'rgba(148,163,184,0.2)', badgeBg: 'rgba(71,85,105,0.3)', label: 'Arquivo', emoji: '📄' };
 }
 
-function renderFileBankCard(file, compact = false) {
-  const info = getFileTypeInfo(file.ext);
-  const name = file.filename.replace(/^media-\d+-\d+\./, 'arquivo.');
-  const date = file.timestamp ? new Date(file.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
-  const isImage = info.type === 'image';
+function formatFileDisplayName(filename, caption) {
+  if (caption && caption.trim()) return caption.trim();
+  if (!filename) return 'Arquivo sem nome';
+  let clean = filename.replace(/^media-\d+-\d+\./, 'Arquivo.');
+  return clean;
+}
 
+function formatFileTimestamp(timestamp) {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) {
+    return `Hoje às ${timeStr}`;
+  }
+  const dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  return `${dateStr} • ${timeStr}`;
+}
+
+// Renderiza o card de arquivo (Mosaico, Lista ou Compacto da Sidebar)
+function renderFileBankCard(file, compact = false, mode = 'grid') {
+  const info = getFileTypeInfo(file.ext);
+  const displayName = file.titulo || formatFileDisplayName(file.filename, file.caption);
+  const dateFormatted = formatFileTimestamp(file.timestamp || file.created_at);
+  const isImage = info.type === 'image';
+  const isVideo = info.type === 'video';
+  const isAudio = info.type === 'audio';
+
+  const isClient = file.remetente === 'cliente';
+  const senderLabel = isClient ? (file.cliente_nome || 'Cliente') : (file.atendente_nome ? `${file.atendente_nome}` : 'Atendente');
+  const senderIcon = isClient
+    ? `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-sky-400"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`
+    : `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-amber-400"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`;
+
+  // 1. MODO COMPACTO (Painel Lateral de Recentes)
   if (compact) {
-    // Card compacto para o painel lateral (lista)
     return `
-      <div class="file-bank-card flex items-center gap-3 p-2.5" onclick="fileBankSendFile('${file.url}', '${file.filename}')" title="${file.caption || file.filename}">
-        <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden" style="background:${info.bg};border:1px solid ${info.color}22;">
+      <div class="file-bank-card flex items-center gap-3 p-2.5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/5 transition-all cursor-pointer group" onclick="fileBankSendFile('${file.url}', '${file.filename}')" title="Clique para anexar no chat">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative" style="background:${info.bg};border:1px solid ${info.border};">
           ${isImage
-            ? `<img src="${file.url}" class="w-full h-full object-cover rounded-lg" onerror="this.style.display='none';this.nextSibling.style.display='flex';"><div class="hidden w-full h-full items-center justify-center text-lg">${info.emoji}</div>`
+            ? `<img src="${file.url}" class="w-full h-full object-cover rounded-xl" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" alt="Preview"><div class="hidden w-full h-full items-center justify-center text-lg">${info.emoji}</div>`
             : `<span class="text-xl">${info.emoji}</span>`
           }
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-xs font-semibold text-slate-200 truncate">${name}</p>
-          <p class="text-[10px] text-slate-500">${date} • <span style="color:${info.color}">${file.ext.toUpperCase()}</span></p>
+          <p class="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">${displayName}</p>
+          <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
+            <span class="file-bank-ext-badge" style="background:${info.badgeBg};color:${info.color};">${file.ext.toUpperCase()}</span>
+            <span>•</span>
+            <span class="truncate">${dateFormatted}</span>
+          </div>
         </div>
-        <button onclick="event.stopPropagation();fileBankOpenFile('${file.url}')" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all shrink-0" title="Abrir">
+        <button onclick="event.stopPropagation();fileBankOpenFile('${file.url}')" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all shrink-0 cursor-pointer" title="Abrir Arquivo">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         </button>
       </div>`;
-  } else {
-    // Card grid para o modal
+  }
+
+  // 2. MODO LISTA (Tabela Detalhada no Modal)
+  if (mode === 'list') {
     return `
-      <div class="file-bank-card flex flex-col" onclick="fileBankSendFile('${file.url}', '${file.filename}')" title="${file.caption || file.filename}">
-        <div class="relative w-full aspect-square flex items-center justify-center overflow-hidden" style="background:${info.bg};">
+      <div class="file-bank-list-row file-card-animate group" onclick="fileBankSendFile('${file.url}', '${file.filename}')" title="Clique para anexar no atendimento">
+        <!-- Ícone / Thumbnail -->
+        <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative" style="background:${info.bg};border:1px solid ${info.border};">
           ${isImage
-            ? `<img src="${file.url}" class="w-full h-full object-cover" onerror="this.style.display='none';this.nextSibling.style.display='flex';"><div class="hidden w-full h-full items-center justify-center text-4xl">${info.emoji}</div>`
-            : `<span class="text-4xl">${info.emoji}</span>`
+            ? `<img src="${file.url}" class="w-full h-full object-cover rounded-xl" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" alt="Preview"><div class="hidden w-full h-full items-center justify-center text-xl">${info.emoji}</div>`
+            : isVideo
+              ? `<div class="flex flex-col items-center justify-center gap-0.5"><span class="text-lg">🎬</span></div>`
+              : `<span class="text-2xl">${info.emoji}</span>`
           }
-          <div class="absolute top-2 right-2">
-            <span class="file-bank-ext-badge" style="background:${info.bg};color:${info.color};border:1px solid ${info.color}44;">${file.ext}</span>
+        </div>
+
+        <!-- Nome e Detalhes -->
+        <div class="flex-1 min-w-0 flex flex-col justify-center">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-slate-100 group-hover:text-white truncate transition-colors">${displayName}</span>
+            <span class="file-bank-ext-badge shrink-0" style="background:${info.badgeBg};color:${info.color};border:1px solid ${info.border};">${file.ext}</span>
+            ${file.size_formatted ? `<span class="text-[10px] font-mono text-slate-400 shrink-0">(${file.size_formatted})</span>` : ''}
           </div>
-          <button onclick="event.stopPropagation();fileBankOpenFile('${file.url}')" class="absolute bottom-2 right-2 w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-all opacity-0 group-hover:opacity-100" title="Abrir">
-            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          <div class="flex items-center gap-3 text-[11px] text-slate-400 mt-1 flex-wrap">
+            <span class="flex items-center gap-1.5 opacity-90 truncate max-w-[200px]">
+              ${senderIcon}
+              <span class="truncate">${senderLabel}</span>
+            </span>
+            <span>•</span>
+            <span class="font-mono text-[10px] text-slate-500">${dateFormatted}</span>
+          </div>
+        </div>
+
+        <!-- Ações Rápidas -->
+        <div class="flex items-center gap-1.5 list-hover-actions shrink-0" onclick="event.stopPropagation()">
+          <button onclick="fileBankOpenFile('${file.url}')" class="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer" title="Visualizar / Abrir em nova aba">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>Ver</span>
+          </button>
+          <button onclick="fileBankSendFile('${file.url}', '${file.filename}')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-sm btn-accent-theme" title="Inserir no campo de resposta">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            <span>Usar</span>
+          </button>
+          <button onclick="fileBankCopyLink('${file.url}')" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer" title="Copiar Link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
           </button>
         </div>
-        <div class="p-2.5">
-          <p class="text-[11px] font-semibold text-slate-200 truncate">${name}</p>
-          <p class="text-[9px] text-slate-500 mt-0.5">${date}</p>
-          ${file.caption ? `<p class="text-[10px] text-slate-400 truncate mt-0.5">${file.caption}</p>` : ''}
-        </div>
-      </div>`;
+      </div>
+    `;
   }
+
+  // 3. MODO MOSAICO (Grid Cards no Modal)
+  return `
+    <div class="file-bank-card file-card-animate group" onclick="fileBankSendFile('${file.url}', '${file.filename}')" title="Clique para anexar no atendimento">
+      <!-- Área Visual da Mídia / Thumbnail -->
+      <div class="relative w-full aspect-[4/3] flex items-center justify-center overflow-hidden" style="background:${info.bg};">
+        ${isImage
+          ? `<img src="${file.url}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-108" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" alt="Preview">
+             <div class="hidden w-full h-full items-center justify-center text-4xl">${info.emoji}</div>`
+          : isVideo
+            ? `<div class="w-full h-full flex flex-col items-center justify-center gap-1.5 transition-transform duration-300 group-hover:scale-110">
+                 <div class="w-12 h-12 rounded-full bg-black/50 border border-white/20 flex items-center justify-center text-purple-300 shadow-xl backdrop-blur-sm">
+                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                 </div>
+               </div>`
+            : isAudio
+              ? `<div class="w-full h-full flex flex-col items-center justify-center gap-1.5 transition-transform duration-300 group-hover:scale-110">
+                   <div class="w-12 h-12 rounded-full bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-xl backdrop-blur-sm">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                   </div>
+                 </div>`
+              : `<div class="w-full h-full flex items-center justify-center text-4xl transition-transform duration-300 group-hover:scale-110">${info.emoji}</div>`
+        }
+
+        <!-- Top Badges: Extensão + Tamanho -->
+        <div class="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+          <span class="file-bank-ext-badge shadow-md backdrop-blur-md" style="background:${info.badgeBg};color:${info.color};border:1px solid ${info.border};">${file.ext}</span>
+          ${file.size_formatted ? `<span class="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold bg-black/60 text-slate-300 border border-white/10 shadow-md backdrop-blur-md">${file.size_formatted}</span>` : ''}
+        </div>
+
+        <!-- Ações no Hover sobre o Thumbnail -->
+        <div class="absolute inset-0 bg-black/75 backdrop-blur-[3px] flex items-center justify-center gap-2 card-hover-actions p-3" onclick="event.stopPropagation()">
+          <button onclick="fileBankOpenFile('${file.url}')" class="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer shadow-lg" title="Visualizar Mídia">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button onclick="fileBankSendFile('${file.url}', '${file.filename}')" class="px-3.5 h-9 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg btn-accent-theme" title="Anexar ao chat">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            <span>Usar</span>
+          </button>
+          <button onclick="fileBankCopyLink('${file.url}')" class="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer shadow-lg" title="Copiar Link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Rodapé do Card -->
+      <div class="p-3 flex flex-col gap-1.5 border-t border-white/5" style="background: color-mix(in srgb, var(--color-background, #000) 65%, transparent);">
+        <p class="text-xs font-bold truncate transition-colors" style="color: var(--color-foreground, #ffffff);" title="${displayName}">${displayName}</p>
+        <div class="flex items-center justify-between text-[10px] pt-0.5" style="color: var(--color-text-muted, #94a3b8);">
+          <span class="flex items-center gap-1 opacity-90 truncate max-w-[120px]">
+            ${senderIcon}
+            <span class="truncate">${senderLabel}</span>
+          </span>
+          <span class="font-mono text-[9px] opacity-75 shrink-0">${dateFormatted}</span>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
-// Abre/fecha o arquivo no browser
+// Abre o arquivo em nova aba
 function fileBankOpenFile(url) {
+  if (!url) return;
   window.open(url, '_blank');
 }
 
-// Insere o arquivo na caixa de envio como mensagem com anexo
+// Copia o link do arquivo com toast
+function fileBankCopyLink(url) {
+  if (!url) return;
+  const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+  navigator.clipboard.writeText(fullUrl).then(() => {
+    showToast('Link do arquivo copiado para a área de transferência!', 'Link Copiado', 'success');
+  }).catch(() => {
+    showToast(fullUrl, 'Link do Arquivo', 'info');
+  });
+}
+
+// Insere o arquivo no chat ativo
 function fileBankSendFile(url, filename) {
-  // Fecha os paineis
   closeFileBankPanel();
   closeFileBankModal();
-  // Coloca o link no campo de texto para o atendente confirmar o envio
+
   if (chatInput) {
     chatInput.value = url;
     adjustChatInputHeight();
     chatInput.focus();
+    showToast(`Arquivo inserido na caixa de texto. Pressione Enter para enviar.`, 'Anexo Pronto', 'success');
   }
 }
 
-// ----------- PAINEL DE RECENTES -----------
+// ----------------- PAINEL LATERAL DE RECENTES -----------------
 
 function openFileBankPanel() {
   const panel = document.getElementById('file-bank-panel');
   if (!panel) return;
+
+  closeQuickRepliesPanel();
 
   const isHidden = panel.classList.contains('hidden');
   if (isHidden) {
@@ -3130,7 +4416,7 @@ function setFileBankFilter(filter) {
 function loadFileBankRecent() {
   const grid = document.getElementById('file-bank-recent-grid');
   if (!grid) return;
-  grid.innerHTML = '<div class="flex items-center justify-center py-6"><div class="animate-spin w-4 h-4 border-2 rounded-full" style="border-color:color-mix(in srgb,var(--color-primary-theme,#6366f1) 30%,transparent);border-top-color:var(--color-primary-theme,#6366f1);"></div></div>';
+  grid.innerHTML = '<div class="flex items-center justify-center py-6"><div class="animate-spin w-5 h-5 border-2 rounded-full" style="border-color:color-mix(in srgb,var(--color-primary-theme,#6366f1) 30%,transparent);border-top-color:var(--color-primary-theme,#6366f1);"></div></div>';
 
   let url = '/api/files/recent?limit=8';
   if (fileBankFilter === 'current' && selectedChatJid) {
@@ -3142,10 +4428,13 @@ function loadFileBankRecent() {
     .then(data => {
       const files = data.files || [];
       if (files.length === 0) {
-        grid.innerHTML = '<div class="flex flex-col items-center justify-center py-6 text-slate-500 text-[11px] gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="opacity-30"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>Nenhum arquivo encontrado</p></div>';
+        grid.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-8 text-slate-500 text-xs gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="opacity-40"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <p>Nenhum arquivo recente</p>
+          </div>`;
         return;
       }
-      // Lista compacta de itens
       grid.innerHTML = files.map(f => renderFileBankCard(f, true)).join('');
     })
     .catch(() => {
@@ -3153,7 +4442,7 @@ function loadFileBankRecent() {
     });
 }
 
-// ----------- MODAL DE BUSCA COMPLETA -----------
+// ----------------- MODAL DE BUSCA COMPLETA -----------------
 
 function openFileBankModal() {
   closeFileBankPanel();
@@ -3163,12 +4452,17 @@ function openFileBankModal() {
 
   // Resetar estado
   fileBankModalType = 'all';
+  fileBankScope = 'all';
   fileBankModalPage = 1;
+
   const input = document.getElementById('file-bank-search-input');
   if (input) input.value = '';
-  document.querySelectorAll('.file-bank-type-btn').forEach(b => b.classList.remove('active'));
-  const allBtn = document.querySelector('.file-bank-type-btn[data-type="all"]');
-  if (allBtn) allBtn.classList.add('active');
+  const clearBtn = document.getElementById('file-bank-search-clear');
+  if (clearBtn) clearBtn.classList.add('hidden');
+
+  updateFileBankScopeUI();
+  updateFileBankTypeUI();
+  updateFileBankViewModeUI();
 
   loadFileBankModal();
 }
@@ -3178,19 +4472,104 @@ function closeFileBankModal() {
   if (modal) modal.classList.add('hidden');
 }
 
+function closeFileBankModalOnBackdrop(e) {
+  if (e.target.id === 'modal-file-bank' || e.target.classList.contains('modal-backdrop-theme')) {
+    closeFileBankModal();
+  }
+}
+
+function setFileBankViewMode(mode) {
+  fileBankViewMode = mode;
+  updateFileBankViewModeUI();
+  if (fileBankCachedData) {
+    renderFileBankCachedResults();
+  } else {
+    loadFileBankModal();
+  }
+}
+
+function updateFileBankViewModeUI() {
+  const gridBtn = document.getElementById('file-bank-view-grid-btn');
+  const listBtn = document.getElementById('file-bank-view-list-btn');
+
+  if (gridBtn && listBtn) {
+    if (fileBankViewMode === 'grid') {
+      gridBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 bg-white/15 text-white cursor-pointer';
+      listBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 text-slate-400 hover:text-white cursor-pointer';
+    } else {
+      listBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 bg-white/15 text-white cursor-pointer';
+      gridBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 text-slate-400 hover:text-white cursor-pointer';
+    }
+  }
+}
+
+function setFileBankScope(scope) {
+  fileBankScope = scope;
+  fileBankModalPage = 1;
+  updateFileBankScopeUI();
+  loadFileBankModal();
+}
+
+function updateFileBankScopeUI() {
+  const allBtn = document.getElementById('file-bank-scope-all');
+  const chatBtn = document.getElementById('file-bank-scope-chat');
+
+  if (allBtn && chatBtn) {
+    if (fileBankScope === 'all') {
+      allBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white/15 text-white cursor-pointer';
+      chatBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-white cursor-pointer';
+    } else {
+      chatBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white/15 text-white cursor-pointer';
+      allBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-white cursor-pointer';
+    }
+  }
+
+  const subtitle = document.getElementById('file-bank-header-subtitle');
+  if (subtitle) {
+    if (fileBankScope === 'chat' && selectedChatName) {
+      subtitle.textContent = `Arquivos trocados com ${selectedChatName}`;
+    } else {
+      subtitle.textContent = `Explore, visualize e reutilize mídias enviadas e recebidas nos atendimentos`;
+    }
+  }
+}
+
 function setFileBankTypeFilter(type) {
   fileBankModalType = type;
   fileBankModalPage = 1;
-  document.querySelectorAll('.file-bank-type-btn').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`.file-bank-type-btn[data-type="${type}"]`);
-  if (btn) btn.classList.add('active');
+  updateFileBankTypeUI();
   loadFileBankModal();
+}
+
+function updateFileBankTypeUI() {
+  document.querySelectorAll('.file-bank-type-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.file-bank-type-btn[data-type="${fileBankModalType}"]`);
+  if (btn) btn.classList.add('active');
 }
 
 function onFileBankSearch() {
   clearTimeout(fileBankSearchTimer);
+  const input = document.getElementById('file-bank-search-input');
+  const clearBtn = document.getElementById('file-bank-search-clear');
+  if (clearBtn) {
+    if (input && input.value.trim()) {
+      clearBtn.classList.remove('hidden');
+    } else {
+      clearBtn.classList.add('hidden');
+    }
+  }
+
   fileBankModalPage = 1;
-  fileBankSearchTimer = setTimeout(() => loadFileBankModal(), 350);
+  fileBankSearchTimer = setTimeout(() => loadFileBankModal(), 300);
+}
+
+function clearFileBankSearch() {
+  const input = document.getElementById('file-bank-search-input');
+  const clearBtn = document.getElementById('file-bank-search-clear');
+  if (input) input.value = '';
+  if (clearBtn) clearBtn.classList.add('hidden');
+  fileBankModalPage = 1;
+  loadFileBankModal();
 }
 
 function fileBankChangePage(delta) {
@@ -3198,52 +4577,158 @@ function fileBankChangePage(delta) {
   loadFileBankModal();
 }
 
+function fileBankGoToPage(p) {
+  fileBankModalPage = p;
+  loadFileBankModal();
+}
+
+function renderFileBankCachedResults() {
+  if (!fileBankCachedData) return;
+  const { files, total, totalPages } = fileBankCachedData;
+  const grid = document.getElementById('file-bank-modal-grid');
+  if (!grid) return;
+
+  if (files.length === 0) {
+    grid.innerHTML = `
+      <div class="flex flex-col items-center justify-center h-64 gap-3 text-center animate-in fade-in" style="color: var(--color-text-muted, #94a3b8);">
+        <div class="w-16 h-16 rounded-3xl flex items-center justify-center shadow-inner" style="background: color-mix(in srgb, var(--color-background, #000) 50%, transparent); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); color: var(--color-text-muted, #94a3b8);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <div class="space-y-1">
+          <p class="text-sm font-bold" style="color: var(--color-foreground, #ffffff);">Nenhum arquivo encontrado</p>
+          <p class="text-xs max-w-xs leading-relaxed" style="color: var(--color-text-muted, #94a3b8);">Não encontramos arquivos com os filtros e termos pesquisados.</p>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (fileBankViewMode === 'list') {
+    grid.innerHTML = `<div class="flex flex-col gap-2">${files.map(f => renderFileBankCard(f, false, 'list')).join('')}</div>`;
+  } else {
+    grid.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">${files.map(f => renderFileBankCard(f, false, 'grid')).join('')}</div>`;
+  }
+}
+
 function loadFileBankModal() {
   const grid = document.getElementById('file-bank-modal-grid');
-  const total = document.getElementById('file-bank-modal-total');
+  const badgeTotal = document.getElementById('file-bank-header-badge');
   const pagination = document.getElementById('file-bank-pagination');
   const pageInfo = document.getElementById('file-bank-page-info');
   const prevBtn = document.getElementById('file-bank-prev');
   const nextBtn = document.getElementById('file-bank-next');
+  const pageNumbers = document.getElementById('file-bank-page-numbers');
+
   if (!grid) return;
 
-  grid.innerHTML = '<div class="flex items-center justify-center h-40"><div class="animate-spin w-6 h-6 border-2 rounded-full" style="border-color:color-mix(in srgb,var(--color-primary-theme,#6366f1) 30%,transparent);border-top-color:var(--color-primary-theme,#6366f1);"></div></div>';
+  grid.innerHTML = `
+    <div class="flex flex-col items-center justify-center h-64 gap-3">
+      <div class="animate-spin w-8 h-8 border-3 rounded-full" style="border-color:color-mix(in srgb,var(--color-primary-theme,#6366f1) 25%,transparent);border-top-color:var(--color-primary-theme,#6366f1);"></div>
+      <span class="text-xs text-slate-400 font-medium tracking-wide animate-pulse">Carregando mídias do banco de dados...</span>
+    </div>`;
 
   const q = document.getElementById('file-bank-search-input')?.value || '';
-  const params = new URLSearchParams({ q, type: fileBankModalType, page: fileBankModalPage, limit: 20 });
+  const params = new URLSearchParams({
+    q,
+    type: fileBankModalType,
+    page: fileBankModalPage,
+    limit: 20
+  });
+
+  if (typeof currentOperator !== 'undefined' && currentOperator?.sector_id) {
+    params.append('setor_id', currentOperator.sector_id);
+  }
+
+  if (fileBankScope === 'chat' && selectedChatJid) {
+    params.append('cliente_jid', selectedChatJid);
+  }
 
   fetch(`/api/files/search?${params}`)
     .then(r => r.json())
     .then(data => {
       const files = data.files || [];
       const totalCount = data.total || 0;
-      const totalPages = Math.ceil(totalCount / 20);
+      const counts = data.counts || {};
+      const totalPages = Math.max(1, Math.ceil(totalCount / 20));
 
-      if (total) total.textContent = `${totalCount} arquivo${totalCount !== 1 ? 's' : ''} encontrado${totalCount !== 1 ? 's' : ''}`;
+      fileBankCachedData = { files, total: totalCount, totalPages };
 
-      if (files.length === 0) {
-        grid.innerHTML = '<div class="flex flex-col items-center justify-center h-40 gap-3 text-slate-500 text-xs"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="opacity-30"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><p>Nenhum arquivo encontrado</p></div>';
-        if (pagination) pagination.classList.add('hidden');
-        return;
+      // Atualiza contadores nas abas
+      if (counts.all !== undefined) {
+        const cAll = document.getElementById('file-bank-count-all');
+        const cImg = document.getElementById('file-bank-count-image');
+        const cVid = document.getElementById('file-bank-count-video');
+        const cAud = document.getElementById('file-bank-count-audio');
+        const cDoc = document.getElementById('file-bank-count-doc');
+
+        if (cAll) cAll.textContent = counts.all || 0;
+        if (cImg) cImg.textContent = counts.image || 0;
+        if (cVid) cVid.textContent = counts.video || 0;
+        if (cAud) cAud.textContent = counts.audio || 0;
+        if (cDoc) cDoc.textContent = counts.doc || 0;
       }
 
-      // Grid responsivo: 2 cols em telas pequenas, 3 em médias, 4 em grandes
-      grid.innerHTML = `<div class="grid grid-cols-3 sm:grid-cols-4 gap-3">${files.map(f => renderFileBankCard(f, false)).join('')}</div>`;
+      if (badgeTotal) {
+        badgeTotal.textContent = `${totalCount} arquivo${totalCount !== 1 ? 's' : ''}`;
+      }
+
+      // Renderiza os resultados
+      renderFileBankCachedResults();
 
       // Paginação
-      if (totalPages > 1) {
+      if (totalCount > 0) {
         if (pagination) pagination.classList.remove('hidden');
-        if (pageInfo) pageInfo.textContent = `Página ${fileBankModalPage} de ${totalPages} (${totalCount} arquivos)`;
+        const startItem = (fileBankModalPage - 1) * 20 + 1;
+        const endItem = Math.min(fileBankModalPage * 20, totalCount);
+
+        if (pageInfo) {
+          pageInfo.innerHTML = `Mostrando <strong class="text-white">${startItem}–${endItem}</strong> de <strong class="text-white">${totalCount}</strong> arquivos`;
+        }
+
         if (prevBtn) prevBtn.disabled = fileBankModalPage <= 1;
         if (nextBtn) nextBtn.disabled = fileBankModalPage >= totalPages;
+
+        if (pageNumbers) {
+          let pagesHtml = '';
+          const maxVisiblePages = 5;
+          let startPage = Math.max(1, fileBankModalPage - 2);
+          let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+          if (endPage - startPage < maxVisiblePages - 1) {
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+          }
+
+          for (let p = startPage; p <= endPage; p++) {
+            const isCurr = p === fileBankModalPage;
+            pagesHtml += `
+              <button onclick="fileBankGoToPage(${p})" class="w-7 h-7 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer ${isCurr ? 'bg-white/20 text-white border border-white/20 shadow-sm' : 'text-slate-400 hover:text-white hover:bg-white/5'}">
+                ${p}
+              </button>
+            `;
+          }
+          pageNumbers.innerHTML = pagesHtml;
+        }
       } else {
         if (pagination) pagination.classList.add('hidden');
       }
     })
     .catch(() => {
-      grid.innerHTML = '<div class="text-center text-xs text-red-400 py-8">Erro ao buscar arquivos.</div>';
+      grid.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-48 text-red-400 text-xs gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <p>Erro ao carregar arquivos do banco de dados.</p>
+        </div>`;
     });
 }
+
+// Fechar modal com tecla ESC
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('modal-file-bank');
+    if (modal && !modal.classList.contains('hidden')) {
+      closeFileBankModal();
+    }
+  }
+});
 
 
 function updateInternalNoteIndicator() {
@@ -3267,7 +4752,7 @@ function updateInternalNoteIndicator() {
       descOption.style.cssText = 'color: #e9d5ff !important; opacity: 0.95 !important;';
     }
     if (statusIndicator) {
-      statusIndicator.className = 'px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-400/30 border border-purple-300/60 flex items-center gap-1.5 transition-all shadow-sm';
+      statusIndicator.className = 'px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-400/30 border border-purple-300/60 flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap';
       statusIndicator.style.cssText = 'color: #ffffff !important;';
       statusIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-purple-200 shadow-[0_0_8px_#ffffff]"></span><span style="color:#ffffff !important; font-weight: 700;">Ativo</span>';
     }
@@ -3285,7 +4770,7 @@ function updateInternalNoteIndicator() {
       descOption.style.cssText = '';
     }
     if (statusIndicator) {
-      statusIndicator.className = 'px-2 py-0.5 text-[10px] font-medium rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 flex items-center gap-1.5 transition-all';
+      statusIndicator.className = 'px-2 py-0.5 text-[10px] font-medium rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 flex items-center gap-1.5 transition-all shrink-0 whitespace-nowrap';
       statusIndicator.style.cssText = '';
       statusIndicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span>Inativo</span>';
     }
@@ -3351,6 +4836,52 @@ function toggleInternalNoteMode() {
   adjustChatInputHeight();
 }
 
+// 🎛️ CONTROLE DE OPÇÃO: ASSINATURA DE ATENDENTE
+function updateSignatureOptionUI() {
+  const indicator = document.getElementById('signature-status-indicator');
+  const icon = document.getElementById('icon-signature-option');
+  const label = document.getElementById('label-signature-option');
+  const btn = document.getElementById('btn-signature-option');
+  if (!indicator) return;
+
+  if (isSignatureToClientEnabled) {
+    indicator.className = 'px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap';
+    indicator.style.cssText = 'color: #6ee7b7 !important;';
+    indicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span><span style="color:#6ee7b7 !important; font-weight: 700;">Ativo</span>';
+
+    if (icon) icon.setAttribute('style',
+      'width:2rem;height:2rem;border-radius:0.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.25s;' +
+      'background-color:rgba(16,185,129,0.2) !important;' +
+      'border:1px solid rgba(16,185,129,0.55) !important;' +
+      'color:rgb(52,211,153) !important;' +
+      'box-shadow:0 0 12px rgba(16,185,129,0.28) !important;'
+    );
+    if (label) label.style.cssText = 'font-weight:700;font-size:0.75rem;color:rgb(52,211,153);';
+    if (btn) btn.style.borderColor = 'rgba(16,185,129,0.35)';
+  } else {
+    indicator.className = 'px-2 py-0.5 text-[10px] font-medium rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 flex items-center gap-1.5 transition-all shrink-0 whitespace-nowrap';
+    indicator.style.cssText = '';
+    indicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span>Inativo</span>';
+
+    if (icon) icon.setAttribute('style',
+      'width:2rem;height:2rem;border-radius:0.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.25s;' +
+      'background-color:rgba(100,116,139,0.1) !important;' +
+      'border:1px solid rgba(100,116,139,0.3) !important;' +
+      'color:rgb(148,163,184) !important;' +
+      'box-shadow:none !important;'
+    );
+    if (label) label.style.cssText = 'font-weight:700;font-size:0.75rem;color:rgb(148,163,184);';
+    if (btn) btn.style.borderColor = '';
+  }
+}
+
+
+function toggleSignatureOption() {
+  isSignatureToClientEnabled = !isSignatureToClientEnabled;
+  localStorage.setItem('tf_signature_to_client', isSignatureToClientEnabled);
+  updateSignatureOptionUI();
+}
+
 // Variável global para armazenar anexos
 let selectedAttachments = [];
 
@@ -3399,7 +4930,9 @@ async function sendMessage(e) {
   socket.emit('send_message', {
     cliente_jid: selectedChatJid,
     texto: text,
-    atendente_id: currentOperator.id,
+    atendente_id: currentOperator ? currentOperator.id : 'sistema',
+    atendente_nome: currentOperator ? (currentOperator.name || currentOperator.id) : 'sistema',
+    send_signature: isSignatureToClientEnabled,
     is_internal: isInternal,
     attachments: uploadedAttachments
   });
@@ -4164,7 +5697,9 @@ function sendRecordedAudio() {
     socket.emit('send_message', {
       cliente_jid: selectedChatJid,
       texto: recordedAudioBase64,
-      atendente_id: currentOperator.id
+      atendente_id: currentOperator ? currentOperator.id : 'sistema',
+      atendente_nome: currentOperator ? (currentOperator.name || currentOperator.id) : 'sistema',
+      send_signature: isSignatureToClientEnabled
     });
     playMessageSentSound();
     showToast('Mensagem de voz enviada com sucesso!', 'Áudio Enviado', 'success');
@@ -4176,7 +5711,9 @@ function sendRecordedAudio() {
       socket.emit('send_message', {
         cliente_jid: selectedChatJid,
         texto: recordedAudioBase64,
-        atendente_id: currentOperator.id
+        atendente_id: currentOperator ? currentOperator.id : 'sistema',
+        atendente_nome: currentOperator ? (currentOperator.name || currentOperator.id) : 'sistema',
+        send_signature: isSignatureToClientEnabled
       });
       playMessageSentSound();
       showToast('Mensagem de voz enviada com sucesso!', 'Áudio Enviado', 'success');
@@ -4266,10 +5803,7 @@ async function finishCurrentChat() {
   }
 }
 
-// Scroll automático para a última mensagem
-function scrollToBottom() {
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
+
 
 // Erros de Envio vindos do servidor
 socket.on('error_message', (msg) => {
@@ -4285,21 +5819,6 @@ socket.on('message_reacted', ({ message_id, reacao, cliente_jid }) => {
     updateMsgReactionBadgeInDOM(message_id, reacao);
   }
 });
-
-function removeReaction(msgId) {
-  const msgObj = currentChatMessages.find(m => m.id === msgId);
-  const targetJid = (msgObj && msgObj.cliente_jid) ? msgObj.cliente_jid : selectedChatJid;
-  if (msgObj) msgObj.reacao = null;
-
-  updateMsgReactionBadgeInDOM(msgId, null);
-
-  socket.emit('react_message', {
-    message_id: msgId,
-    cliente_jid: targetJid,
-    reacao: null,
-    atendente_id: currentOperator ? currentOperator.id : 'sistema'
-  });
-}
 
 // Listener de exclusão de mensagem do SQLite
 socket.on('message_deleted', ({ message_id, cliente_jid }) => {
@@ -4332,10 +5851,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
   
-  if (contextMenu) {
-    contextMenu.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
+  const msgMenu = document.getElementById('message-context-menu');
+  const chatMenu = document.getElementById('chat-context-menu');
+  if (msgMenu) {
+    msgMenu.addEventListener('click', (e) => e.stopPropagation());
+  }
+  if (chatMenu) {
+    chatMenu.addEventListener('click', (e) => e.stopPropagation());
   }
 
   // Função global super-robusta para atualizar os indicadores
@@ -4385,11 +5907,13 @@ window.addEventListener('DOMContentLoaded', () => {
   // Update indicators position on window resize
   window.addEventListener('resize', () => {
     const activeBtn = currentSidebarTab === 'active' ? tabActiveBtn : (currentSidebarTab === 'queue' ? tabQueueBtn : (currentSidebarTab === 'bot' ? tabBotBtn : tabHistoryBtn));
-    updateTabIndicator(activeBtn);
+    if (activeBtn) updateTabIndicator(activeBtn);
     
     const activeFilterBtn = activeFilterType === 'all' ? btnActiveFilterAll : (activeFilterType === 'unread' ? btnActiveFilterUnread : (activeFilterType === 'groups' ? btnActiveFilterGroups : null));
-    updateActiveFilterIndicator(activeFilterBtn);
+    if (activeFilterBtn) updateActiveFilterIndicator(activeFilterBtn);
   });
+
+  updateSignatureOptionUI();
 });
 
 // ==============================================================================

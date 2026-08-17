@@ -1372,6 +1372,7 @@ def get_system_settings(db: Session):
             "whatsapp_warn_new_number": True,
             "whatsapp_limit_active_chats": True,
             "whatsapp_limit_count": 10,
+            "whatsapp_send_signature": True,
             "updated_at": datetime.utcnow()
         }
 
@@ -1394,6 +1395,7 @@ def update_system_settings(db: Session, update: schemas.SystemSettingsUpdate):
     if update.whatsapp_warn_new_number is not None: settings.whatsapp_warn_new_number = update.whatsapp_warn_new_number
     if update.whatsapp_limit_active_chats is not None: settings.whatsapp_limit_active_chats = update.whatsapp_limit_active_chats
     if update.whatsapp_limit_count is not None: settings.whatsapp_limit_count = update.whatsapp_limit_count
+    if update.whatsapp_send_signature is not None: settings.whatsapp_send_signature = update.whatsapp_send_signature
     
     db.commit()
     db.refresh(settings)
