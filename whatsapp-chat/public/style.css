@@ -1169,6 +1169,168 @@ aside > div:last-child {
   }
 }
 
+/* Animações Fluidas das Abas do Modal de Participantes */
+.panel-tab-enter-right {
+  animation: participantPanelSlideRight 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+.panel-tab-enter-left {
+  animation: participantPanelSlideLeft 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+@keyframes participantPanelSlideRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(14px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes participantPanelSlideLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(-14px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* ==============================================================================
+   ESTILIZAÇÃO TEMÁTICA COMPLETA DO MODAL DE PARTICIPANTES (SINCRONIZADO)
+   ============================================================================== */
+#participants-modal .modal-card {
+  background: var(--color-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-foreground) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+#participants-modal .modal-header-bg {
+  background: color-mix(in srgb, var(--color-background) 80%, transparent) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+#participants-modal .modal-footer-bg {
+  background: color-mix(in srgb, var(--color-background) 80%, transparent) !important;
+  border-top: 1px solid var(--border-color) !important;
+}
+
+#participants-modal .participants-header-icon {
+  background: color-mix(in srgb, var(--color-primary-theme) 15%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+  box-shadow: 0 0 15px -3px color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+}
+
+#participants-modal #participants-total-badge {
+  background: color-mix(in srgb, var(--color-primary-theme) 15%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+}
+
+#participants-modal .tabs-control-bg {
+  background: color-mix(in srgb, var(--color-background) 70%, transparent) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+#participants-modal #participants-tab-pill {
+  background: color-mix(in srgb, var(--color-primary-theme) 22%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 45%, transparent) !important;
+  box-shadow: 0 0 12px -2px color-mix(in srgb, var(--color-primary-theme) 25%, transparent) !important;
+}
+
+#participants-modal .tab-btn-active {
+  color: var(--color-primary-theme) !important;
+  font-weight: 700 !important;
+}
+
+#participants-modal .tab-btn-inactive {
+  color: var(--color-text-muted) !important;
+}
+#participants-modal .tab-btn-inactive:hover {
+  color: var(--color-foreground) !important;
+}
+
+#participants-modal .participant-primary-card {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary-theme) 12%, transparent) 0%, color-mix(in srgb, var(--color-accent-theme) 6%, transparent) 100%) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 25%, transparent) !important;
+}
+
+#participants-modal .participant-primary-badge {
+  background: color-mix(in srgb, var(--color-primary-theme) 18%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 35%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+}
+
+#participants-modal .participant-primary-avatar {
+  background: linear-gradient(135deg, var(--color-primary-theme) 0%, var(--color-accent-theme) 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--color-primary-theme) 40%, transparent) !important;
+}
+
+#participants-modal #participants-co-count-label {
+  color: var(--color-primary-theme) !important;
+}
+
+#participants-modal .participant-avatar-theme {
+  background: color-mix(in srgb, var(--color-primary-theme) 15%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+}
+
+#participants-modal .participant-item-card {
+  background: color-mix(in srgb, var(--color-background) 60%, transparent) !important;
+  border: 1px solid var(--border-color) !important;
+}
+#participants-modal .participant-item-card:hover {
+  background: color-mix(in srgb, var(--color-background) 80%, rgba(255, 255, 255, 0.05)) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+}
+
+#participants-modal .btn-invite-theme {
+  background: var(--color-primary-theme) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px -2px color-mix(in srgb, var(--color-primary-theme) 40%, transparent) !important;
+}
+#participants-modal .btn-invite-theme:hover {
+  filter: brightness(1.12) !important;
+  box-shadow: 0 6px 18px -2px color-mix(in srgb, var(--color-primary-theme) 55%, transparent) !important;
+}
+
+#participants-modal .btn-secondary-theme {
+  background: color-mix(in srgb, var(--color-primary-theme) 15%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme) 30%, transparent) !important;
+  color: var(--color-primary-theme) !important;
+}
+#participants-modal .btn-secondary-theme:hover {
+  background: color-mix(in srgb, var(--color-primary-theme) 25%, transparent) !important;
+}
+
+#participants-modal .input-search-theme {
+  background: color-mix(in srgb, var(--color-background) 70%, transparent) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--color-foreground) !important;
+}
+#participants-modal .input-search-theme:focus {
+  border-color: var(--color-primary-theme) !important;
+  box-shadow: 0 0 0 1px var(--color-primary-theme) !important;
+}
+
+#participants-modal .pulse-dot-theme {
+  background: var(--color-primary-theme) !important;
+}
+
 /* Backdrop dos Modais/Zoom Sincronizados com o Tema */
 .modal-backdrop-theme {
   background-color: color-mix(in srgb, var(--color-background) 90%, transparent) !important;
@@ -1773,9 +1935,13 @@ aside > div:last-child {
 @keyframes modalBackdropOut {
   0% {
     opacity: 1;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
   100% {
     opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
   }
 }
 
@@ -1801,16 +1967,16 @@ aside > div:last-child {
   }
   100% {
     opacity: 0;
-    transform: scale(0.94) translateY(12px);
+    transform: scale(0.94) translateY(14px);
   }
 }
 
 .animate-modal-backdrop-in {
-  animation: modalBackdropIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  animation: modalBackdropIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 
 .animate-modal-backdrop-out {
-  animation: modalBackdropOut 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  animation: modalBackdropOut 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
 }
 
 .animate-modal-content-in {
@@ -1818,7 +1984,29 @@ aside > div:last-child {
 }
 
 .animate-modal-content-out {
-  animation: modalContentOut 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  animation: modalContentOut 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+}
+
+@keyframes deletedNoticeFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+    max-height: 0;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+  100% {
+    opacity: 0.9;
+    transform: translateY(0);
+    max-height: 40px;
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+  }
+}
+
+.msg-deleted-notice-enter {
+  animation: deletedNoticeFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  overflow: hidden;
 }
 
 /* ==========================================================================
@@ -2131,3 +2319,344 @@ aside > div:last-child {
   box-shadow: 0 12px 35px rgba(0, 0, 0, 0.75), 0 0 22px color-mix(in srgb, var(--color-primary-theme, #6366f1) 30%, transparent);
   transform: translateY(-2px);
 }
+
+/* ==============================================================================
+   👥 CHAT INTERNO DA EQUIPE - GAVETA LATERAL RETRÁTIL & GATILHO DOCK
+   ============================================================================== */
+
+/* Gatilho Lateral Fixo na Borda Direita */
+#btn-internal-chat-trigger {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 7px 12px 9px;
+  border-radius: 16px 0 0 16px;
+  background: color-mix(in srgb, var(--color-card, #172033) 90%, black 10%);
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #6366f1) 35%, var(--border-color, rgba(255,255,255,0.12)));
+  border-right: none;
+  color: var(--color-foreground, #f8fafc);
+  cursor: pointer;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.45), 0 0 15px color-mix(in srgb, var(--color-primary-theme, #6366f1) 15%, transparent);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+#btn-internal-chat-trigger:hover {
+  padding-left: 13px;
+  background: color-mix(in srgb, var(--color-card, #172033) 95%, var(--color-primary-theme, #6366f1) 5%);
+  border-color: var(--color-primary-theme, #6366f1);
+  box-shadow: -6px 0 28px rgba(0, 0, 0, 0.65), 0 0 22px color-mix(in srgb, var(--color-primary-theme, #6366f1) 35%, transparent);
+  transform: translateY(-50%) scale(1.04);
+}
+
+/* Gaveta Lateral Deslizante */
+#internal-chat-drawer {
+  background: color-mix(in srgb, var(--color-background, #0b0f19) 94%, black 6%);
+  border-left: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  box-shadow: -15px 0 45px rgba(0, 0, 0, 0.65);
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+#internal-chat-drawer.drawer-open {
+  transform: translateX(0) !important;
+}
+
+#internal-chat-drawer.drawer-closed {
+  transform: translateX(100%) !important;
+}
+
+/* Backdrop da Gaveta */
+#internal-chat-backdrop {
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+#internal-chat-backdrop.backdrop-hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+#internal-chat-backdrop.backdrop-visible {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Cards de Atendimento Compartilhado no Chat Interno */
+.internal-shared-card {
+  background: color-mix(in srgb, var(--color-card, #172033) 90%, black 10%);
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #6366f1) 40%, var(--border-color, rgba(255,255,255,0.12)));
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35), 0 0 12px color-mix(in srgb, var(--color-primary-theme, #6366f1) 12%, transparent);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.internal-shared-card:hover {
+  border-color: var(--color-primary-theme, #6366f1);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 18px color-mix(in srgb, var(--color-primary-theme, #6366f1) 22%, transparent);
+}
+
+/* Indicadores de Status dos Usuários no Chat Interno */
+.status-badge-online {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+.status-badge-atendendo {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.status-badge-offline {
+  background: #64748b;
+}
+
+/* Bolha de Mensagens Internas */
+.internal-msg-bubble-self {
+  background: color-mix(in srgb, var(--color-primary-theme, #6366f1) 25%, var(--color-card, #172033));
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #6366f1) 40%, transparent);
+  color: var(--color-foreground, #f8fafc);
+}
+
+.internal-msg-bubble-other {
+  background: color-mix(in srgb, var(--color-card, #172033) 95%, transparent);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  color: var(--color-foreground, #f8fafc);
+}
+
+/* ==========================================================================
+   Modo Dedicado de Chat Interno Global (iframe no Portal)
+   ========================================================================== */
+html.internal-only-view,
+body.internal-only-view {
+  background: var(--color-background, #0b0f19) !important;
+  background-color: var(--color-background, #0b0f19) !important;
+  overflow: hidden !important;
+}
+
+html.internal-only-view body > main,
+html.internal-only-view body > div:not(#internal-chat-drawer):not(#internal-share-modal),
+html.internal-only-view #whatsapp-init-loader,
+html.internal-only-view #btn-internal-chat-trigger,
+html.internal-only-view #internal-chat-backdrop,
+body.internal-only-view > main,
+body.internal-only-view > div:not(#internal-chat-drawer):not(#internal-share-modal),
+body.internal-only-view #whatsapp-init-loader,
+body.internal-only-view #btn-internal-chat-trigger,
+body.internal-only-view #internal-chat-backdrop {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+html.internal-only-view #internal-chat-drawer,
+body.internal-only-view #internal-chat-drawer {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  background-color: var(--color-background, #0b0f19) !important;
+  display: flex !important;
+  z-index: 9999 !important;
+}
+
+/* ==============================================================================
+   💎 DESIGN SYSTEM ULTRA-PREMIUM DO CHAT INTERNO (100% DINÂMICO COM O TEMA)
+   ============================================================================== */
+
+.internal-drawer-surface {
+  background-color: var(--color-background, #0b0f19) !important;
+  color: var(--color-foreground, #f8fafc) !important;
+}
+
+.internal-header-surface {
+  background: color-mix(in srgb, var(--color-card, #172033) 85%, transparent) !important;
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1)) !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+.internal-icon-box {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 16%, transparent) !important;
+  color: var(--color-primary-theme, #ef4444) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 32%, transparent) !important;
+  box-shadow: 0 0 16px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, transparent) !important;
+}
+
+.internal-badge-theme {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent) !important;
+  color: var(--color-primary-theme, #ef4444) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent) !important;
+}
+
+/* Seletor Segmentado de Abas */
+.internal-tab-container {
+  background: color-mix(in srgb, var(--color-card, #172033) 40%, black) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08)) !important;
+  border-radius: 16px !important;
+  padding: 4px !important;
+}
+
+.internal-tab-active {
+  background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), var(--color-accent-theme, #f87171)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 18px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 50%, transparent) !important;
+  font-weight: 800 !important;
+}
+
+.internal-tab-inactive {
+  background: transparent !important;
+  color: var(--color-text-muted, #94a3b8) !important;
+  font-weight: 600 !important;
+}
+
+.internal-tab-inactive:hover {
+  color: var(--color-foreground, #f8fafc) !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 60%, transparent) !important;
+}
+
+/* Campo de Busca Ultra-Glass */
+.internal-search-input {
+  background: color-mix(in srgb, var(--color-card, #172033) 70%, transparent) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1)) !important;
+  color: var(--color-foreground, #f8fafc) !important;
+  border-radius: 14px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.internal-search-input:focus {
+  border-color: var(--color-primary-theme, #ef4444) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, transparent), 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+  outline: none !important;
+}
+
+/* Cards de Canais e Contatos */
+.internal-card {
+  background: color-mix(in srgb, var(--color-card, #172033) 85%, transparent) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08)) !important;
+  border-radius: 16px !important;
+  backdrop-filter: blur(12px) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.internal-card:hover {
+  transform: translateY(-2px) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 60%, transparent) !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 100%, transparent) !important;
+  box-shadow: 0 10px 28px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.internal-card-active {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, var(--color-card, #172033)) !important;
+  border-color: var(--color-primary-theme, #ef4444) !important;
+  box-shadow: 0 8px 24px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, transparent) !important;
+}
+
+.internal-card-unread {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 10%, var(--color-card, #172033)) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, transparent) !important;
+  box-shadow: 0 4px 18px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 22%, transparent) !important;
+}
+
+.internal-unread-badge {
+  background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), var(--color-accent-theme, #f87171)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-primary-theme, #ef4444) 50%, transparent) !important;
+  animation: pulseUnreadBadge 2.2s infinite ease-in-out;
+}
+
+@keyframes pulseUnreadBadge {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.92; }
+}
+
+/* Avatar com Borda Neon */
+.internal-avatar {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 16%, var(--color-card, #172033)) !important;
+  color: var(--color-primary-theme, #ef4444) !important;
+  border: 1.5px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent) !important;
+  box-shadow: 0 0 12px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, transparent) !important;
+}
+
+/* Tag de Setor */
+.internal-sector-tag {
+  background: color-mix(in srgb, var(--color-foreground, #f8fafc) 6%, transparent) !important;
+  color: var(--color-text-muted, #94a3b8) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08)) !important;
+}
+
+/* Botão de Ação "Conversar" */
+.internal-btn-action {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 14%, transparent) !important;
+  color: var(--color-primary-theme, #ef4444) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.internal-btn-action:hover {
+  background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), var(--color-accent-theme, #f87171)) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent) !important;
+  transform: scale(1.04) !important;
+}
+
+/* Botão de Envio de Mensagem */
+.internal-send-btn {
+  background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), var(--color-accent-theme, #f87171)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, transparent) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.internal-send-btn:hover {
+  filter: brightness(1.1) !important;
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--color-primary-theme, #ef4444) 60%, transparent) !important;
+  transform: translateY(-1px) scale(1.02) !important;
+}
+
+.internal-send-btn:active {
+  transform: scale(0.96) !important;
+}
+
+/* ==============================================================================
+   CHAT INTERNO - CÁPSULA DE ENTRADA IDÊNTICA AO CHAT PRINCIPAL
+   ============================================================================== */
+#internal-chat-input-container {
+  position: relative !important;
+  width: 100% !important;
+  min-height: 44px !important;
+  max-height: 160px !important;
+  height: auto !important;
+  background-color: color-mix(in srgb, var(--color-background, #0f172a) 88%, black 12%) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 22%, rgba(255, 255, 255, 0.12)) !important;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 20px -5px color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent) !important;
+  transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+#internal-chat-input-container:hover,
+#internal-chat-input-container:focus-within {
+  border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, rgba(255, 255, 255, 0.25)) !important;
+  background-color: color-mix(in srgb, var(--color-background, #0f172a) 92%, black 8%) !important;
+  box-shadow: 0 12px 35px -5px rgba(0, 0, 0, 0.6), 0 0 25px -3px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+}
+
+

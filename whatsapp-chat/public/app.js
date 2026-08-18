@@ -178,6 +178,29 @@ function initOperator() {
     // Inicializa estado visual da opção de assinatura
     updateSignatureOptionUI();
   }
+
+  // Se estiver incorporado em iframe no portal principal, esconde o botão de gatilho interno local (pois a janela pai Next.js já tem o gatilho global)
+  if (window.parent && window.parent !== window) {
+    const trigger = document.getElementById('btn-internal-chat-trigger');
+    if (trigger) trigger.style.display = 'none';
+  }
+
+  // Verifica se está rodando em modo dedicado de Chat Interno Global
+  const isInternalOnly = urlParams.get('internal_only') === '1' || urlParams.get('view') === 'internal';
+  if (isInternalOnly) {
+    document.body.classList.add('internal-only-view');
+    const trigger = document.getElementById('btn-internal-chat-trigger');
+    if (trigger) trigger.style.display = 'none';
+    const backdrop = document.getElementById('internal-chat-backdrop');
+    if (backdrop) backdrop.style.display = 'none';
+    const drawer = document.getElementById('internal-chat-drawer');
+    if (drawer) {
+      drawer.className = 'fixed inset-0 w-full h-full z-50 flex flex-col overflow-hidden !translate-x-0';
+    }
+    setTimeout(() => {
+      openInternalChatDrawer();
+    }, 120);
+  }
 }
 
 function initSectors() {
@@ -740,6 +763,9 @@ function dismissInitLoader() {
   }, remainingDelay);
 }
 
+// Fallback de segurança para garantir fechamento do loader
+setTimeout(dismissInitLoader, 2000);
+
 // Recebe Lista de Conversas Ativas
 socket.on('active_chats_list', (rows) => {
   activeChats = rows;
@@ -1221,9 +1247,19 @@ function openParticipantsModal(jid, name) {
   const searchInput = document.getElementById('input-search-invite-attendants');
   if (searchInput) searchInput.value = '';
 
-  if (modal) modal.classList.remove('hidden');
+  const modalBox = modal ? (modal.querySelector('.modal-card') || modal.firstElementChild) : null;
 
-  switchParticipantsTab('active');
+  if (modal) {
+    modal.classList.remove('hidden', 'animate-modal-backdrop-out');
+    if (modalBox) modalBox.classList.remove('animate-modal-content-out');
+
+    void modal.offsetWidth; // Force reflow for keyframe animation restart
+
+    modal.classList.add('animate-modal-backdrop-in');
+    if (modalBox) modalBox.classList.add('animate-modal-content-in');
+  }
+
+  switchParticipantsTab('active', true);
 
   // Solicita dados atualizados ao servidor
   socket.emit('get_chat_participants', { cliente_jid: participantsTargetJid });
@@ -1231,10 +1267,32 @@ function openParticipantsModal(jid, name) {
 
 function closeParticipantsModal() {
   const modal = document.getElementById('participants-modal');
-  if (modal) modal.classList.add('hidden');
+  if (!modal || modal.classList.contains('hidden')) return;
+
+  const modalBox = modal.querySelector('.modal-card') || modal.firstElementChild;
+
+  modal.classList.remove('animate-modal-backdrop-in');
+  if (modalBox) modalBox.classList.remove('animate-modal-content-in');
+
+  void modal.offsetWidth; // Force reflow so exit animation starts reliably
+
+  modal.classList.add('animate-modal-backdrop-out');
+  if (modalBox) modalBox.classList.add('animate-modal-content-out');
+
+  setTimeout(() => {
+    modal.classList.add('hidden');
+    modal.classList.remove('animate-modal-backdrop-out');
+    if (modalBox) modalBox.classList.remove('animate-modal-content-out');
+  }, 250);
 }
 
-function syncParticipantsModalHeight() {
+function closeParticipantsModalOnBackdrop(e) {
+  if (e && e.target && e.target.id === 'participants-modal') {
+    closeParticipantsModal();
+  }
+}
+
+function syncParticipantsModalHeight(immediate = false) {
   requestAnimationFrame(() => {
     const wrapper = document.getElementById('participants-panels-wrapper');
     const panelActive = document.getElementById('participants-panel-active');
@@ -1242,43 +1300,88 @@ function syncParticipantsModalHeight() {
     if (!wrapper || !panelActive || !panelInvite) return;
 
     const targetPanel = currentParticipantsTab === 'active' ? panelActive : panelInvite;
-    const targetHeight = targetPanel.offsetHeight;
+    if (!targetPanel || targetPanel.classList.contains('hidden')) return;
+
+    const targetHeight = targetPanel.offsetHeight || targetPanel.scrollHeight;
     if (targetHeight > 0) {
-      wrapper.style.height = `${targetHeight}px`;
+      if (immediate) {
+        const prevTransition = wrapper.style.transition;
+        wrapper.style.transition = 'none';
+        wrapper.style.height = `${targetHeight}px`;
+        void wrapper.offsetHeight; // Force reflow
+        wrapper.style.transition = prevTransition;
+      } else {
+        wrapper.style.height = `${targetHeight}px`;
+      }
     }
   });
 }
 
-function switchParticipantsTab(tab) {
+function switchParticipantsTab(tab, isInitial = false) {
+  const prevTab = currentParticipantsTab;
   currentParticipantsTab = tab;
   const pill = document.getElementById('participants-tab-pill');
   const tabActive = document.getElementById('tab-participants-active');
   const tabInvite = document.getElementById('tab-participants-invite');
-  const slider = document.getElementById('participants-panels-slider');
+  const panelActive = document.getElementById('participants-panel-active');
+  const panelInvite = document.getElementById('participants-panel-invite');
+  const wrapper = document.getElementById('participants-panels-wrapper');
+
+  if (wrapper && !isInitial) {
+    const currentH = wrapper.offsetHeight;
+    if (currentH > 0) {
+      wrapper.style.height = `${currentH}px`;
+    }
+  }
 
   if (tab === 'active') {
     if (pill) pill.style.transform = 'translateX(0%)';
-    if (slider) slider.style.transform = 'translateX(0%)';
     if (tabActive) {
-      tabActive.className = "relative z-10 h-8 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-purple-300";
+      tabActive.className = "relative z-10 h-8 rounded-xl text-xs transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer tab-btn-active";
     }
     if (tabInvite) {
-      tabInvite.className = "relative z-10 h-8 rounded-xl text-xs font-semibold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+      tabInvite.className = "relative z-10 h-8 rounded-xl text-xs transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer tab-btn-inactive";
+    }
+    if (panelActive) {
+      panelActive.classList.remove('hidden', 'panel-tab-enter-right', 'panel-tab-enter-left');
+      if (!isInitial && prevTab !== 'active') {
+        void panelActive.offsetWidth; // Trigger reflow for animation restart
+        panelActive.classList.add('panel-tab-enter-left');
+      }
+    }
+    if (panelInvite) {
+      panelInvite.classList.add('hidden');
+      panelInvite.classList.remove('panel-tab-enter-right', 'panel-tab-enter-left');
     }
   } else {
     if (pill) pill.style.transform = 'translateX(calc(100% + 2px))';
-    if (slider) slider.style.transform = 'translateX(-50%)';
     if (tabInvite) {
-      tabInvite.className = "relative z-10 h-8 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-purple-300";
+      tabInvite.className = "relative z-10 h-8 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer tab-btn-active";
     }
     if (tabActive) {
-      tabActive.className = "relative z-10 h-8 rounded-xl text-xs font-semibold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+      tabActive.className = "relative z-10 h-8 rounded-xl text-xs font-semibold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer tab-btn-inactive";
     }
+    if (panelActive) {
+      panelActive.classList.add('hidden');
+      panelActive.classList.remove('panel-tab-enter-right', 'panel-tab-enter-left');
+    }
+    if (panelInvite) {
+      panelInvite.classList.remove('hidden', 'panel-tab-enter-right', 'panel-tab-enter-left');
+      void panelInvite.offsetWidth; // Trigger reflow for animation restart
+      panelInvite.classList.add('panel-tab-enter-right');
+    }
+
     const searchInput = document.getElementById('input-search-invite-attendants');
-    if (searchInput) setTimeout(() => searchInput.focus(), 150);
+    if (searchInput) {
+      setTimeout(() => {
+        if (currentParticipantsTab === 'invite') {
+          searchInput.focus({ preventScroll: true });
+        }
+      }, 250);
+    }
   }
 
-  syncParticipantsModalHeight();
+  syncParticipantsModalHeight(isInitial);
 }
 
 function handleSearchAvailableAttendants(query) {
@@ -1303,9 +1406,9 @@ function renderAvailableAttendantsList() {
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div class="text-center py-6 px-4 rounded-2xl border border-white/5 bg-slate-900/40 text-xs text-slate-500">
-        <p class="font-bold text-slate-400">Nenhum atendente encontrado</p>
-        <p class="text-[10px] text-slate-600 mt-1">Todos os atendentes disponíveis já estão na conversa ou não correspondem à busca.</p>
+      <div class="text-center py-6 px-4 rounded-2xl border border-white/5 bg-slate-900/40 text-xs opacity-70">
+        <p class="font-bold">Nenhum atendente encontrado</p>
+        <p class="text-[10px] opacity-60 mt-1">Todos os atendentes disponíveis já estão na conversa ou não correspondem à busca.</p>
       </div>
     `;
     syncParticipantsModalHeight();
@@ -1315,17 +1418,17 @@ function renderAvailableAttendantsList() {
   container.innerHTML = filtered.map(u => {
     const initials = (u.nome || u.id).substring(0, 2).toUpperCase();
     return `
-      <div class="p-2.5 rounded-2xl border border-white/5 bg-slate-900/60 hover:bg-white/[0.04] flex items-center justify-between gap-3 transition-all">
+      <div class="p-2.5 rounded-2xl participant-item-card flex items-center justify-between gap-3 transition-all">
         <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/25 text-purple-300 font-bold text-xs flex items-center justify-center shrink-0">
+          <div class="w-8 h-8 rounded-xl participant-avatar-theme font-bold text-xs flex items-center justify-center shrink-0">
             ${initials}
           </div>
           <div class="min-w-0 text-left">
-            <p class="text-xs font-bold text-slate-200 truncate">${u.nome || u.id}</p>
-            <p class="text-[10px] text-slate-500 font-mono">id: ${u.id}</p>
+            <p class="text-xs font-bold truncate">${u.nome || u.id}</p>
+            <p class="text-[10px] opacity-70 font-mono">id: ${u.id}</p>
           </div>
         </div>
-        <button onclick="inviteAttendantToChat('${u.id}', '${(u.nome || u.id).replace(/'/g, "\\'")}')" class="px-3 h-8 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/20 cursor-pointer shrink-0">
+        <button onclick="inviteAttendantToChat('${u.id}', '${(u.nome || u.id).replace(/'/g, "\\'")}')" class="px-3 h-8 rounded-xl btn-invite-theme active:scale-95 font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
           <span>Convidar</span>
         </button>
@@ -1380,10 +1483,10 @@ function renderParticipantsModal(data) {
   if (listContainer) {
     if (participants.length === 0) {
       listContainer.innerHTML = `
-        <div class="text-center py-5 px-4 rounded-2xl border border-white/5 bg-slate-900/30 text-xs text-slate-500">
-          <p class="font-semibold text-slate-400">Nenhum co-atendente convidado</p>
-          <p class="text-[10px] text-slate-600 mt-0.5">Apenas o atendente responsável está nesta conversa.</p>
-          <button type="button" onclick="switchParticipantsTab('invite')" class="mt-3 px-3 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 font-bold text-[11px] inline-flex items-center gap-1.5 transition-all cursor-pointer">
+        <div class="text-center py-5 px-4 rounded-2xl border border-white/5 bg-slate-900/30 text-xs opacity-80">
+          <p class="font-semibold">Nenhum co-atendente convidado</p>
+          <p class="text-[10px] opacity-60 mt-0.5">Apenas o atendente responsável está nesta conversa.</p>
+          <button type="button" onclick="switchParticipantsTab('invite')" class="mt-3 px-3 py-1.5 rounded-xl btn-secondary-theme font-bold text-[11px] inline-flex items-center gap-1.5 transition-all cursor-pointer">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
             <span>+ Convidar Membro da Equipe</span>
           </button>
@@ -1394,15 +1497,15 @@ function renderParticipantsModal(data) {
         const initials = (p.atendente_nome || 'OP').substring(0, 2).toUpperCase();
         const isSelf = currentOperator && currentOperator.id === p.atendente_id;
         return `
-          <div class="p-2.5 rounded-2xl border border-white/5 bg-slate-900/60 hover:bg-white/[0.04] flex items-center justify-between gap-2.5 transition-all">
+          <div class="p-2.5 rounded-2xl participant-item-card flex items-center justify-between gap-2.5 transition-all">
             <div class="flex items-center gap-2.5 min-w-0">
-              <div class="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/20 text-purple-300 flex items-center justify-center font-bold text-xs shrink-0">${initials}</div>
+              <div class="w-8 h-8 rounded-xl participant-avatar-theme flex items-center justify-center font-bold text-xs shrink-0">${initials}</div>
               <div class="min-w-0 text-left">
                 <div class="flex items-center gap-1.5">
-                  <p class="text-xs font-bold text-slate-200 truncate">${p.atendente_nome || p.atendente_id}</p>
-                  ${isSelf ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white/10 text-slate-300">Você</span>' : ''}
+                  <p class="text-xs font-bold truncate">${p.atendente_nome || p.atendente_id}</p>
+                  ${isSelf ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white/10 opacity-90">Você</span>' : ''}
                 </div>
-                <div class="flex items-center gap-2 text-[9px] text-slate-500 mt-0.5">
+                <div class="flex items-center gap-2 text-[9px] opacity-70 mt-0.5">
                   <span class="font-mono">id: ${p.atendente_id}</span>
                   ${p.adicionado_por ? `<span class="truncate">• Convite: ${p.adicionado_por}</span>` : ''}
                 </div>
@@ -2122,10 +2225,14 @@ function splitMessagesBySession(messages) {
 function createMessageElement(msg) {
   const isSystem = msg.remetente === 'sistema';
   const isClient = msg.remetente === 'cliente';
+  const isDeleted = msg.apagado === 1 || msg.apagado === true || msg.apagado === '1';
   
   let bubbleClass = 'msg-bubble msg-system';
   if (!isSystem) {
     bubbleClass = isClient ? 'msg-bubble msg-client' : 'msg-bubble msg-attendant';
+    if (isDeleted) {
+      bubbleClass += ' opacity-60 italic border border-dashed border-rose-500/35 shadow-none transition-all duration-300';
+    }
   }
 
   // Parse robusto de data para o SQLite
@@ -2177,33 +2284,85 @@ function createMessageElement(msg) {
       `;
     }
 
-    // Processa mídia ou áudio ou texto simples
-    let contentHTML = `<p class="whitespace-pre-wrap leading-relaxed text-[13px]">${msg.texto || ''}</p>`;
-    
-    if (msg.media_url || (msg.texto && (msg.texto.startsWith('http') || msg.texto.startsWith('/media/') || msg.texto.startsWith('data:image/')) && !msg.texto.includes(' '))) {
-      const url = msg.media_url || msg.texto;
-      const isImg = url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) || url.startsWith('data:image/');
-      const isPdf = url.match(/\.pdf($|\?)/i);
-      const isVideo = url.match(/\.(mp4|webm|mov)($|\?)/i);
-      const caption = msg.caption || '';
-      
+    // Processa mídia, áudio, anexos e texto simples
+    let rawText = (msg.texto || '').trim();
+    let attachmentUrl = msg.media_url || null;
+    let attachmentCaption = msg.caption || '';
+
+    if (rawText.startsWith('[ANEXO]')) {
+      const match = rawText.match(/^\[ANEXO\]\s*(\S+)([\s\S]*)$/);
+      if (match) {
+        attachmentUrl = match[1];
+        attachmentCaption = match[2] ? match[2].trim() : '';
+      }
+    } else if (!attachmentUrl && (rawText.startsWith('http://') || rawText.startsWith('https://') || rawText.startsWith('/uploads/') || rawText.startsWith('data:image/') || rawText.startsWith('data:audio/')) && !rawText.includes(' ')) {
+      attachmentUrl = rawText;
+    }
+
+    const isAudio = Boolean(
+      (attachmentUrl && (attachmentUrl.startsWith('data:audio/') || attachmentUrl.match(/\.(ogg|oga|opus|mp3|wav|m4a|aac|webm)($|\?)/i))) ||
+      (rawText.startsWith('data:audio/'))
+    );
+    const isImg = Boolean(attachmentUrl && !isAudio && (attachmentUrl.startsWith('data:image/') || attachmentUrl.match(/\.(jpeg|jpg|gif|png|webp|bmp|svg)($|\?)/i)));
+    const isVideo = Boolean(attachmentUrl && !isAudio && attachmentUrl.match(/\.(mp4|webm|mov|avi|mkv)($|\?)/i));
+    const isPdf = Boolean(attachmentUrl && !isAudio && attachmentUrl.match(/\.pdf($|\?)/i));
+
+    let contentHTML = `<p class="whitespace-pre-wrap leading-relaxed text-[13px]">${rawText}</p>`;
+
+    if (isAudio) {
+      const audioSrc = attachmentUrl || rawText;
+      contentHTML = `
+        <div class="flex flex-col gap-1.5 my-1 w-[310px] sm:w-[350px] max-w-full msg-voice-container select-none">
+          <div class="flex items-center justify-between opacity-90 mb-0.5">
+            <div class="flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+              <span class="text-[9px] font-extrabold uppercase tracking-wider">Mensagem de Voz</span>
+            </div>
+            <button type="button" onclick="cycleAudioPlaybackRate(this, ${msg.id})" class="w-9 h-5 flex items-center justify-center rounded-md text-[9px] font-bold font-mono tracking-tight transition-all opacity-75 hover:opacity-100 bg-black/20 hover:bg-black/40 border border-white/10 cursor-pointer shrink-0" title="Velocidade de Reprodução">1x</button>
+          </div>
+
+          <div class="flex items-center gap-2.5">
+            <button type="button" onclick="toggleMsgAudioPlay(${msg.id})" id="msg-audio-btn-${msg.id}" class="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/15 text-white transition-all duration-200 active:scale-90 cursor-pointer shadow-md shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" id="msg-audio-play-icon-${msg.id}"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" id="msg-audio-pause-icon-${msg.id}" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+
+            <div class="flex-1 flex flex-col justify-center min-w-0">
+              <div id="msg-audio-track-${msg.id}" class="w-full h-4 relative flex items-center cursor-pointer group/track" onclick="seekMsgAudio(${msg.id}, event)" onmousedown="startMsgAudioDrag(${msg.id}, event)" ontouchstart="startMsgAudioDrag(${msg.id}, event)">
+                <div class="w-full h-1.5 rounded-full bg-white/15 overflow-hidden relative">
+                  <div id="msg-audio-bar-${msg.id}" class="h-full rounded-full transition-[width] duration-75" style="width: 0%; background: var(--color-primary-theme, #6366f1); box-shadow: 0 0 8px var(--color-primary-theme, #6366f1);"></div>
+                </div>
+                <div id="msg-audio-pin-${msg.id}" class="absolute w-3 h-3 rounded-full bg-white border-2 border-slate-900 shadow-md transform -translate-x-1/2 pointer-events-none transition-transform duration-100 group-hover/track:scale-125" style="left: 0%;"></div>
+              </div>
+
+              <div class="flex items-center justify-between text-[10px] font-mono opacity-70 mt-0.5 select-none">
+                <span id="msg-audio-timer-${msg.id}">00:00 / --:--</span>
+              </div>
+            </div>
+
+            <audio id="msg-audio-${msg.id}" src="${audioSrc}" preload="metadata" ontimeupdate="updateMsgAudioPlayer(${msg.id})" onended="resetMsgAudioPlayer(${msg.id})" onloadedmetadata="updateMsgAudioPlayer(${msg.id})"></audio>
+          </div>
+          ${attachmentCaption ? `<p class="whitespace-pre-wrap leading-relaxed text-[13px] mt-1">${attachmentCaption}</p>` : ''}
+        </div>
+      `;
+    } else if (attachmentUrl) {
       let mediaHtml = '';
       if (isImg) {
         mediaHtml = `
-          <div class="relative group/media overflow-hidden rounded-xl cursor-pointer max-w-[260px] md:max-w-xs mb-1" onclick="openMediaPreview('${url}', 'image')">
-            <img src="${url}" class="w-full h-auto object-cover max-h-60 rounded-xl transition-transform duration-300 group-hover/media:scale-105" loading="lazy" alt="Mídia">
+          <div class="relative group/media overflow-hidden rounded-xl cursor-pointer max-w-[260px] md:max-w-xs mb-1" onclick="openMediaPreview('${attachmentUrl}', 'image')">
+            <img src="${attachmentUrl}" class="w-full h-auto object-cover max-h-60 rounded-xl transition-transform duration-300 group-hover/media:scale-105" loading="lazy" alt="Mídia">
           </div>
         `;
       } else if (isVideo) {
         mediaHtml = `
           <div class="rounded-xl overflow-hidden max-w-[260px] md:max-w-xs mb-1">
-            <video src="${url}" controls class="w-full h-auto max-h-60 rounded-xl"></video>
+            <video src="${attachmentUrl}" controls class="w-full h-auto max-h-60 rounded-xl"></video>
           </div>
         `;
       } else {
-        const filename = url.split('/').pop();
+        const filename = attachmentUrl.split('/').pop() || 'documento';
         mediaHtml = `
-          <a href="${url}" target="_blank" download class="flex items-center gap-2 p-2.5 rounded-lg bg-black/20 hover:bg-black/30 border border-white/10 transition-all text-slate-200 mb-1 no-underline max-w-[240px] md:max-w-xs cursor-pointer group/file">
+          <a href="${attachmentUrl}" target="_blank" download class="flex items-center gap-2 p-2.5 rounded-lg bg-black/20 hover:bg-black/30 border border-white/10 transition-all text-slate-200 mb-1 no-underline max-w-[240px] md:max-w-xs cursor-pointer group/file">
             <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 group-hover/file:scale-105 transition-transform">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
             </div>
@@ -2218,41 +2377,7 @@ function createMessageElement(msg) {
       contentHTML = `
         <div class="flex flex-col">
           ${mediaHtml}
-          ${caption ? `<p class="whitespace-pre-wrap leading-relaxed text-[13px] mt-1.5">${caption}</p>` : ''}
-        </div>
-      `;
-    } else if (msg.texto && (msg.texto.startsWith('data:audio/') || (msg.texto.startsWith('http') && (msg.texto.endsWith('.mp3') || msg.texto.endsWith('.ogg') || msg.texto.endsWith('.m4a') || msg.texto.endsWith('.webm'))))) {
-      contentHTML = `
-        <div class="flex flex-col gap-1.5 my-1 w-[310px] sm:w-[350px] max-w-full msg-voice-container select-none">
-          <div class="flex items-center justify-between opacity-90 mb-0.5">
-            <div class="flex items-center gap-1.5">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-              <span class="text-[9px] font-extrabold uppercase tracking-wider">Mensagem de Voz</span>
-            </div>
-            <button type="button" onclick="cycleAudioPlaybackRate(this, ${msg.id})" class="w-9 h-5 flex items-center justify-center rounded-md text-[9px] font-bold font-mono tracking-tight transition-all opacity-75 hover:opacity-100 bg-black/20 hover:bg-black/40 border border-white/10 cursor-pointer shrink-0" title="Velocidade de Reprodução">1x</button>
-          </div>
-
-          <div class="flex items-center gap-2.5">
-            <button type="button" onclick="toggleMsgAudio(${msg.id})" id="btn-audio-play-${msg.id}" class="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/15 text-white transition-all duration-200 active:scale-90 cursor-pointer shadow-md shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" id="icon-audio-play-${msg.id}"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            </button>
-
-            <div class="flex-1 flex flex-col justify-center min-w-0">
-              <div class="w-full h-4 relative flex items-center cursor-pointer group/track" onclick="seekMsgAudio(event, ${msg.id})" onmousedown="startMsgAudioScrub(event, ${msg.id})" ontouchstart="startMsgAudioScrubTouch(event, ${msg.id})">
-                <div class="w-full h-1.5 rounded-full bg-white/15 overflow-hidden relative">
-                  <div id="track-audio-fill-${msg.id}" class="h-full rounded-full transition-[width] duration-75" style="width: 0%; background: var(--color-primary-theme, #6366f1); box-shadow: 0 0 8px var(--color-primary-theme, #6366f1);"></div>
-                </div>
-                <div id="thumb-audio-pin-${msg.id}" class="absolute w-3 h-3 rounded-full bg-white border-2 border-slate-900 shadow-md transform -translate-x-1/2 pointer-events-none transition-transform duration-100 group-hover/track:scale-125" style="left: 0%;"></div>
-              </div>
-
-              <div class="flex items-center justify-between text-[10px] font-mono opacity-70 mt-0.5 select-none">
-                <span id="time-audio-current-${msg.id}">0:00</span>
-                <span id="time-audio-duration-${msg.id}">--:--</span>
-              </div>
-            </div>
-
-            <audio id="msg-audio-${msg.id}" src="${msg.texto}" ontimeupdate="updateMsgAudioProgress(${msg.id})" onended="onMsgAudioEnded(${msg.id})" onloadedmetadata="onMsgAudioLoaded(${msg.id})"></audio>
-          </div>
+          ${attachmentCaption ? `<p class="whitespace-pre-wrap leading-relaxed text-[13px] mt-1.5">${attachmentCaption}</p>` : ''}
         </div>
       `;
     }
@@ -2288,15 +2413,26 @@ function createMessageElement(msg) {
       `;
     }
 
-    msgDiv.innerHTML = `<div class="${bubbleClass}">${attendantHeaderHTML}${quoteHTML}${contentHTML}<span class="msg-time">${formattedTime}${statusCheckSVG}</span>${reactionHTML}</div>`;
+    let deletedNoticeHTML = '';
+    if (isDeleted) {
+      const whoDeleted = msg.apagado_por === 'cliente' ? 'pelo cliente' : 'pelo atendente';
+      deletedNoticeHTML = `
+        <div class="msg-deleted-notice flex items-center gap-1.5 text-[10px] font-bold text-rose-400 opacity-90 pb-1 mb-1 border-b border-rose-500/20 select-none not-italic">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          <span>Esta mensagem foi apagada ${whoDeleted}</span>
+        </div>
+      `;
+    }
+
+    msgDiv.innerHTML = `<div class="${bubbleClass}">${attendantHeaderHTML}${deletedNoticeHTML}${quoteHTML}${contentHTML}<span class="msg-time">${formattedTime}${statusCheckSVG}</span>${reactionHTML}</div>`;
   }
 
   // Precarrega metadados do áudio imediatamente para exibir a duração real (MM:SS) sem precisar dar play
   const audioEl = msgDiv.querySelector(`audio[id^="msg-audio-"]`);
   if (audioEl) {
-    audioEl.preload = 'auto';
+    audioEl.preload = 'metadata';
     audioEl.load();
-    loadMsgAudioDuration(msg.id, msg.texto);
+    loadMsgAudioDuration(msg.id, audioEl.src || msg.texto);
   }
 
   return msgDiv;
@@ -2502,16 +2638,8 @@ socket.on('chat_history', ({ cliente_jid, messages }) => {
     pendingUnreadCheck = false;
   }
 
-  const isAlreadyUpToDate = !isUserSwitchingChat &&
-    currentChatMessages.length === messages.length &&
-    messages.length > 0 &&
-    currentChatMessages[messages.length - 1]?.id === messages[messages.length - 1]?.id;
-
   currentChatMessages = messages;
-
-  if (!isAlreadyUpToDate) {
-    renderChatMessages(true);
-  }
+  renderChatMessages(true);
 
   // Executa animação de entrada graciosa apenas quando o usuário troca de conversa
   if (isUserSwitchingChat) {
@@ -2595,10 +2723,18 @@ function incrementScrollBottomUnreadCount() {
 
 // Recebe Nova Mensagem
 socket.on('new_message', (msg) => {
-  // Se for mensagem do chat selecionado
+  const isFromClient = msg.remetente === 'cliente';
+  const isFromAnotherSender = msg.remetente !== 'sistema' && (!currentOperator || msg.remetente !== currentOperator.id);
+
+  // Se for mensagem do chat atualmente aberto
   if (selectedChatJid === msg.cliente_jid) {
     currentChatMessages.push(msg);
     appendMessageHTML(msg);
+
+    // Toca som exclusivo e cristalino de nova mensagem na conversa aberta
+    if (isFromClient || isFromAnotherSender) {
+      playCurrentChatNewMessageSound();
+    }
 
     // Se o atendente estiver lendo mensagens anteriores lá em cima, não dar scroll brusco
     if (isChatScrolledUp()) {
@@ -2611,6 +2747,11 @@ socket.on('new_message', (msg) => {
     // Avisa o servidor que já visualizamos a mensagem para limpar o status "não lido"
     if (currentOperator) {
       socket.emit('select_chat', { cliente_jid: selectedChatJid, atendente_id: currentOperator.id });
+    }
+  } else {
+    // Mensagem recebida em outro chat da lista de ativos!
+    if (isFromClient || isFromAnotherSender) {
+      playBackgroundChatNewMessageSound();
     }
   }
 });
@@ -2665,6 +2806,10 @@ function stopMsgAudioAnimation(msgId) {
 }
 
 // Controle de áudio das mensagens no chat
+function toggleMsgAudio(msgId) {
+  return toggleMsgAudioPlay(msgId);
+}
+
 function toggleMsgAudioPlay(msgId) {
   const player = document.getElementById(`msg-audio-${msgId}`);
   const playIcon = document.getElementById(`msg-audio-play-icon-${msgId}`);
@@ -2920,13 +3065,21 @@ function openMessageContextMenu(e, msg) {
   const menu = document.getElementById('message-context-menu');
   if (!menu) return;
 
-  const canReactOrDelete = canReactOrDeleteMsg(msg);
+  const isChatActiveAndCurrent = canReactOrDeleteMsg(msg);
+  const isDeleted = msg.apagado === 1 || msg.apagado === true || msg.apagado === '1';
+
+  // Permite reagir se o chat estiver ativo e a mensagem não tiver sido apagada
+  const canReact = isChatActiveAndCurrent && !isDeleted;
+
+  // NUNCA permite excluir mensagens enviadas pelo cliente. Apenas mensagens de atendentes/equipe e não apagadas
+  const canDelete = isChatActiveAndCurrent && !isDeleted && (msg.remetente !== 'cliente' && msg.remetente !== 'sistema');
+
   const reactionsContainer = document.getElementById('context-recent-reactions');
   const reactBtn = document.getElementById('context-react-btn');
   const deleteBtn = document.getElementById('context-delete-btn');
   const deleteDivider = document.getElementById('context-delete-divider');
 
-  if (canReactOrDelete) {
+  if (canReact) {
     if (reactionsContainer) {
       reactionsContainer.classList.remove('hidden');
       const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -2935,14 +3088,18 @@ function openMessageContextMenu(e, msg) {
       `).join('');
     }
     if (reactBtn) reactBtn.classList.remove('hidden');
-    if (deleteBtn) deleteBtn.classList.remove('hidden');
-    if (deleteDivider) deleteDivider.classList.remove('hidden');
   } else {
     if (reactionsContainer) {
       reactionsContainer.classList.add('hidden');
       reactionsContainer.innerHTML = '';
     }
     if (reactBtn) reactBtn.classList.add('hidden');
+  }
+
+  if (canDelete) {
+    if (deleteBtn) deleteBtn.classList.remove('hidden');
+    if (deleteDivider) deleteDivider.classList.remove('hidden');
+  } else {
     if (deleteBtn) deleteBtn.classList.add('hidden');
     if (deleteDivider) deleteDivider.classList.add('hidden');
   }
@@ -2951,7 +3108,7 @@ function openMessageContextMenu(e, msg) {
 
   menu.classList.remove('hidden');
   const menuWidth = 240;
-  const menuHeight = canReactOrDelete ? 280 : 170;
+  const menuHeight = canDelete ? 280 : (canReact ? 230 : 170);
 
   let x = e.clientX;
   let y = e.clientY;
@@ -3215,9 +3372,14 @@ function closeMessageInfoModalOnBackdrop(e) {
   }
 }
 
-// Fechar modal de Dados da Mensagem com tecla ESC
+// Fechar modais com tecla ESC
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    const pModal = document.getElementById('participants-modal');
+    if (pModal && !pModal.classList.contains('hidden')) {
+      closeParticipantsModal();
+      return;
+    }
     const modal = document.getElementById('message-info-modal');
     if (modal && !modal.classList.contains('hidden')) {
       closeMessageInfoModal();
@@ -3659,7 +3821,12 @@ function submitForwardToPhone() {
 // Handler para Apagar Mensagem
 function handleContextDelete() {
   hideAllContextMenus();
-  if (!activeContextMsgData || !canReactOrDeleteMsg(activeContextMsgData)) return;
+  if (!activeContextMsgData) return;
+  if (activeContextMsgData.remetente === 'cliente') {
+    showToast('Mensagens do cliente não podem ser apagadas.', 'Aviso', 'warning');
+    return;
+  }
+  if (!canReactOrDeleteMsg(activeContextMsgData)) return;
 
   socket.emit('delete_message', {
     message_id: activeContextMsgData.id,
@@ -5608,6 +5775,83 @@ function playMessageSentSound() {
   }
 }
 
+// 🔔 Som 1: Notificação de Nova Mensagem na CONVERSA ABERTA (Arpejo cristalino ascendente - 3 notas suaves)
+function playCurrentChatNewMessageSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    // Notas de cristal harmônico (A5 880Hz -> D6 1174.66Hz -> F#6 1480Hz)
+    const notes = [880, 1174.66, 1479.98];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startTime = ctx.currentTime + (idx * 0.045);
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      // Ataque suave e decaimento exponencial
+      gain.gain.setValueAtTime(0.14, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.16);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.16);
+    });
+  } catch (e) {
+    // Ignorar se o áudio estiver desativado pelo navegador
+  }
+}
+
+// 📬 Som 2: Notificação de Nova Mensagem em OUTRA CONVERSA da lista ativa (Tom duplo quente e ressonante de marimba)
+function playBackgroundChatNewMessageSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    // Acorde duplo grave/médio quente (A4 440Hz com C#5 554Hz -> E5 659Hz com A5 880Hz)
+    const chords = [
+      { primary: 440, harmonic: 554.37, time: 0 },
+      { primary: 659.25, harmonic: 880, time: 0.085 }
+    ];
+
+    chords.forEach(({ primary, harmonic, time }) => {
+      const startTime = ctx.currentTime + time;
+
+      // Oscilador principal
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(primary, startTime);
+      gain1.gain.setValueAtTime(0.16, startTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, startTime + 0.22);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(startTime);
+      osc1.stop(startTime + 0.22);
+
+      // Oscilador harmônico (calor sonoro de marimba)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(harmonic, startTime);
+      gain2.gain.setValueAtTime(0.08, startTime);
+      gain2.gain.exponentialRampToValueAtTime(0.001, startTime + 0.18);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(startTime);
+      osc2.stop(startTime + 0.18);
+    });
+  } catch (e) {
+    // Ignorar se o áudio estiver desativado pelo navegador
+  }
+}
+
 // Alterna entre Pausar e Retomar a gravação de áudio em andamento
 function togglePauseAudioRecording() {
   if (!mediaRecorder) return;
@@ -6165,14 +6409,44 @@ socket.on('message_reacted', ({ message_id, reacao, cliente_jid }) => {
   }
 });
 
-// Listener de exclusão de mensagem do SQLite
-socket.on('message_deleted', ({ message_id, cliente_jid }) => {
-  currentChatMessages = currentChatMessages.filter(m => m.id !== message_id);
+// Listener de marcação de mensagem apagada no SQLite (Transição fluida sem piscar)
+socket.on('message_deleted', ({ message_id, cliente_jid, apagado, apagado_por }) => {
+  const targetId = Number(message_id) || message_id;
+  const msgObj = currentChatMessages.find(m => m.id === targetId || String(m.id) === String(targetId));
+  if (msgObj) {
+    msgObj.apagado = 1;
+    msgObj.apagado_por = apagado_por || 'atendente';
+  }
+
   if (!cliente_jid || selectedChatJid === cliente_jid) {
-    const msgDiv = document.querySelector(`[data-message-id="${message_id}"]`);
+    const msgDiv = document.querySelector(`[data-message-id="${targetId}"]`);
     if (msgDiv) {
-      msgDiv.classList.add('opacity-0', 'scale-95', 'transition-all', 'duration-300');
-      setTimeout(() => msgDiv.remove(), 300);
+      const bubble = msgDiv.querySelector('.msg-bubble');
+      if (bubble) {
+        // Transição suave da bolha
+        bubble.classList.add('opacity-60', 'italic', 'border', 'border-dashed', 'border-rose-500/35', 'shadow-none', 'transition-all', 'duration-300');
+        
+        // Insere o aviso informativo com animação sem recriar o restante da bolha
+        if (!bubble.querySelector('.msg-deleted-notice')) {
+          const whoDeleted = (apagado_por || (msgObj ? msgObj.apagado_por : 'atendente')) === 'cliente' ? 'pelo cliente' : 'pelo atendente';
+          const noticeDiv = document.createElement('div');
+          noticeDiv.className = 'msg-deleted-notice msg-deleted-notice-enter flex items-center gap-1.5 text-[10px] font-bold text-rose-400 opacity-90 pb-1 mb-1 border-b border-rose-500/20 select-none not-italic';
+          noticeDiv.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            <span>Esta mensagem foi apagada ${whoDeleted}</span>
+          `;
+          
+          const header = bubble.querySelector('.border-b');
+          if (header && !header.classList.contains('msg-deleted-notice')) {
+            header.insertAdjacentElement('afterend', noticeDiv);
+          } else {
+            bubble.insertAdjacentElement('afterbegin', noticeDiv);
+          }
+        }
+      } else if (msgObj) {
+        const newMsgEl = createMessageElement(msgObj);
+        msgDiv.replaceWith(newMsgEl);
+      }
     }
   }
 });
@@ -6422,3 +6696,1680 @@ function renderAttachmentPreview() {
     container.appendChild(itemEl);
   });
 }
+
+// ==============================================================================
+// 👥 CHAT INTERNO DA EQUIPE - LÓGICA COMPLETA, CANAIS E CONVERSAS 1x1
+// ==============================================================================
+
+let internalRoomsList = [];
+let internalOperatorsList = [];
+let currentInternalRoomId = 'channel-geral';
+let internalMessagesMap = {}; // roomId -> Array de msgs
+let internalRoomUnreads = {};  // roomId -> number
+let isInternalDrawerOpen = false;
+let internalAudioRecorder = null;
+let internalAudioChunks = [];
+let internalSelectedFile = null;
+let internalChatToShare = null;
+let internalDirectoryActiveTab = 'dms'; // 'dms', 'channels' ou 'groups'
+
+// 📢 Som 3: Notificação do CHAT INTERNO DA EQUIPE (Arpejo duplo harmônico de sino "team chime" a 587Hz -> 784Hz)
+function playInternalChatNotificationSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+
+    const bellNotes = [
+      { freq: 587.33, overtone: 1174.66, time: 0 },
+      { freq: 783.99, overtone: 1567.98, time: 0.08 }
+    ];
+
+    bellNotes.forEach(({ freq, overtone, time }) => {
+      const startTime = ctx.currentTime + time;
+
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(freq, startTime);
+      gain1.gain.setValueAtTime(0.14, startTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, startTime + 0.25);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(startTime);
+      osc1.stop(startTime + 0.25);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(overtone, startTime);
+      gain2.gain.setValueAtTime(0.06, startTime);
+      gain2.gain.exponentialRampToValueAtTime(0.001, startTime + 0.18);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(startTime);
+      osc2.stop(startTime + 0.18);
+    });
+  } catch (e) {}
+}
+
+// Alternar Abertura / Fechamento da Gaveta Lateral
+function toggleInternalChatDrawer() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isInternalOnly = urlParams.get('internal_only') === '1' || urlParams.get('view') === 'internal';
+
+  // Se estiver rodando dentro do iframe do portal principal (/whatsapp), delega abertura para a janela pai global
+  if (!isInternalOnly && window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({ type: 'TICKETFLOW_OPEN_INTERNAL_CHAT' }, '*');
+      return;
+    } catch (e) {}
+  }
+
+  if (isInternalDrawerOpen) {
+    closeInternalChatDrawer();
+  } else {
+    openInternalChatDrawer();
+  }
+}
+
+function openInternalChatDrawer() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isInternalOnly = urlParams.get('internal_only') === '1' || urlParams.get('view') === 'internal';
+
+  // Se estiver rodando dentro do iframe do portal principal (/whatsapp), delega abertura para a janela pai global
+  if (!isInternalOnly && window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({ type: 'TICKETFLOW_OPEN_INTERNAL_CHAT' }, '*');
+      return;
+    } catch (e) {}
+  }
+
+  isInternalDrawerOpen = true;
+  const drawer = document.getElementById('internal-chat-drawer');
+  const backdrop = document.getElementById('internal-chat-backdrop');
+  if (drawer) {
+    drawer.classList.remove('drawer-closed');
+    drawer.classList.add('drawer-open');
+  }
+  if (backdrop) {
+    backdrop.classList.remove('backdrop-hidden');
+    backdrop.classList.add('backdrop-visible');
+  }
+
+  // Solicita dados atualizados de salas e colegas ao servidor
+  if (currentOperator) {
+    socket.emit('internal_get_rooms', { atendente_id: currentOperator.id });
+  }
+
+  // Se não houver conversa aberta, abre o diretório de canais/DMs
+  if (!currentInternalRoomId) {
+    showInternalDirectoryView();
+  }
+}
+
+function closeInternalChatDrawer() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isInternalOnly = urlParams.get('internal_only') === '1' || urlParams.get('view') === 'internal';
+
+  // Se estiver embutido no Next.js (modo internal_only), notifica o portal para fechar a gaveta pai
+  if (isInternalOnly && window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({ type: 'TICKETFLOW_CLOSE_INTERNAL_CHAT' }, '*');
+    } catch (e) {}
+    return;
+  }
+
+  isInternalDrawerOpen = false;
+  const drawer = document.getElementById('internal-chat-drawer');
+  const backdrop = document.getElementById('internal-chat-backdrop');
+  if (drawer) {
+    drawer.classList.remove('drawer-open');
+    drawer.classList.add('drawer-closed');
+  }
+  if (backdrop) {
+    backdrop.classList.remove('backdrop-visible');
+    backdrop.classList.add('backdrop-hidden');
+  }
+}
+
+// Alterna abas no diretório (Canais vs Grupos vs Conversas 1x1)
+function switchInternalDirectoryTab(tab) {
+  internalDirectoryActiveTab = tab;
+
+  const btnChannels = document.getElementById('tab-btn-internal-channels');
+  const btnGroups = document.getElementById('tab-btn-internal-groups');
+  const btnDMs = document.getElementById('tab-btn-internal-dms');
+  const panelChannels = document.getElementById('internal-channels-panel');
+  const panelGroups = document.getElementById('internal-groups-panel');
+  const panelDMs = document.getElementById('internal-dms-panel');
+
+  const activeClass = 'flex-1 py-2.5 rounded-xl text-[11px] md:text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 internal-tab-active';
+  const inactiveClass = 'flex-1 py-2.5 rounded-xl text-[11px] md:text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 internal-tab-inactive';
+
+  if (btnChannels) btnChannels.className = tab === 'channels' ? activeClass : inactiveClass;
+  if (btnGroups) btnGroups.className = tab === 'groups' ? activeClass : inactiveClass;
+  if (btnDMs) btnDMs.className = tab === 'dms' ? activeClass : inactiveClass;
+
+  if (panelChannels) {
+    if (tab === 'channels') panelChannels.classList.remove('hidden');
+    else panelChannels.classList.add('hidden');
+  }
+
+  if (panelGroups) {
+    if (tab === 'groups') {
+      panelGroups.classList.remove('hidden');
+      panelGroups.classList.add('flex');
+      renderInternalGroupsList();
+    } else {
+      panelGroups.classList.add('hidden');
+      panelGroups.classList.remove('flex');
+    }
+  }
+
+  if (panelDMs) {
+    if (tab === 'dms') {
+      panelDMs.classList.remove('hidden');
+      panelDMs.classList.add('flex');
+      renderInternalDMsList();
+    } else {
+      panelDMs.classList.add('hidden');
+      panelDMs.classList.remove('flex');
+    }
+  }
+}
+
+// Exibe a tela de lista de Canais / Grupos / DMs
+function showInternalDirectoryView() {
+  const dirView = document.getElementById('internal-directory-view');
+  const chatView = document.getElementById('internal-chat-view');
+  const backBtn = document.getElementById('btn-internal-back-to-list');
+  const titleEl = document.getElementById('internal-drawer-title');
+  const descEl = document.getElementById('internal-drawer-desc');
+  const membersEl = document.getElementById('internal-drawer-members-count');
+  const iconContainer = document.getElementById('internal-drawer-icon-container');
+
+  if (dirView) dirView.classList.remove('hidden');
+  if (chatView) chatView.classList.add('hidden');
+  if (backBtn) backBtn.classList.add('hidden');
+
+  if (iconContainer) {
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box';
+    iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+  }
+
+  if (titleEl) titleEl.textContent = 'Comunicação Interna';
+  if (descEl) {
+    descEl.textContent = '';
+    descEl.classList.add('hidden');
+  }
+  if (membersEl) {
+    membersEl.textContent = '';
+    membersEl.classList.add('hidden');
+  }
+
+  switchInternalDirectoryTab(internalDirectoryActiveTab || 'dms');
+}
+
+// Renderiza a lista de Grupos Criados pelos Usuários
+function renderInternalGroupsList() {
+  const container = document.getElementById('internal-groups-list');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  const currentOpId = currentOperator ? String(currentOperator.id) : null;
+  const groups = internalRoomsList.filter(r => {
+    if (r.tipo !== 'grupo') return false;
+    if (r.membros && currentOpId) {
+      try {
+        const memberList = typeof r.membros === 'string' ? JSON.parse(r.membros) : r.membros;
+        if (Array.isArray(memberList) && memberList.length > 0) {
+          return memberList.includes(currentOpId);
+        }
+      } catch (e) {}
+    }
+    return true;
+  });
+
+  if (groups.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-10 px-4">
+        <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center internal-icon-box opacity-70">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <p class="text-xs font-bold text-foreground">Nenhum grupo criado ainda</p>
+        <p class="text-[11px] text-[var(--color-text-muted)] mt-1">Crie um grupo para reunir pessoas de diferentes setores para um projeto ou assunto.</p>
+        <button onclick="openCreateGroupModal()" class="mt-4 px-4 py-2 text-xs internal-btn-action cursor-pointer inline-flex items-center gap-1.5 font-bold">
+          <span>+ Criar Primeiro Grupo</span>
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  let totalGroupsUnread = 0;
+
+  groups.forEach(group => {
+    const unreadCount = internalRoomUnreads[group.id] || 0;
+    totalGroupsUnread += unreadCount;
+    const isUnread = unreadCount > 0;
+
+    let memberCount = '';
+    if (group.membros) {
+      try {
+        const m = typeof group.membros === 'string' ? JSON.parse(group.membros) : group.membros;
+        if (Array.isArray(m)) memberCount = `${m.length} membros`;
+      } catch (e) {}
+    }
+
+    const card = document.createElement('div');
+    card.className = `p-3.5 internal-card flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.onclick = () => openInternalGroup(group.id, group.nome, group.descricao, memberCount, group.criado_por_nome);
+
+    card.innerHTML = `
+      <div class="flex items-center gap-3.5 min-w-0">
+        <div class="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h4 class="text-xs font-extrabold text-foreground truncate">${group.nome}</h4>
+            ${memberCount ? `<span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${memberCount}</span>` : ''}
+          </div>
+          <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${group.descricao || 'Grupo da equipe'}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        ${unreadCount > 0 ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold internal-unread-badge">${unreadCount}</span>` : ''}
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-[var(--color-text-muted)] group-hover:text-foreground">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+
+  const badgeGroups = document.getElementById('badge-internal-groups-unread');
+  if (badgeGroups) {
+    if (totalGroupsUnread > 0) {
+      badgeGroups.textContent = totalGroupsUnread;
+      badgeGroups.classList.remove('hidden');
+    } else {
+      badgeGroups.classList.add('hidden');
+    }
+  }
+}
+
+// Abrir Grupo Criado
+function openInternalGroup(groupId, groupName, groupDesc, memberCount, creatorName) {
+  currentInternalRoomId = groupId;
+  internalRoomUnreads[groupId] = 0;
+  updateInternalTotalUnreadBadge();
+
+  const dirView = document.getElementById('internal-directory-view');
+  const chatView = document.getElementById('internal-chat-view');
+  const backBtn = document.getElementById('btn-internal-back-to-list');
+  const titleEl = document.getElementById('internal-drawer-title');
+  const descEl = document.getElementById('internal-drawer-desc');
+  const membersEl = document.getElementById('internal-drawer-members-count');
+  const iconContainer = document.getElementById('internal-drawer-icon-container');
+
+  if (dirView) dirView.classList.add('hidden');
+  if (chatView) chatView.classList.remove('hidden');
+  if (backBtn) backBtn.classList.remove('hidden');
+
+  if (iconContainer) {
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box';
+    iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+  }
+
+  if (titleEl) titleEl.textContent = groupName;
+  if (descEl) {
+    descEl.textContent = `${groupDesc || 'Grupo da equipe'} ${memberCount ? '• ' + memberCount : ''}`;
+    descEl.classList.remove('hidden');
+  }
+  if (membersEl) {
+    membersEl.textContent = 'Grupo';
+    membersEl.classList.remove('hidden');
+  }
+
+  if (currentOperator) {
+    socket.emit('internal_join_room', { sala_id: groupId, atendente_id: currentOperator.id });
+  }
+
+  renderInternalMessages();
+  setTimeout(() => {
+    const input = document.getElementById('internal-chat-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+// Modal de Criação de Grupo
+function openCreateGroupModal() {
+  const modal = document.getElementById('internal-create-group-modal');
+  const nameInput = document.getElementById('input-group-name');
+  const descInput = document.getElementById('input-group-desc');
+  const checklist = document.getElementById('group-members-checklist');
+  const countSpan = document.getElementById('group-selected-members-count');
+
+  if (nameInput) nameInput.value = '';
+  if (descInput) descInput.value = '';
+  if (countSpan) countSpan.textContent = '0 selecionados';
+
+  if (checklist) {
+    checklist.innerHTML = '';
+    const currentOpId = currentOperator ? String(currentOperator.id) : null;
+    internalOperatorsList.forEach(op => {
+      if (currentOpId && String(op.id) === currentOpId) return;
+
+      const item = document.createElement('label');
+      item.className = 'flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors select-none';
+      item.innerHTML = `
+        <input type="checkbox" value="${op.id}" onchange="updateSelectedGroupMembersCount()" class="w-4 h-4 rounded accent-[var(--color-primary-theme)] cursor-pointer group-member-chk">
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 internal-avatar">
+          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-lg">` : (op.nome ? op.nome.charAt(0).toUpperCase() : 'U')}
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-foreground truncate leading-tight">${op.nome}</p>
+          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${op.setor || 'Equipe'}</p>
+        </div>
+      `;
+      checklist.appendChild(item);
+    });
+  }
+
+  if (modal) modal.classList.remove('hidden');
+  if (nameInput) setTimeout(() => nameInput.focus(), 50);
+}
+
+function closeCreateGroupModal() {
+  const modal = document.getElementById('internal-create-group-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function updateSelectedGroupMembersCount() {
+  const chks = document.querySelectorAll('.group-member-chk:checked');
+  const countSpan = document.getElementById('group-selected-members-count');
+  if (countSpan) {
+    countSpan.textContent = `${chks.length} selecionado${chks.length === 1 ? '' : 's'}`;
+  }
+}
+
+function submitCreateGroup() {
+  const nameInput = document.getElementById('input-group-name');
+  const descInput = document.getElementById('input-group-desc');
+  const chks = document.querySelectorAll('.group-member-chk:checked');
+
+  const nome = nameInput ? nameInput.value.trim() : '';
+  if (!nome) {
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  const descricao = descInput ? descInput.value.trim() : '';
+  const membros = Array.from(chks).map(c => c.value);
+
+  const opId = currentOperator ? currentOperator.id : 'admin';
+  const opNome = currentOperator ? currentOperator.nome : 'Administrador';
+
+  socket.emit('internal_create_group', {
+    nome,
+    descricao,
+    membros,
+    atendente_id: opId,
+    atendente_nome: opNome
+  });
+
+  closeCreateGroupModal();
+}
+
+// Renderiza a lista de Canais da Equipe
+function renderInternalChannelsList() {
+  const container = document.getElementById('internal-channels-panel');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  const channels = internalRoomsList.filter(r => r.tipo === 'canal');
+  if (channels.length === 0) {
+    container.innerHTML = '<p class="text-xs text-[var(--color-text-muted)] text-center py-8">Nenhum canal cadastrado.</p>';
+    return;
+  }
+
+  channels.forEach(canal => {
+    const unreadCount = internalRoomUnreads[canal.id] || 0;
+    const isUnread = unreadCount > 0;
+
+    const card = document.createElement('div');
+    card.className = `p-3.5 internal-card flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.onclick = () => openInternalChannel(canal.id, canal.nome, canal.descricao);
+
+    card.innerHTML = `
+      <div class="flex items-center gap-3.5 min-w-0">
+        <div class="w-11 h-11 rounded-2xl flex items-center justify-center font-mono font-black text-lg shrink-0 internal-icon-box">
+          #
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h4 class="text-xs font-extrabold text-foreground truncate">${canal.nome}</h4>
+          </div>
+          <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${canal.descricao || 'Canal de comunicação da equipe'}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        ${unreadCount > 0 ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold internal-unread-badge">${unreadCount}</span>` : ''}
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-[var(--color-text-muted)] group-hover:text-foreground">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+}
+
+// Renderiza a lista de Colegas para Conversas 1x1 (DMs)
+function renderInternalDMsList(filterQuery = '') {
+  const container = document.getElementById('internal-dms-list');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  const currentOpId = currentOperator ? String(currentOperator.id) : null;
+  const filtered = internalOperatorsList.filter(op => {
+    if (currentOpId && String(op.id) === currentOpId) return false; // Não exibir a si mesmo
+    if (!filterQuery) return true;
+    const q = filterQuery.toLowerCase();
+    return op.nome.toLowerCase().includes(q) || (op.setor && op.setor.toLowerCase().includes(q));
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-10 text-[var(--color-text-muted)]">
+        <p class="text-xs font-bold">Nenhum colega encontrado</p>
+      </div>
+    `;
+    return;
+  }
+
+  let totalDMsUnread = 0;
+
+  filtered.forEach(op => {
+    const dmRoomId = `dm_${[currentOpId || 'me', op.id].sort().join('_')}`;
+    const unreadCount = internalRoomUnreads[dmRoomId] || 0;
+    totalDMsUnread += unreadCount;
+    const isUnread = unreadCount > 0;
+
+    const statusColor = op.status === 'online' ? 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20' : (op.status === 'atendendo' ? 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20' : 'bg-slate-500');
+    const statusLabel = op.status === 'online' ? '🟢 Online' : (op.status === 'atendendo' ? `🟡 Atendendo (${op.active_chats || 1})` : '⚪ Offline');
+
+    const card = document.createElement('div');
+    card.className = `p-3.5 internal-card flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.onclick = () => openInternalDM(op.id, op.nome, op.setor, op.status);
+
+    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'U';
+
+    card.innerHTML = `
+      <div class="flex items-center gap-3.5 min-w-0">
+        <div class="relative w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar">
+          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-2xl">` : initial}
+          <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]" title="${statusLabel}"></span>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h4 class="text-xs font-extrabold text-foreground truncate">${op.nome}</h4>
+            <span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${op.setor || 'Equipe'}</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2.5 shrink-0">
+        ${unreadCount > 0 ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold internal-unread-badge">${unreadCount}</span>` : ''}
+        <button class="px-3 py-1.5 text-xs internal-btn-action cursor-pointer">Conversar</button>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+
+  const badgeDMs = document.getElementById('badge-internal-dms-unread');
+  if (badgeDMs) {
+    if (totalDMsUnread > 0) {
+      badgeDMs.textContent = totalDMsUnread;
+      badgeDMs.classList.remove('hidden');
+    } else {
+      badgeDMs.classList.add('hidden');
+    }
+  }
+}
+
+// Filtra a lista de DMs pelo input de busca
+function filterInternalDMsList() {
+  const input = document.getElementById('internal-dms-search-input');
+  const q = input ? input.value.trim() : '';
+  renderInternalDMsList(q);
+}
+
+// Abrir Canal da Equipe
+function openInternalChannel(channelId, channelName, channelDesc) {
+  currentInternalRoomId = channelId;
+  internalRoomUnreads[channelId] = 0;
+  updateInternalTotalUnreadBadge();
+
+  const dirView = document.getElementById('internal-directory-view');
+  const chatView = document.getElementById('internal-chat-view');
+  const backBtn = document.getElementById('btn-internal-back-to-list');
+  const titleEl = document.getElementById('internal-drawer-title');
+  const descEl = document.getElementById('internal-drawer-desc');
+  const membersEl = document.getElementById('internal-drawer-members-count');
+  const iconContainer = document.getElementById('internal-drawer-icon-container');
+
+  if (dirView) dirView.classList.add('hidden');
+  if (chatView) chatView.classList.remove('hidden');
+  if (backBtn) backBtn.classList.remove('hidden');
+
+  if (iconContainer) {
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center font-mono font-black text-lg shrink-0 internal-icon-box';
+    iconContainer.innerHTML = '#';
+  }
+
+  if (titleEl) titleEl.textContent = channelName;
+  if (descEl) {
+    descEl.textContent = channelDesc || 'Canal de comunicação da equipe';
+    descEl.classList.remove('hidden');
+  }
+  if (membersEl) {
+    membersEl.textContent = 'Canal';
+    membersEl.classList.remove('hidden');
+  }
+
+  if (currentOperator) {
+    socket.emit('internal_join_room', { sala_id: channelId, atendente_id: currentOperator.id });
+  }
+
+  renderInternalMessages();
+  setTimeout(() => {
+    const input = document.getElementById('internal-chat-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+// Abrir Conversa Direta 1 x 1 com um Colega
+function openInternalDM(otherId, otherName, otherSector, otherStatus) {
+  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+  const dmRoomId = `dm_${[currentOpId, otherId].sort().join('_')}`;
+  
+  currentInternalRoomId = dmRoomId;
+  internalRoomUnreads[dmRoomId] = 0;
+  updateInternalTotalUnreadBadge();
+
+  const dirView = document.getElementById('internal-directory-view');
+  const chatView = document.getElementById('internal-chat-view');
+  const backBtn = document.getElementById('btn-internal-back-to-list');
+  const titleEl = document.getElementById('internal-drawer-title');
+  const descEl = document.getElementById('internal-drawer-desc');
+  const membersEl = document.getElementById('internal-drawer-members-count');
+  const iconContainer = document.getElementById('internal-drawer-icon-container');
+
+  if (dirView) dirView.classList.add('hidden');
+  if (chatView) chatView.classList.remove('hidden');
+  if (backBtn) backBtn.classList.remove('hidden');
+
+  const op = internalOperatorsList.find(o => String(o.id) === String(otherId));
+  const initial = otherName ? otherName.charAt(0).toUpperCase() : 'U';
+  const statusColor = otherStatus === 'online' ? 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20' : (otherStatus === 'atendendo' ? 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20' : 'bg-slate-500');
+  const statusLabel = otherStatus === 'online' ? '🟢 Online' : (otherStatus === 'atendendo' ? '🟡 Atendendo' : '⚪ Offline');
+
+  if (iconContainer) {
+    iconContainer.className = 'relative w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar';
+    iconContainer.innerHTML = `
+      ${op && op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-2xl">` : initial}
+      <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]"></span>
+    `;
+  }
+
+  if (titleEl) titleEl.textContent = otherName;
+  if (descEl) {
+    descEl.textContent = statusLabel;
+    descEl.classList.remove('hidden');
+  }
+  if (membersEl) {
+    membersEl.textContent = otherSector || 'Equipe';
+    membersEl.classList.remove('hidden');
+  }
+
+  if (currentOperator) {
+    socket.emit('internal_join_room', { sala_id: dmRoomId, atendente_id: currentOperator.id });
+  }
+
+  renderInternalMessages();
+  setTimeout(() => {
+    const input = document.getElementById('internal-chat-input');
+    if (input) {
+      input.placeholder = 'Digite uma mensagem';
+      input.focus();
+    }
+  }, 100);
+}
+
+// Renderiza o histórico de mensagens da sala interna
+function renderInternalMessages() {
+  const container = document.getElementById('internal-messages-container');
+  if (!container) return;
+
+  const msgs = internalMessagesMap[currentInternalRoomId] || [];
+  container.innerHTML = '';
+
+  if (msgs.length === 0) {
+    const isDM = currentInternalRoomId.startsWith('dm_');
+    const isGroup = currentInternalRoomId.startsWith('group_');
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'flex flex-col items-center justify-center py-16 text-center my-auto';
+    emptyEl.innerHTML = `
+      <div class="w-14 h-14 rounded-2xl mb-3 flex items-center justify-center internal-icon-box">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">${isDM ? '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' : (isGroup ? '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' : '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>')}</svg>
+      </div>
+      <p class="text-xs font-extrabold text-foreground mb-1">${isDM ? 'Início da conversa particular' : (isGroup ? 'Início do grupo da equipe' : 'Canal aberto da equipe')}</p>
+      <p class="text-[11px] text-[var(--color-text-muted)] max-w-[260px]">Envie uma mensagem de texto, áudio, anexo ou card de atendimento!</p>
+    `;
+    container.appendChild(emptyEl);
+  } else {
+    msgs.forEach(msg => {
+      const msgEl = createInternalMessageElement(msg);
+      container.appendChild(msgEl);
+    });
+  }
+
+  const newAnchor = document.createElement('div');
+  newAnchor.id = 'internal-scroll-anchor';
+  newAnchor.className = 'h-2 w-full shrink-0';
+  container.appendChild(newAnchor);
+
+  // Scroll até o final
+  requestAnimationFrame(() => {
+    newAnchor.scrollIntoView({ behavior: 'auto', block: 'end' });
+  });
+}
+
+// Cria o elemento visual de uma mensagem interna
+function createInternalMessageElement(msg) {
+  const isSelf = currentOperator && String(msg.remetente_id) === String(currentOperator.id);
+  const timeFormatted = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = `flex flex-col ${isSelf ? 'items-end' : 'items-start'} gap-1 w-full`;
+  msgDiv.dataset.internalMsgId = msg.id;
+
+  let cardHTML = '';
+  if (msg.card_meta) {
+    try {
+      const card = typeof msg.card_meta === 'string' ? JSON.parse(msg.card_meta) : msg.card_meta;
+      cardHTML = `
+        <div class="internal-shared-card p-3 my-1.5 w-full max-w-sm rounded-xl">
+          <div class="flex items-center gap-2.5 mb-2 pb-2 border-b border-white/10">
+            <div class="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-500/30 overflow-hidden">
+              ${card.cliente_avatar ? `<img src="${card.cliente_avatar}" class="w-full h-full object-cover">` : (card.cliente_nome ? card.cliente_nome.charAt(0) : 'C')}
+            </div>
+            <div class="min-w-0 flex-1">
+              <h4 class="text-xs font-bold text-slate-100 truncate">${card.cliente_nome || 'Cliente'}</h4>
+              <p class="text-[10px] text-slate-400 font-mono">${card.cliente_telefone || card.cliente_jid}</p>
+            </div>
+            <span class="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold uppercase tracking-wider">WhatsApp</span>
+          </div>
+          <p class="text-xs text-slate-300 italic mb-2.5 line-clamp-2 bg-black/20 p-2 rounded-lg border border-white/5">"${card.resumo || 'Atendimento em andamento'}"</p>
+          <button onclick="handleOpenSharedChat('${card.cliente_jid}', '${card.cliente_nome || ''}')" class="w-full h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/25 transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Abrir Conversa no Painel
+          </button>
+        </div>
+      `;
+    } catch (e) {}
+  }
+
+  let mediaHTML = '';
+  if (msg.midia_url) {
+    if (msg.midia_tipo === 'audio' || msg.midia_url.includes('/uploads/internal-voice-') || msg.midia_url.endsWith('.ogg') || msg.midia_url.endsWith('.mp3')) {
+      mediaHTML = `
+        <div class="my-1">
+          <audio controls src="${msg.midia_url}" class="max-w-[240px] h-8"></audio>
+        </div>
+      `;
+    } else if (msg.midia_tipo === 'image' || msg.midia_url.match(/\.(jpeg|jpg|gif|png|webp)/i)) {
+      mediaHTML = `
+        <div class="my-1 rounded-xl overflow-hidden max-w-[260px] border border-white/10">
+          <img src="${msg.midia_url}" class="w-full h-auto cursor-pointer hover:scale-105 transition-transform" onclick="window.open(this.src, '_blank')">
+        </div>
+      `;
+    } else {
+      mediaHTML = `
+        <div class="my-1 p-2 rounded-lg bg-white/5 border border-white/10 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-indigo-400"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <a href="${msg.midia_url}" target="_blank" class="text-xs text-indigo-400 hover:underline font-bold truncate">Download do Anexo</a>
+        </div>
+      `;
+    }
+  }
+
+  const bubbleClass = isSelf ? 'internal-msg-bubble-self' : 'internal-msg-bubble-other';
+
+  msgDiv.innerHTML = `
+    <div class="flex items-center gap-1.5 text-[10px] text-slate-400 px-1">
+      <span class="font-bold text-slate-300">${isSelf ? 'Você' : (msg.remetente_nome || 'Colega')}</span>
+      <span>•</span>
+      <span>${timeFormatted}</span>
+    </div>
+    <div class="${bubbleClass} p-3 rounded-2xl max-w-[88%] shadow-md">
+      ${cardHTML}
+      ${mediaHTML}
+      ${msg.texto ? `<p class="text-xs leading-relaxed whitespace-pre-wrap select-text">${escapeHtml(msg.texto)}</p>` : ''}
+    </div>
+  `;
+
+  return msgDiv;
+}
+
+// Abrir conversa do WhatsApp a partir de um Card de Atendimento Compartilhado
+function handleOpenSharedChat(clienteJid, clienteNome) {
+  if (!clienteJid) return;
+
+  // Se estiver dentro de um iframe no portal Next.js, notifica a aplicação pai para navegar ao WhatsApp
+  if (window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({
+        type: 'TICKETFLOW_OPEN_WHATSAPP_CHAT',
+        clienteJid: clienteJid,
+        clienteNome: clienteNome
+      }, '*');
+    } catch (e) {}
+  }
+
+  closeInternalChatDrawer();
+  selectChat(clienteJid);
+  showInputBarNotification(`Conversa de ${clienteNome || clienteJid} aberta!`);
+}
+
+// Enviar Mensagem no Chat Interno
+function sendInternalMessage() {
+  const input = document.getElementById('internal-chat-input');
+  const texto = input ? input.value.trim() : '';
+
+  if (!texto && !internalSelectedFile) return;
+
+  if (internalSelectedFile) {
+    const formData = new FormData();
+    formData.append('file', internalSelectedFile);
+
+    fetch('/api/upload', {
+      method: 'POST',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      const fileUrl = data.url;
+      const fileType = internalSelectedFile.type.startsWith('image/') ? 'image' : (internalSelectedFile.type.startsWith('audio/') ? 'audio' : 'document');
+      
+      socket.emit('internal_send_message', {
+        sala_id: currentInternalRoomId,
+        remetente_id: currentOperator ? currentOperator.id : 'anon',
+        remetente_nome: currentOperator ? currentOperator.name || currentOperator.nome : 'Atendente',
+        texto: texto || '',
+        midia_url: fileUrl,
+        midia_tipo: fileType
+      });
+
+      clearInternalAttachment();
+      if (input) input.value = '';
+    })
+    .catch(err => {
+      console.error('Erro ao enviar anexo no chat interno:', err);
+      alert('Erro ao enviar arquivo.');
+    });
+    return;
+  }
+
+  // Envio de texto normal
+  if (texto) {
+    socket.emit('internal_send_message', {
+      sala_id: currentInternalRoomId,
+      remetente_id: currentOperator ? currentOperator.id : 'anon',
+      remetente_nome: currentOperator ? currentOperator.name || currentOperator.nome : 'Atendente',
+      texto
+    });
+
+    if (input) {
+      input.value = '';
+      input.style.height = '20px';
+      adjustInternalChatInputHeight();
+    }
+  }
+}
+
+// Auto-expansão fluida do campo de texto do Chat Interno
+function adjustInternalChatInputHeight() {
+  const input = document.getElementById('internal-chat-input');
+  const container = document.getElementById('internal-chat-input-container');
+  if (!input) return;
+
+  input.style.height = 'auto';
+  const newHeight = Math.min(135, Math.max(20, input.scrollHeight));
+  input.style.height = `${newHeight}px`;
+
+  if (container) {
+    container.style.height = `${Math.min(160, Math.max(44, newHeight + 24))}px`;
+  }
+}
+
+// Manipula teclas no input do chat interno (Enter para enviar)
+function handleInternalInputKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendInternalMessage();
+  }
+}
+
+// ==============================================================================
+// 🎙️ GRAVAÇÃO, VISUALIZADOR DE ONDA E PRÉ-VISUALIZAÇÃO DE ÁUDIO NO CHAT INTERNO
+// ==============================================================================
+let internalMediaRecorder = null;
+let internalAudioChunksList = [];
+let internalRecordingTimerInterval = null;
+let internalRecordingSeconds = 0;
+let internalRecordedAudioBlob = null;
+let internalRecordedAudioBase64 = null;
+let internalRecordedAudioDuration = 0;
+let isInternalRecordingPaused = false;
+let internalAudioContext = null;
+let internalAnalyser = null;
+let internalVisualizerAnimationFrame = null;
+let internalDrawVisualizerLoop = null;
+let internalPreviewAnimationFrame = null;
+let isInternalAudioPreviewEventsSetup = false;
+let isDraggingInternalPreview = false;
+
+// Alterna entre os 3 Modos da Barra do Chat Interno (Texto, Gravando, Pré-visualizar)
+function setInternalInputBarMode(mode) {
+  const textModeEl = document.getElementById('internal-input-mode-text');
+  const recordingModeEl = document.getElementById('internal-input-mode-recording');
+  const previewModeEl = document.getElementById('internal-input-mode-preview');
+
+  const textBtns = document.getElementById('internal-buttons-mode-text');
+  const recordingBtns = document.getElementById('internal-buttons-mode-recording');
+  const previewBtns = document.getElementById('internal-buttons-mode-preview');
+
+  const container = document.getElementById('internal-chat-input-container');
+
+  // Resetar áreas de conteúdo
+  [textModeEl, recordingModeEl, previewModeEl].forEach(el => {
+    if (el) {
+      el.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+      el.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+  });
+
+  // Ocultar botões
+  [textBtns, recordingBtns, previewBtns].forEach(el => {
+    if (el) el.classList.add('hidden');
+  });
+
+  if (mode === 'recording') {
+    if (recordingModeEl) {
+      recordingModeEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      recordingModeEl.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+    if (recordingBtns) recordingBtns.classList.remove('hidden');
+    if (container) container.classList.add('border-red-500/40', 'bg-red-500/[0.04]');
+    const input = document.getElementById('internal-chat-input');
+    if (input) input.style.height = '20px';
+  } else if (mode === 'preview') {
+    if (previewModeEl) {
+      previewModeEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      previewModeEl.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+    if (previewBtns) previewBtns.classList.remove('hidden');
+    if (container) container.classList.remove('border-red-500/40', 'bg-red-500/[0.04]');
+    const input = document.getElementById('internal-chat-input');
+    if (input) input.style.height = '20px';
+  } else {
+    // Modo Texto por padrão
+    if (textModeEl) {
+      textModeEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+      textModeEl.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+    }
+    if (textBtns) textBtns.classList.remove('hidden');
+    if (container) container.classList.remove('border-red-500/40', 'bg-red-500/[0.04]');
+    adjustInternalChatInputHeight();
+  }
+}
+
+// Inicia o Visualizador de Onda Real de Voz por Web Audio API para o Chat Interno
+function initInternalAudioVisualizer(stream) {
+  const container = document.getElementById('internal-audio-waveform-visualizer');
+  if (!container) return;
+
+  container.innerHTML = '';
+  const numBars = 32;
+  const bars = [];
+
+  for (let i = 0; i < numBars; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'w-1 rounded-full bg-gradient-to-t from-red-500 to-rose-400 opacity-70 transition-all duration-75';
+    bar.style.height = '4px';
+    bar.style.minHeight = '3px';
+    container.appendChild(bar);
+    bars.push(bar);
+  }
+
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    internalAudioContext = new AudioContextClass();
+    const source = internalAudioContext.createMediaStreamSource(stream);
+    internalAnalyser = internalAudioContext.createAnalyser();
+    internalAnalyser.fftSize = 64;
+    source.connect(internalAnalyser);
+
+    const bufferLength = internalAnalyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    internalDrawVisualizerLoop = () => {
+      if (!internalAnalyser || isInternalRecordingPaused) return;
+
+      internalAnalyser.getByteFrequencyData(dataArray);
+
+      for (let i = 0; i < numBars; i++) {
+        const value = dataArray[i % bufferLength] || 0;
+        const percent = Math.min(100, Math.max(10, (value / 255) * 100));
+        const heightPx = Math.max(3, Math.floor((percent / 100) * 26));
+
+        if (bars[i]) {
+          bars[i].style.height = `${heightPx}px`;
+          bars[i].style.opacity = `${Math.max(0.4, percent / 100)}`;
+        }
+      }
+
+      internalVisualizerAnimationFrame = requestAnimationFrame(internalDrawVisualizerLoop);
+    };
+
+    internalDrawVisualizerLoop();
+  } catch (e) {
+    console.warn('Web Audio API não inicializada para o chat interno:', e);
+  }
+}
+
+function stopInternalAudioVisualizer() {
+  if (internalVisualizerAnimationFrame) {
+    cancelAnimationFrame(internalVisualizerAnimationFrame);
+    internalVisualizerAnimationFrame = null;
+  }
+  if (internalAudioContext && internalAudioContext.state !== 'closed') {
+    try {
+      internalAudioContext.close();
+    } catch (e) {}
+    internalAudioContext = null;
+  }
+  internalAnalyser = null;
+}
+
+// Inicia Gravação de Áudio
+async function startInternalAudioRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Seu navegador não suporta gravação de áudio ou a permissão de microfone foi negada.');
+    return;
+  }
+
+  isInternalRecordingPaused = false;
+  const pauseIcon = document.getElementById('icon-internal-recording-pause');
+  const resumeIcon = document.getElementById('icon-internal-recording-resume');
+  if (pauseIcon) pauseIcon.classList.remove('hidden');
+  if (resumeIcon) resumeIcon.classList.add('hidden');
+
+  setInternalInputBarMode('recording');
+  const timerEl = document.getElementById('internal-recording-timer');
+  const statusLabel = document.getElementById('internal-recording-status-label');
+  const pulseDot = document.getElementById('internal-recording-pulse-dot');
+
+  if (timerEl) timerEl.textContent = '00:00';
+  if (statusLabel) {
+    statusLabel.textContent = 'Conectando...';
+    statusLabel.className = 'text-xs font-bold text-amber-400 tracking-wider';
+  }
+  if (pulseDot) {
+    pulseDot.className = 'w-3 h-3 rounded-full bg-amber-400 animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.6)]';
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    internalAudioChunksList = [];
+    internalRecordingSeconds = 0;
+    internalRecordedAudioBlob = null;
+    internalRecordedAudioBase64 = null;
+
+    internalMediaRecorder = new MediaRecorder(stream);
+    internalMediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        internalAudioChunksList.push(e.data);
+      }
+    };
+
+    internalMediaRecorder.start(250);
+    playRecordingStartSound();
+
+    if (statusLabel) {
+      statusLabel.textContent = 'Gravando...';
+      statusLabel.className = 'text-xs font-bold text-red-400 tracking-wider';
+    }
+    if (pulseDot) {
+      pulseDot.className = 'w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]';
+    }
+
+    initInternalAudioVisualizer(stream);
+
+    clearInterval(internalRecordingTimerInterval);
+    internalRecordingTimerInterval = setInterval(() => {
+      if (!isInternalRecordingPaused) {
+        internalRecordingSeconds++;
+        const mins = String(Math.floor(internalRecordingSeconds / 60)).padStart(2, '0');
+        const secs = String(internalRecordingSeconds % 60).padStart(2, '0');
+        if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+      }
+    }, 1000);
+
+  } catch (err) {
+    console.error('Erro ao acessar o microfone no chat interno:', err);
+    setInternalInputBarMode('text');
+    alert('Não foi possível acessar o microfone.');
+  }
+}
+
+// Pausar / Retomar Gravação
+function togglePauseInternalAudioRecording() {
+  if (!internalMediaRecorder) return;
+
+  const pauseIcon = document.getElementById('icon-internal-recording-pause');
+  const resumeIcon = document.getElementById('icon-internal-recording-resume');
+  const statusLabel = document.getElementById('internal-recording-status-label');
+  const pulseDot = document.getElementById('internal-recording-pulse-dot');
+
+  if (internalMediaRecorder.state === 'recording') {
+    internalMediaRecorder.pause();
+    isInternalRecordingPaused = true;
+    playRecordingPauseSound();
+
+    if (pauseIcon) pauseIcon.classList.add('hidden');
+    if (resumeIcon) resumeIcon.classList.remove('hidden');
+
+    if (statusLabel) {
+      statusLabel.textContent = 'Pausado';
+      statusLabel.className = 'text-xs font-bold text-amber-400 tracking-wider';
+    }
+    if (pulseDot) {
+      pulseDot.className = 'w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]';
+    }
+
+    if (internalVisualizerAnimationFrame) {
+      cancelAnimationFrame(internalVisualizerAnimationFrame);
+      internalVisualizerAnimationFrame = null;
+    }
+  } else if (internalMediaRecorder.state === 'paused') {
+    internalMediaRecorder.resume();
+    isInternalRecordingPaused = false;
+    playRecordingResumeSound();
+
+    if (resumeIcon) resumeIcon.classList.add('hidden');
+    if (pauseIcon) pauseIcon.classList.remove('hidden');
+
+    if (statusLabel) {
+      statusLabel.textContent = 'Gravando...';
+      statusLabel.className = 'text-xs font-bold text-red-400 tracking-wider';
+    }
+    if (pulseDot) {
+      pulseDot.className = 'w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]';
+    }
+
+    if (internalDrawVisualizerLoop) {
+      if (internalVisualizerAnimationFrame) cancelAnimationFrame(internalVisualizerAnimationFrame);
+      internalDrawVisualizerLoop();
+    }
+  }
+}
+
+// Finalizar Gravação e ir para Pré-visualização
+function finishInternalAudioRecordingAndPreview() {
+  playRecordingFinishSound();
+  setupInternalAudioPreviewEvents();
+  internalRecordedAudioDuration = internalRecordingSeconds || 0;
+  clearInterval(internalRecordingTimerInterval);
+  stopInternalAudioVisualizer();
+
+  if (!internalMediaRecorder) return;
+
+  const stream = internalMediaRecorder.stream;
+
+  internalMediaRecorder.onstop = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+
+    const mimeType = internalMediaRecorder.mimeType || 'audio/webm';
+    internalRecordedAudioBlob = new Blob(internalAudioChunksList, { type: mimeType });
+
+    if (internalRecordedAudioBlob.size === 0) {
+      cancelInternalAudioRecording();
+      return;
+    }
+
+    const audioUrl = URL.createObjectURL(internalRecordedAudioBlob);
+    const player = document.getElementById('internal-audio-preview-player');
+    if (player) {
+      player.src = audioUrl;
+      player.load();
+      player.currentTime = 1e101;
+      player.ontimeupdate = function() {
+        this.ontimeupdate = null;
+        this.currentTime = 0;
+        updateInternalAudioPreviewTimer();
+      };
+      updateInternalAudioPreviewTimer();
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      internalRecordedAudioBase64 = reader.result;
+    };
+    reader.readAsDataURL(internalRecordedAudioBlob);
+
+    setInternalInputBarMode('preview');
+  };
+
+  if (internalMediaRecorder.state !== 'inactive') {
+    internalMediaRecorder.stop();
+  }
+}
+
+// Eventos e Controle de Player de Preview no Chat Interno
+function setupInternalAudioPreviewEvents() {
+  if (isInternalAudioPreviewEventsSetup) return;
+  const player = document.getElementById('internal-audio-preview-player');
+  if (!player) return;
+
+  isInternalAudioPreviewEventsSetup = true;
+  const container = document.getElementById('internal-preview-progress-container');
+
+  player.addEventListener('loadedmetadata', updateInternalAudioPreviewTimer);
+  player.addEventListener('timeupdate', updateInternalAudioPreviewTimer);
+
+  player.addEventListener('play', () => {
+    const iconPlay = document.getElementById('icon-internal-preview-play');
+    const iconPause = document.getElementById('icon-internal-preview-pause');
+    const btnToggle = document.getElementById('btn-internal-preview-play-toggle');
+    if (iconPlay) iconPlay.classList.add('hidden');
+    if (iconPause) iconPause.classList.remove('hidden');
+    if (btnToggle) btnToggle.classList.add('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
+
+    if (internalPreviewAnimationFrame) cancelAnimationFrame(internalPreviewAnimationFrame);
+    renderInternalAudioPreviewFrame();
+  });
+
+  player.addEventListener('pause', () => {
+    const iconPlay = document.getElementById('icon-internal-preview-play');
+    const iconPause = document.getElementById('icon-internal-preview-pause');
+    const btnToggle = document.getElementById('btn-internal-preview-play-toggle');
+    if (iconPlay) iconPlay.classList.remove('hidden');
+    if (iconPause) iconPause.classList.add('hidden');
+    if (btnToggle) btnToggle.classList.remove('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
+
+    if (internalPreviewAnimationFrame) {
+      cancelAnimationFrame(internalPreviewAnimationFrame);
+      internalPreviewAnimationFrame = null;
+    }
+  });
+
+  player.addEventListener('ended', () => {
+    const iconPlay = document.getElementById('icon-internal-preview-play');
+    const iconPause = document.getElementById('icon-internal-preview-pause');
+    const btnToggle = document.getElementById('btn-internal-preview-play-toggle');
+    const progressBar = document.getElementById('internal-preview-progress-bar');
+    const progressPin = document.getElementById('internal-preview-progress-pin');
+
+    if (iconPlay) iconPlay.classList.remove('hidden');
+    if (iconPause) iconPause.classList.add('hidden');
+    if (btnToggle) btnToggle.classList.remove('shadow-[0_0_12px_var(--color-primary-theme)]', 'ring-2', 'ring-accent-theme/40');
+
+    if (internalPreviewAnimationFrame) {
+      cancelAnimationFrame(internalPreviewAnimationFrame);
+      internalPreviewAnimationFrame = null;
+    }
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressPin) progressPin.style.left = '0%';
+    player.currentTime = 0;
+    updateInternalAudioPreviewTimer();
+  });
+
+  if (container) {
+    const handleStart = (e) => {
+      isDraggingInternalPreview = true;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      updateInternalAudioScrubPosition(clientX);
+    };
+
+    const handleMove = (e) => {
+      if (!isDraggingInternalPreview) return;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      updateInternalAudioScrubPosition(clientX);
+    };
+
+    const handleEnd = () => {
+      isDraggingInternalPreview = false;
+    };
+
+    container.addEventListener('mousedown', handleStart);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleEnd);
+
+    container.addEventListener('touchstart', handleStart, { passive: true });
+    window.addEventListener('touchmove', handleMove, { passive: true });
+    window.addEventListener('touchend', handleEnd);
+  }
+}
+
+function getInternalPreviewDuration() {
+  const player = document.getElementById('internal-audio-preview-player');
+  if (player && player.duration && isFinite(player.duration) && !isNaN(player.duration) && player.duration > 0) {
+    return player.duration;
+  }
+  return internalRecordedAudioDuration || 0;
+}
+
+function updateInternalAudioScrubPosition(clientX) {
+  const player = document.getElementById('internal-audio-preview-player');
+  const container = document.getElementById('internal-preview-progress-container');
+  const progressBar = document.getElementById('internal-preview-progress-bar');
+  const progressPin = document.getElementById('internal-preview-progress-pin');
+  const timerEl = document.getElementById('internal-preview-audio-timer');
+
+  const duration = getInternalPreviewDuration();
+  if (!player || !duration || !container) return;
+
+  const rect = container.getBoundingClientRect();
+  const clickX = clientX - rect.left;
+  const width = rect.width;
+  const targetTime = Math.max(0, Math.min(duration, (clickX / width) * duration));
+
+  player.currentTime = targetTime;
+  const progressPercent = (targetTime / duration) * 100;
+  if (progressBar) progressBar.style.width = `${progressPercent}%`;
+  if (progressPin) progressPin.style.left = `${progressPercent}%`;
+
+  const curMins = String(Math.floor(targetTime / 60)).padStart(2, '0');
+  const curSecs = String(Math.floor(targetTime % 60)).padStart(2, '0');
+  const durMins = String(Math.floor(duration / 60)).padStart(2, '0');
+  const durSecs = String(Math.floor(duration % 60)).padStart(2, '0');
+
+  if (timerEl) {
+    timerEl.textContent = `${curMins}:${curSecs} / ${durMins}:${durSecs}`;
+  }
+}
+
+function renderInternalAudioPreviewFrame() {
+  const player = document.getElementById('internal-audio-preview-player');
+  const timerEl = document.getElementById('internal-preview-audio-timer');
+  const progressBar = document.getElementById('internal-preview-progress-bar');
+  const progressPin = document.getElementById('internal-preview-progress-pin');
+
+  const duration = getInternalPreviewDuration();
+  if (!player || player.paused) return;
+
+  if (!isDraggingInternalPreview && duration > 0) {
+    const progressPercent = Math.min(100, (player.currentTime / duration) * 100);
+    if (progressBar) progressBar.style.width = `${progressPercent}%`;
+    if (progressPin) progressPin.style.left = `${progressPercent}%`;
+
+    const curMins = String(Math.floor(player.currentTime / 60)).padStart(2, '0');
+    const curSecs = String(Math.floor(player.currentTime % 60)).padStart(2, '0');
+    const durMins = String(Math.floor(duration / 60)).padStart(2, '0');
+    const durSecs = String(Math.floor(duration % 60)).padStart(2, '0');
+
+    if (timerEl) {
+      timerEl.textContent = `${curMins}:${curSecs} / ${durMins}:${durSecs}`;
+    }
+  }
+
+  internalPreviewAnimationFrame = requestAnimationFrame(renderInternalAudioPreviewFrame);
+}
+
+function updateInternalAudioPreviewTimer() {
+  const player = document.getElementById('internal-audio-preview-player');
+  const timerEl = document.getElementById('internal-preview-audio-timer');
+  const progressBar = document.getElementById('internal-preview-progress-bar');
+  const progressPin = document.getElementById('internal-preview-progress-pin');
+  if (!player || !timerEl) return;
+
+  const duration = getInternalPreviewDuration();
+  const durMins = String(Math.floor(duration / 60)).padStart(2, '0');
+  const durSecs = String(Math.floor(duration % 60)).padStart(2, '0');
+  const curTime = player.currentTime || 0;
+  const curMins = String(Math.floor(curTime / 60)).padStart(2, '0');
+  const curSecs = String(Math.floor(curTime % 60)).padStart(2, '0');
+
+  timerEl.textContent = `${curMins}:${curSecs} / ${durMins}:${durSecs}`;
+
+  if (!isDraggingInternalPreview && duration > 0) {
+    const progressPercent = Math.min(100, (curTime / duration) * 100);
+    if (progressBar) progressBar.style.width = `${progressPercent}%`;
+    if (progressPin) progressPin.style.left = `${progressPercent}%`;
+  }
+}
+
+function toggleInternalAudioPreviewPlay() {
+  setupInternalAudioPreviewEvents();
+  const player = document.getElementById('internal-audio-preview-player');
+  if (!player || !player.src) return;
+
+  if (player.paused) {
+    player.play().catch(err => console.error('Erro ao tocar áudio interno:', err));
+  } else {
+    player.pause();
+  }
+}
+
+// Cancelar / Descartar Gravação de Áudio no Chat Interno
+function cancelInternalAudioRecording() {
+  playRecordingCancelSound();
+  clearInterval(internalRecordingTimerInterval);
+  stopInternalAudioVisualizer();
+
+  if (internalMediaRecorder) {
+    const stream = internalMediaRecorder.stream;
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    if (internalMediaRecorder.state !== 'inactive') {
+      internalMediaRecorder.stop();
+    }
+  }
+
+  resetInternalAudioState();
+}
+
+function resetInternalAudioState() {
+  internalMediaRecorder = null;
+  internalAudioChunksList = [];
+  internalRecordedAudioBlob = null;
+  internalRecordedAudioBase64 = null;
+  isInternalRecordingPaused = false;
+
+  stopInternalAudioVisualizer();
+
+  const player = document.getElementById('internal-audio-preview-player');
+  if (player) {
+    player.pause();
+    player.src = '';
+  }
+
+  setInternalInputBarMode('text');
+}
+
+// Enviar Áudio Gravado no Chat Interno
+function sendInternalRecordedAudio() {
+  if (!internalRecordedAudioBase64 && !internalRecordedAudioBlob) return;
+
+  if (internalRecordedAudioBase64) {
+    socket.emit('internal_send_message', {
+      sala_id: currentInternalRoomId,
+      remetente_id: currentOperator ? currentOperator.id : 'anon',
+      remetente_nome: currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente',
+      audio_base64: internalRecordedAudioBase64
+    });
+    playMessageSentSound();
+    resetInternalAudioState();
+  } else if (internalRecordedAudioBlob) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      internalRecordedAudioBase64 = reader.result;
+      socket.emit('internal_send_message', {
+        sala_id: currentInternalRoomId,
+        remetente_id: currentOperator ? currentOperator.id : 'anon',
+        remetente_nome: currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente',
+        audio_base64: internalRecordedAudioBase64
+      });
+      playMessageSentSound();
+      resetInternalAudioState();
+    };
+    reader.readAsDataURL(internalRecordedAudioBlob);
+  }
+}
+
+function handleInternalFileSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  internalSelectedFile = file;
+  const preview = document.getElementById('internal-attachment-preview');
+  const label = document.getElementById('internal-attachment-label');
+  if (preview && label) {
+    label.textContent = `📎 ${file.name}`;
+    preview.classList.remove('hidden');
+  }
+}
+
+function clearInternalAttachment() {
+  internalSelectedFile = null;
+  const preview = document.getElementById('internal-attachment-preview');
+  const fileInput = document.getElementById('internal-file-input');
+  if (preview) preview.classList.add('hidden');
+  if (fileInput) fileInput.value = '';
+}
+
+// Atualiza o contador total de não lidas no gatilho da lateral
+function updateInternalTotalUnreadBadge() {
+  const badge = document.getElementById('internal-chat-unread-badge');
+  const total = Object.values(internalRoomUnreads).reduce((acc, count) => acc + count, 0);
+
+  if (badge) {
+    if (total > 0) {
+      badge.textContent = total > 99 ? '99+' : total;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+
+  // Notifica o componente GlobalInternalChat do Next.js via postMessage
+  if (window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({
+        type: 'TICKETFLOW_INTERNAL_UNREAD_UPDATE',
+        unreadCount: total
+      }, '*');
+    } catch (e) {}
+  }
+}
+
+// Modal de Compartilhamento do Atendimento
+function openInternalShareModal(clienteJid, clienteNome) {
+  if (!clienteJid) {
+    alert('Selecione uma conversa para compartilhar.');
+    return;
+  }
+
+  internalChatToShare = { jid: clienteJid, name: clienteNome || clienteJid };
+
+  const select = document.getElementById('share-target-room-select');
+  if (select) {
+    select.innerHTML = '';
+    
+    // Canais
+    const channelGroup = document.createElement('optgroup');
+    channelGroup.label = 'Canais da Equipe';
+    internalRoomsList.filter(r => r.tipo === 'canal').forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `# ${c.nome}`;
+      channelGroup.appendChild(opt);
+    });
+    select.appendChild(channelGroup);
+
+    // Colegas
+    const dmGroup = document.createElement('optgroup');
+    dmGroup.label = 'Colegas / Atendentes';
+    internalOperatorsList.forEach(op => {
+      if (currentOperator && String(op.id) === String(currentOperator.id)) return;
+      const dmRoomId = `dm_${[currentOperator ? currentOperator.id : 'me', op.id].sort().join('_')}`;
+      const opt = document.createElement('option');
+      opt.value = dmRoomId;
+      opt.textContent = `👤 ${op.nome} (${op.status === 'online' ? 'Online' : (op.status === 'atendendo' ? 'Atendendo' : 'Offline')})`;
+      dmGroup.appendChild(opt);
+    });
+    select.appendChild(dmGroup);
+  }
+
+  const modal = document.getElementById('internal-share-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeInternalShareModal() {
+  const modal = document.getElementById('internal-share-modal');
+  if (modal) modal.classList.add('hidden');
+  internalChatToShare = null;
+}
+
+function confirmShareChatToInternal() {
+  if (!internalChatToShare) return;
+
+  const select = document.getElementById('share-target-room-select');
+  const commentInput = document.getElementById('share-comment-input');
+  const targetRoomId = select ? select.value : 'channel-geral';
+  const comentario = commentInput ? commentInput.value.trim() : '';
+
+  socket.emit('internal_share_chat', {
+    target_sala_id: targetRoomId,
+    cliente_jid: internalChatToShare.jid,
+    atendente_id: currentOperator ? currentOperator.id : 'anon',
+    atendente_nome: currentOperator ? currentOperator.name || currentOperator.nome : 'Atendente',
+    comentario
+  });
+
+  closeInternalShareModal();
+  if (commentInput) commentInput.value = '';
+
+  showInputBarNotification('Atendimento compartilhado com a equipe com sucesso!');
+
+  // Abre a conversa onde foi compartilhado
+  if (targetRoomId.startsWith('dm_')) {
+    const parts = targetRoomId.replace('dm_', '').split('_');
+    const otherId = parts.find(id => !currentOperator || id !== String(currentOperator.id)) || parts[0];
+    const opObj = internalOperatorsList.find(o => String(o.id) === String(otherId));
+    openInternalDM(otherId, opObj ? opObj.nome : otherId, opObj ? opObj.setor : '', opObj ? opObj.status : 'online');
+  } else {
+    const canal = internalRoomsList.find(r => r.id === targetRoomId);
+    openInternalChannel(targetRoomId, canal ? canal.nome : 'Canal', canal ? canal.descricao : '');
+  }
+
+  openInternalChatDrawer();
+}
+
+// Atalho de Teclado Global: Alt + C para abrir/fechar Chat Interno
+window.addEventListener('keydown', (e) => {
+  if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+    e.preventDefault();
+    toggleInternalChatDrawer();
+  } else if (e.key === 'Escape') {
+    if (isInternalDrawerOpen) closeInternalChatDrawer();
+    closeInternalShareModal();
+  }
+});
+
+// Listener de input do chat interno (Enter para enviar)
+document.addEventListener('DOMContentLoaded', () => {
+  const internalInput = document.getElementById('internal-chat-input');
+  if (internalInput) {
+    internalInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendInternalMessage();
+      }
+    });
+  }
+});
+
+// Recebe dados das salas e operadores
+socket.on('internal_rooms_data', ({ salas, atendentes }) => {
+  internalRoomsList = salas || [];
+  internalOperatorsList = atendentes || [];
+  renderInternalChannelsList();
+  renderInternalGroupsList();
+  renderInternalDMsList();
+});
+
+// Recebe histórico da sala aberta
+socket.on('internal_room_history', ({ sala_id, messages }) => {
+  internalMessagesMap[sala_id] = messages || [];
+  if (currentInternalRoomId === sala_id) {
+    renderInternalMessages();
+  }
+});
+
+// Recebe novo grupo criado
+socket.on('internal_group_created', (group) => {
+  const exists = internalRoomsList.some(r => r.id === group.id);
+  if (!exists) {
+    internalRoomsList.push(group);
+  }
+  renderInternalGroupsList();
+
+  // Se o criador foi o operador atual, entra automaticamente no grupo criado
+  if (currentOperator && String(group.criado_por_id) === String(currentOperator.id)) {
+    openInternalGroup(group.id, group.nome, group.descricao, null, group.criado_por_nome);
+  }
+});
+
+// Recebe nova mensagem na sala aberta
+socket.on('internal_new_message', (msg) => {
+  if (!internalMessagesMap[msg.sala_id]) {
+    internalMessagesMap[msg.sala_id] = [];
+  }
+  internalMessagesMap[msg.sala_id].push(msg);
+
+  if (currentInternalRoomId === msg.sala_id) {
+    const container = document.getElementById('internal-messages-container');
+    if (container) {
+      const msgEl = createInternalMessageElement(msg);
+      const anchor = document.getElementById('internal-scroll-anchor');
+      if (anchor) {
+        container.insertBefore(msgEl, anchor);
+        anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else {
+        container.appendChild(msgEl);
+      }
+    }
+  }
+});
+
+// Alerta sonoro e badge de mensagem de colega
+socket.on('internal_message_alert', ({ sala_id, remetente_id, remetente_nome, texto }) => {
+  const isFromMe = currentOperator && String(remetente_id) === String(currentOperator.id);
+  if (!isFromMe) {
+    playInternalChatNotificationSound();
+
+    if (!isInternalDrawerOpen || currentInternalRoomId !== sala_id) {
+      internalRoomUnreads[sala_id] = (internalRoomUnreads[sala_id] || 0) + 1;
+      updateInternalTotalUnreadBadge();
+      renderInternalChannelsList();
+      renderInternalGroupsList();
+      renderInternalDMsList();
+    }
+  }
+});
+
+// Atualização de status de operadores
+socket.on('internal_operator_status_changed', ({ atendente_id, status }) => {
+  const op = internalOperatorsList.find(o => String(o.id) === String(atendente_id));
+  if (op) {
+    op.status = status;
+    renderInternalDMsList();
+  }
+});
+
+

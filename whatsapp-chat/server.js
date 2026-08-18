@@ -726,9 +726,13 @@ db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS tabela_atendentes (
       id TEXT PRIMARY KEY,
-      nome TEXT NOT NULL
+      nome TEXT NOT NULL,
+      setor TEXT DEFAULT 'Geral',
+      avatar TEXT
     )
   `);
+  db.run("ALTER TABLE tabela_atendentes ADD COLUMN setor TEXT DEFAULT 'Geral'", () => {});
+  db.run("ALTER TABLE tabela_atendentes ADD COLUMN avatar TEXT", () => {});
 
   // 2. Tabela de Atendimentos
   db.run(`
@@ -742,16 +746,13 @@ db.serialize(() => {
       started_at TEXT,
       FOREIGN KEY(atendente_id) REFERENCES tabela_atendentes(id)
     )
-  `, (err) => {
-    if (!err) {
-      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN started_at TEXT", (alterErr) => {});
-      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN cliente_avatar TEXT", (alterErr) => {});
-      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN bot_node_id TEXT", (alterErr) => {});
-      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN sector_id INTEGER", (alterErr) => {});
-      db.run("ALTER TABLE tabela_atendimentos ADD COLUMN unread INTEGER DEFAULT 0", (alterErr) => {});
-      db.run("UPDATE tabela_atendimentos SET cliente_avatar = NULL WHERE cliente_avatar LIKE '%ui-avatars.com%'");
-    }
-  });
+  `);
+  db.run("ALTER TABLE tabela_atendimentos ADD COLUMN started_at TEXT", () => {});
+  db.run("ALTER TABLE tabela_atendimentos ADD COLUMN cliente_avatar TEXT", () => {});
+  db.run("ALTER TABLE tabela_atendimentos ADD COLUMN bot_node_id TEXT", () => {});
+  db.run("ALTER TABLE tabela_atendimentos ADD COLUMN sector_id INTEGER", () => {});
+  db.run("ALTER TABLE tabela_atendimentos ADD COLUMN unread INTEGER DEFAULT 0", () => {});
+  db.run("UPDATE tabela_atendimentos SET cliente_avatar = NULL WHERE cliente_avatar LIKE '%ui-avatars.com%'", () => {});
 
   // 3. Tabela de Mensagens (Histórico)
   db.run(`
@@ -762,13 +763,13 @@ db.serialize(() => {
       texto TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `, (err) => {
-    if (!err) {
-      db.run("ALTER TABLE tabela_mensagens ADD COLUMN reacao TEXT", (alterErr) => {});
-      db.run("ALTER TABLE tabela_mensagens ADD COLUMN atendente_nome TEXT", (alterErr) => {});
-      db.run("ALTER TABLE tabela_mensagens ADD COLUMN assinado_cliente INTEGER DEFAULT 0", (alterErr) => {});
-    }
-  });
+  `);
+  db.run("ALTER TABLE tabela_mensagens ADD COLUMN reacao TEXT", () => {});
+  db.run("ALTER TABLE tabela_mensagens ADD COLUMN atendente_nome TEXT", () => {});
+  db.run("ALTER TABLE tabela_mensagens ADD COLUMN assinado_cliente INTEGER DEFAULT 0", () => {});
+  db.run("ALTER TABLE tabela_mensagens ADD COLUMN apagado INTEGER DEFAULT 0", () => {});
+  db.run("ALTER TABLE tabela_mensagens ADD COLUMN apagado_por TEXT", () => {});
+  db.run("ALTER TABLE tabela_mensagens ADD COLUMN whatsapp_msg_id TEXT", () => {});
 
   // 3b. Tabela de Participantes Adicionais de Atendimento (Co-atendimento)
   db.run(`
@@ -842,7 +843,43 @@ db.serialize(() => {
     )
   `);
 
-  // 5. Verificar se a base está vazia e popular dados de exemplo para testes
+  // 7. Tabela de Salas / Canais do Chat Interno da Equipe
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tabela_chat_interno_salas (
+      id TEXT PRIMARY KEY,
+      tipo TEXT NOT NULL DEFAULT 'canal', -- 'canal', 'grupo' ou 'dm'
+      nome TEXT NOT NULL,
+      icone TEXT DEFAULT 'hash',
+      descricao TEXT,
+      membros TEXT, -- JSON array de atendente_ids autorizados (ou NULL se público)
+      criado_por_id TEXT,
+      criado_por_nome TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.run("ALTER TABLE tabela_chat_interno_salas ADD COLUMN criado_por_id TEXT", () => {});
+  db.run("ALTER TABLE tabela_chat_interno_salas ADD COLUMN criado_por_nome TEXT", () => {});
+  setTimeout(seedInternalChatChannels, 200);
+
+  // 8. Tabela de Mensagens do Chat Interno da Equipe
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tabela_chat_interno_mensagens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sala_id TEXT NOT NULL,
+      remetente_id TEXT NOT NULL,
+      remetente_nome TEXT NOT NULL,
+      remetente_avatar TEXT,
+      texto TEXT,
+      midia_url TEXT,
+      midia_tipo TEXT, -- 'image', 'audio', 'document'
+      card_meta TEXT, -- JSON com dados do cliente/ticket compartilhado
+      reacoes TEXT, -- JSON com reações { "👍": ["op1", "op2"] }
+      apagado INTEGER DEFAULT 0,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // 9. Verificar se a base está vazia e popular dados de exemplo para testes
   setTimeout(() => {
     db.get("SELECT COUNT(*) as count FROM tabela_atendimentos", (err, row) => {
       if (!err && row && row.count === 0) {
@@ -852,6 +889,61 @@ db.serialize(() => {
     });
   }, 1000);
 });
+
+// Seed de canais padrão do Chat Interno se não existirem
+function seedInternalChatChannels() {
+  const defaultChannels = [
+    { id: 'channel-geral', tipo: 'canal', nome: 'Geral', icone: 'hash', descricao: 'Canal aberto para avisos e comunicação de toda a equipe' },
+    { id: 'channel-suporte', tipo: 'canal', nome: 'Suporte Técnico', icone: 'headphones', descricao: 'Discussões técnicas, dúvidas de atendimento e chamados' },
+    { id: 'channel-financeiro', tipo: 'canal', nome: 'Financeiro', icone: 'dollar-sign', descricao: 'Boletos, cobranças, notas fiscais e comprovações' },
+    { id: 'channel-comercial', tipo: 'canal', nome: 'Comercial & Vendas', icone: 'trending-up', descricao: 'Novos clientes, propostas e negociações de planos' },
+    { id: 'channel-diretoria', tipo: 'canal', nome: 'Diretoria & Gestão', icone: 'shield', descricao: 'Comunicados estratégicos e alinhamentos de liderança' }
+  ];
+
+  defaultChannels.forEach(c => {
+    db.run(
+      `INSERT OR IGNORE INTO tabela_chat_interno_salas (id, tipo, nome, icone, descricao) VALUES (?, ?, ?, ?, ?)`,
+      [c.id, c.tipo, c.nome, c.icone, c.descricao]
+    );
+  });
+
+  syncTeamAttendants();
+}
+
+// Sincroniza usuários do sistema principal e equipe para conversas 1x1
+function syncTeamAttendants(callback) {
+  try {
+    const ticketsDbPath = path.join(__dirname, '..', 'server', 'tickets.db');
+    if (fs.existsSync(ticketsDbPath)) {
+      const sqlite3 = require('sqlite3').verbose();
+      const mainDb = new sqlite3.Database(ticketsDbPath);
+      mainDb.all("SELECT id, full_name, username, role FROM users WHERE is_active = 1", [], (err, rows) => {
+        if (!err && rows) {
+          rows.forEach(u => {
+            const uid = String(u.id);
+            const unome = u.full_name || u.username || `Usuário ${uid}`;
+            const usetor = u.role === 'ROOT' ? 'Diretoria' : (u.role === 'ADMIN' ? 'Gestão' : 'Atendimento');
+            db.run(`INSERT OR IGNORE INTO tabela_atendentes (id, nome, setor) VALUES (?, ?, ?)`, [uid, unome, usetor]);
+          });
+        }
+        mainDb.close();
+      });
+    }
+  } catch (e) {}
+
+  const mockTeam = [
+    { id: 'op_carlos', nome: 'Carlos Eduardo', setor: 'Suporte Técnico' },
+    { id: 'op_mariana', nome: 'Mariana Souza', setor: 'Financeiro' },
+    { id: 'op_rodrigo', nome: 'Rodrigo Silva', setor: 'Comercial & Vendas' },
+    { id: 'op_fernanda', nome: 'Fernanda Lima', setor: 'Atendimento ao Cliente' }
+  ];
+
+  mockTeam.forEach(m => {
+    db.run(`INSERT OR IGNORE INTO tabela_atendentes (id, nome, setor) VALUES (?, ?, ?)`, [m.id, m.nome, m.setor]);
+  });
+
+  if (callback) setTimeout(callback, 60);
+}
 
 // Seed de respostas rápidas padrão se a tabela estiver vazia
 function seedQuickReplies() {
@@ -1160,6 +1252,37 @@ wwebClient.on('message', async (msg) => {
   }
 });
 
+// Listener para quando o cliente apaga uma mensagem no WhatsApp ("Apagar para todos")
+wwebClient.on('message_revoke_everyone', async (after, before) => {
+  try {
+    const clienteJid = (before && before.from) || (after && after.from) || (after && after.to);
+    if (!clienteJid) return;
+
+    const textoMsg = before ? before.body : null;
+    if (textoMsg) {
+      db.get(
+        `SELECT id FROM tabela_mensagens WHERE cliente_jid = ? AND texto LIKE ? AND (apagado = 0 OR apagado IS NULL) ORDER BY id DESC LIMIT 1`,
+        [clienteJid, `%${textoMsg}%`],
+        (err, row) => {
+          if (!err && row) {
+            db.run(`UPDATE tabela_mensagens SET apagado = 1, apagado_por = 'cliente' WHERE id = ?`, [row.id], () => {
+              console.log(`🚫 Mensagem ID ${row.id} apagada no WhatsApp pelo cliente (${clienteJid})`);
+              emitToChatRooms(clienteJid, 'message_deleted', {
+                message_id: row.id,
+                cliente_jid: clienteJid,
+                apagado: 1,
+                apagado_por: 'cliente'
+              });
+            });
+          }
+        }
+      );
+    }
+  } catch (revErr) {
+    console.error('Erro ao processar mensagem revogada pelo cliente:', revErr.message);
+  }
+});
+
 // ==============================================================================
 // 🎙️ COMUNICAÇÃO WEBSOCKET (SOCKET.IO)
 // ==============================================================================
@@ -1426,13 +1549,19 @@ io.on('connection', (socket) => {
 
           const options = captionToSend ? { caption: captionToSend } : {};
           
-          await wwebClient.sendMessage(cliente_jid, media, options);
+          let sentMsg = null;
+          try {
+            sentMsg = await wwebClient.sendMessage(cliente_jid, media, options);
+          } catch (sendErr) {
+            console.error('Erro ao enviar anexo via WhatsApp:', sendErr.message);
+          }
+          const wMsgId = sentMsg && sentMsg.id ? (sentMsg.id._serialized || sentMsg.id.id) : null;
           
           // Salva o registro de envio do anexo no banco de dados local
           const anexoTexto = `[ANEXO] ${file.url || ('/uploads/' + path.basename(localPath))} \n${captionToSend || ''}`.trim();
           db.run(
-            `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
-            [cliente_jid, atendente_id, opNome, isSigned, anexoTexto],
+            `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto, whatsapp_msg_id) VALUES (?, ?, ?, ?, ?, ?)`,
+            [cliente_jid, atendente_id, opNome, isSigned, anexoTexto, wMsgId],
             function (err) {
               if (err) console.error('Erro ao salvar anexo no bd:', err.message);
               emitToChatRooms(cliente_jid, 'new_message', {
@@ -1442,27 +1571,51 @@ io.on('connection', (socket) => {
                 atendente_nome: opNome,
                 assinado_cliente: isSigned,
                 texto: anexoTexto,
+                whatsapp_msg_id: wMsgId,
                 timestamp: new Date().toISOString()
               });
             }
           );
         }
       } else if (texto && texto.startsWith('data:audio/')) {
-        // Fluxo de Áudio de Voz gravado no app
+        // Fluxo de Áudio de Voz gravado no app - grava arquivo em disco para histórico permanente
+        let audioFileUrl = texto;
+        let sentMsg = null;
         const matches = texto.match(/^data:(audio\/[a-zA-Z0-9\-]+);base64,(.+)$/);
         if (matches) {
           const mimeType = matches[1];
           const base64Data = matches[2];
-          const media = new MessageMedia(mimeType, base64Data, 'audio.ogg');
-          await wwebClient.sendMessage(cliente_jid, media, { sendAudioAsVoice: true });
+          const ext = mimeType.includes('ogg') ? '.ogg' : (mimeType.includes('mp4') || mimeType.includes('m4a')) ? '.m4a' : mimeType.includes('webm') ? '.webm' : '.ogg';
+          const filename = 'voice-' + Date.now() + '-' + Math.round(Math.random() * 1E9) + ext;
+          const filepath = path.join(uploadDir, filename);
+          try {
+            fs.writeFileSync(filepath, base64Data, 'base64');
+            audioFileUrl = `/uploads/${filename}`;
+            console.log(`🎙️ Áudio de voz gravado e salvo no histórico: ${filename}`);
+          } catch (fileErr) {
+            console.error('Erro ao salvar arquivo de áudio de voz:', fileErr.message);
+          }
+
+          try {
+            const media = new MessageMedia(mimeType, base64Data, 'audio' + ext);
+            sentMsg = await wwebClient.sendMessage(cliente_jid, media, { sendAudioAsVoice: true });
+          } catch (sendErr) {
+            console.error('Erro ao enviar áudio de voz via WhatsApp:', sendErr.message);
+          }
         } else {
-          await wwebClient.sendMessage(cliente_jid, texto);
+          try {
+            sentMsg = await wwebClient.sendMessage(cliente_jid, texto);
+          } catch (sendErr) {
+            console.error('Erro ao enviar texto de áudio via WhatsApp:', sendErr.message);
+          }
         }
         
-        // Salva áudio no db
+        const wMsgId = sentMsg && sentMsg.id ? (sentMsg.id._serialized || sentMsg.id.id) : null;
+
+        // Salva áudio no banco de dados para histórico
         db.run(
-          `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
-          [cliente_jid, atendente_id, opNome, isSigned, texto],
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto, whatsapp_msg_id) VALUES (?, ?, ?, ?, ?, ?)`,
+          [cliente_jid, atendente_id, opNome, isSigned, audioFileUrl, wMsgId],
           function (err) {
             if (err) console.error('Erro salvar áudio:', err.message);
             emitToChatRooms(cliente_jid, 'new_message', {
@@ -1471,7 +1624,8 @@ io.on('connection', (socket) => {
               remetente: atendente_id,
               atendente_nome: opNome,
               assinado_cliente: isSigned,
-              texto,
+              texto: audioFileUrl,
+              whatsapp_msg_id: wMsgId,
               timestamp: new Date().toISOString()
             });
           }
@@ -1483,11 +1637,17 @@ io.on('connection', (socket) => {
           textToSend = `*${opNome}:*\n${texto}`;
         }
 
-        await wwebClient.sendMessage(cliente_jid, textToSend);
+        let sentMsg = null;
+        try {
+          sentMsg = await wwebClient.sendMessage(cliente_jid, textToSend);
+        } catch (sendErr) {
+          console.error('Erro ao enviar mensagem de texto via WhatsApp:', sendErr.message);
+        }
+        const wMsgId = sentMsg && sentMsg.id ? (sentMsg.id._serialized || sentMsg.id.id) : null;
         
         db.run(
-          `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto) VALUES (?, ?, ?, ?, ?)`,
-          [cliente_jid, atendente_id, opNome, isSigned, texto],
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, atendente_nome, assinado_cliente, texto, whatsapp_msg_id) VALUES (?, ?, ?, ?, ?, ?)`,
+          [cliente_jid, atendente_id, opNome, isSigned, texto, wMsgId],
           function (err) {
             if (err) console.error('Erro salvar txt:', err.message);
             emitToChatRooms(cliente_jid, 'new_message', {
@@ -1497,6 +1657,7 @@ io.on('connection', (socket) => {
               atendente_nome: opNome,
               assinado_cliente: isSigned,
               texto,
+              whatsapp_msg_id: wMsgId,
               timestamp: new Date().toISOString()
             });
           }
@@ -1736,21 +1897,63 @@ io.on('connection', (socket) => {
     );
   });
 
-  // 6b. EXCLUIR MENSAGEM DO HISTÓRICO
-  socket.on('delete_message', ({ message_id, atendente_id, cliente_jid }) => {
+  // 6b. EXCLUIR MENSAGEM DO HISTÓRICO (Apaga no WhatsApp do cliente e preserva registro local como apagado)
+  socket.on('delete_message', async ({ message_id, atendente_id, cliente_jid }) => {
     if (!message_id) return;
-    db.get(`SELECT status FROM tabela_atendimentos WHERE cliente_jid = ?`, [cliente_jid], (err, at) => {
+    db.get(`SELECT status FROM tabela_atendimentos WHERE cliente_jid = ?`, [cliente_jid], async (err, at) => {
       if (!err && at && (at.status === 'finalizado' || at.status === 'bot')) {
         console.warn(`⚠️ Tentativa de exclusão bloqueada em atendimento encerrado/bot (${cliente_jid}).`);
         return;
       }
-      console.log(`🗑️ Excluindo mensagem ID ${message_id} por solicitação de atendente ${atendente_id || 'sistema'}`);
-      db.run(`DELETE FROM tabela_mensagens WHERE id = ?`, [message_id], (err) => {
-        if (err) {
-          console.error('Erro ao excluir mensagem do banco de dados:', err.message);
-          return;
+
+      // Busca a mensagem para tentar deletar no WhatsApp do cliente
+      db.get(`SELECT * FROM tabela_mensagens WHERE id = ?`, [message_id], async (msgErr, msgRow) => {
+        if (!msgErr && msgRow) {
+          try {
+            // Tenta deletar no WhatsApp (delete for everyone)
+            if (msgRow.whatsapp_msg_id) {
+              const wMsg = await wwebClient.getMessageById(msgRow.whatsapp_msg_id);
+              if (wMsg) {
+                await wMsg.delete(true);
+                console.log(`🗑️ Mensagem ${msgRow.whatsapp_msg_id} apagada no WhatsApp do cliente!`);
+              }
+            } else if (cliente_jid) {
+              // Fallback: Busca mensagem recente correspondente no chat do WhatsApp
+              const chat = await wwebClient.getChatById(cliente_jid);
+              if (chat) {
+                const recentMsgs = await chat.fetchMessages({ limit: 20 });
+                const matchingMsg = recentMsgs.find(m => m.fromMe && (
+                  (msgRow.texto && m.body && m.body.includes(msgRow.texto)) ||
+                  (m.hasMedia && msgRow.texto && msgRow.texto.includes('/uploads/'))
+                ));
+                if (matchingMsg) {
+                  await matchingMsg.delete(true);
+                  console.log(`🗑️ Mensagem apagada no WhatsApp do cliente via fallback de busca!`);
+                }
+              }
+            }
+          } catch (wErr) {
+            console.warn('⚠️ Não foi possível apagar mensagem diretamente no WhatsApp:', wErr.message);
+          }
         }
-        emitToChatRooms(cliente_jid, 'message_deleted', { message_id, cliente_jid });
+
+        // No banco de dados local, NUNCA exclui o registro: apenas marca como apagado
+        db.run(
+          `UPDATE tabela_mensagens SET apagado = 1, apagado_por = ? WHERE id = ?`,
+          [atendente_id || 'atendente', message_id],
+          (updateErr) => {
+            if (updateErr) {
+              console.error('Erro ao marcar mensagem como apagada:', updateErr.message);
+              return;
+            }
+            emitToChatRooms(cliente_jid, 'message_deleted', {
+              message_id,
+              cliente_jid,
+              apagado: 1,
+              apagado_por: atendente_id || 'atendente'
+            });
+          }
+        );
       });
     });
   });
@@ -1971,11 +2174,284 @@ io.on('connection', (socket) => {
     );
   });
 
+  // ==============================================================================
+  // 👥 EVENTOS DO CHAT INTERNO DA EQUIPE (CANAIS, DMS E CARDS DE ATENDIMENTO)
+  // ==============================================================================
+
+  // 1. Obter salas, canais e status dos operadores em tempo real
+  socket.on('internal_get_rooms', ({ atendente_id }) => {
+    syncTeamAttendants(() => {
+      db.all(`SELECT * FROM tabela_chat_interno_salas ORDER BY tipo ASC, nome ASC`, [], (err, salas) => {
+        if (err) return console.error('Erro ao buscar salas internas:', err.message);
+
+        // Busca todos os atendentes cadastrados
+        db.all(`SELECT id, nome, avatar, setor FROM tabela_atendentes ORDER BY nome ASC`, [], (opErr, atendentes) => {
+          // Busca atendimentos em andamento para calcular quem está 'atendendo'
+          db.all(`SELECT atendente_id, COUNT(*) as total FROM tabela_atendimentos WHERE status = 'em_atendimento' GROUP BY atendente_id`, [], (atErr, atCounts) => {
+            const atMap = {};
+            (atCounts || []).forEach(r => { atMap[r.atendente_id] = r.total; });
+
+            const connectedIds = new Set(Array.from(activeSockets.values()));
+
+            const atendentesList = (atendentes || []).map(op => {
+              const isOnline = connectedIds.has(op.id);
+              const activeChatsCount = atMap[op.id] || 0;
+              let status = 'offline';
+              if (isOnline) {
+                status = activeChatsCount > 0 ? 'atendendo' : 'online';
+              }
+              return {
+                id: String(op.id),
+                nome: op.nome,
+                avatar: op.avatar || null,
+                setor: op.setor || 'Geral',
+                status,
+                active_chats: activeChatsCount
+              };
+            });
+
+            socket.emit('internal_rooms_data', {
+              salas: salas || [],
+              atendentes: atendentesList
+            });
+          });
+        });
+      });
+    });
+  });
+
+  // 2. Entrar em uma sala / canal / DM e carregar histórico
+  socket.on('internal_join_room', ({ sala_id, atendente_id }) => {
+    if (!sala_id) return;
+    
+    // Se for DM, garante que a sala exista no banco
+    if (sala_id.startsWith('dm-')) {
+      const parts = sala_id.replace('dm-', '').split('_');
+      const otherId = parts.find(id => id !== atendente_id) || parts[0];
+      
+      db.run(
+        `INSERT OR IGNORE INTO tabela_chat_interno_salas (id, tipo, nome, icone, membros) VALUES (?, 'dm', ?, 'user', ?)`,
+        [sala_id, `DM: ${otherId}`, JSON.stringify(parts)]
+      );
+    }
+
+    socket.join(`internal_${sala_id}`);
+
+    // Busca histórico da sala (últimas 80 mensagens)
+    db.all(
+      `SELECT * FROM tabela_chat_interno_mensagens WHERE sala_id = ? ORDER BY timestamp ASC LIMIT 80`,
+      [sala_id],
+      (err, rows) => {
+        if (err) return console.error('Erro ao resgatar histórico interno:', err.message);
+        socket.emit('internal_room_history', {
+          sala_id,
+          messages: rows || []
+        });
+      }
+    );
+  });
+
+  // 2.5 Criar novo Grupo Personalizado da Equipe
+  socket.on('internal_create_group', ({ nome, descricao, membros, atendente_id, atendente_nome }) => {
+    if (!nome || !nome.trim()) return;
+    const groupId = 'group_' + Date.now();
+    const groupName = nome.trim();
+    const groupDesc = descricao ? descricao.trim() : 'Grupo personalizado da equipe';
+    const groupMembers = Array.isArray(membros) ? membros.map(String) : [];
+    if (atendente_id && !groupMembers.includes(String(atendente_id))) {
+      groupMembers.push(String(atendente_id));
+    }
+
+    db.run(
+      `INSERT INTO tabela_chat_interno_salas (id, tipo, nome, icone, descricao, membros, criado_por_id, criado_por_nome) VALUES (?, 'grupo', ?, 'users', ?, ?, ?, ?)`,
+      [groupId, groupName, groupDesc, JSON.stringify(groupMembers), atendente_id, atendente_nome],
+      function(err) {
+        if (err) return console.error('Erro ao criar grupo interno:', err.message);
+
+        // Insere mensagem de boas-vindas do sistema
+        db.run(
+          `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, texto) VALUES (?, 'sistema', 'Sistema TicketFlow', ?)`,
+          [groupId, `🎉 Grupo "${groupName}" criado por ${atendente_nome || 'um usuário'}.`]
+        );
+
+        // Notifica todos os clientes
+        io.emit('internal_group_created', {
+          id: groupId,
+          tipo: 'grupo',
+          nome: groupName,
+          icone: 'users',
+          descricao: groupDesc,
+          membros: JSON.stringify(groupMembers),
+          criado_por_id: atendente_id,
+          criado_por_nome: atendente_nome
+        });
+      }
+    );
+  });
+
+  // 3. Enviar mensagem no Chat Interno (Texto, Áudio, Anexo ou Card)
+  socket.on('internal_send_message', async ({ sala_id, remetente_id, remetente_nome, remetente_avatar, texto, midia_url, midia_tipo, card_meta, audio_base64 }) => {
+    if (!sala_id || (!texto && !midia_url && !card_meta && !audio_base64)) return;
+
+    let finalMidiaUrl = midia_url || null;
+    let finalMidiaTipo = midia_tipo || null;
+
+    // Se houver áudio de voz gravado
+    if (audio_base64) {
+      const matches = audio_base64.match(/^data:(audio\/[a-zA-Z0-9\-]+);base64,(.+)$/);
+      if (matches) {
+        const mimeType = matches[1];
+        const base64Data = matches[2];
+        const ext = mimeType.includes('ogg') ? '.ogg' : (mimeType.includes('mp4') || mimeType.includes('m4a')) ? '.m4a' : mimeType.includes('webm') ? '.webm' : '.ogg';
+        const filename = 'internal-voice-' + Date.now() + '-' + Math.round(Math.random() * 1E9) + ext;
+        const filepath = path.join(uploadDir, filename);
+        try {
+          fs.writeFileSync(filepath, base64Data, 'base64');
+          finalMidiaUrl = `/uploads/${filename}`;
+          finalMidiaTipo = 'audio';
+        } catch (e) {
+          console.error('Erro ao salvar áudio do chat interno:', e.message);
+        }
+      }
+    }
+
+    const cardMetaStr = card_meta ? (typeof card_meta === 'string' ? card_meta : JSON.stringify(card_meta)) : null;
+
+    db.run(
+      `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, remetente_avatar, texto, midia_url, midia_tipo, card_meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [sala_id, remetente_id, remetente_nome, remetente_avatar || null, texto || '', finalMidiaUrl, finalMidiaTipo, cardMetaStr],
+      function (err) {
+        if (err) return console.error('Erro ao salvar mensagem interna:', err.message);
+
+        const novaMsg = {
+          id: this.lastID,
+          sala_id,
+          remetente_id,
+          remetente_nome,
+          remetente_avatar: remetente_avatar || null,
+          texto: texto || '',
+          midia_url: finalMidiaUrl,
+          midia_tipo: finalMidiaTipo,
+          card_meta: cardMetaStr,
+          reacoes: null,
+          timestamp: new Date().toISOString()
+        };
+
+        // Envia para todos conectados na sala
+        io.to(`internal_${sala_id}`).emit('internal_new_message', novaMsg);
+
+        // Notificação global com som e badge para todos os outros atendentes
+        io.emit('internal_message_alert', {
+          sala_id,
+          remetente_id,
+          remetente_nome,
+          texto: texto || (finalMidiaTipo === 'audio' ? '🎙️ Mensagem de voz' : (cardMetaStr ? '🔗 Atendimento compartilhado' : '📎 Anexo'))
+        });
+      }
+    );
+  });
+
+  // 4. Compartilhar Atendimento / Ticket diretamente no Chat Interno
+  socket.on('internal_share_chat', ({ target_sala_id, cliente_jid, atendente_id, atendente_nome, comentario }) => {
+    if (!target_sala_id || !cliente_jid) return;
+
+    db.get(
+      `SELECT a.*, (SELECT texto FROM tabela_mensagens WHERE cliente_jid = a.cliente_jid ORDER BY timestamp DESC LIMIT 1) as ultima_msg
+       FROM tabela_atendimentos a WHERE a.cliente_jid = ?`,
+      [cliente_jid],
+      (err, clientRow) => {
+        const clientName = clientRow ? (clientRow.cliente_nome || cliente_jid.split('@')[0]) : cliente_jid.split('@')[0];
+        const clientAvatar = clientRow ? clientRow.cliente_avatar : null;
+        const clientPhone = cliente_jid.split('@')[0];
+        const lastMsg = clientRow ? clientRow.ultima_msg : '';
+
+        const cardMeta = {
+          tipo: 'whatsapp_chat',
+          cliente_jid,
+          cliente_nome: clientName,
+          cliente_avatar: clientAvatar,
+          cliente_telefone: clientPhone,
+          resumo: lastMsg || 'Atendimento em andamento',
+          compartilhado_por: atendente_nome || atendente_id,
+          timestamp: new Date().toISOString()
+        };
+
+        const msgTexto = comentario ? comentario : `Compartilhou o atendimento de *${clientName}* com a equipe.`;
+
+        db.run(
+          `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, texto, card_meta) VALUES (?, ?, ?, ?, ?)`,
+          [target_sala_id, atendente_id, atendente_nome || 'Atendente', msgTexto, JSON.stringify(cardMeta)],
+          function (insertErr) {
+            if (insertErr) return console.error('Erro ao compartilhar atendimento no chat interno:', insertErr.message);
+
+            const novaMsg = {
+              id: this.lastID,
+              sala_id: target_sala_id,
+              remetente_id: atendente_id,
+              remetente_nome: atendente_nome || 'Atendente',
+              remetente_avatar: null,
+              texto: msgTexto,
+              midia_url: null,
+              midia_tipo: null,
+              card_meta: JSON.stringify(cardMeta),
+              reacoes: null,
+              timestamp: new Date().toISOString()
+            };
+
+            io.to(`internal_${target_sala_id}`).emit('internal_new_message', novaMsg);
+            io.emit('internal_message_alert', {
+              sala_id: target_sala_id,
+              remetente_id: atendente_id,
+              remetente_nome: atendente_nome || 'Atendente',
+              texto: `🔗 ${msgTexto}`
+            });
+          }
+        );
+      }
+    );
+  });
+
+  // 5. Reagir a Mensagem Interna
+  socket.on('internal_react_message', ({ message_id, sala_id, reacao, atendente_id }) => {
+    if (!message_id || !reacao) return;
+
+    db.get(`SELECT reacoes FROM tabela_chat_interno_mensagens WHERE id = ?`, [message_id], (err, row) => {
+      if (err || !row) return;
+
+      let reacoesObj = {};
+      try {
+        if (row.reacoes) reacoesObj = JSON.parse(row.reacoes);
+      } catch (e) {}
+
+      if (!reacoesObj[reacao]) reacoesObj[reacao] = [];
+      const userIdx = reacoesObj[reacao].indexOf(atendente_id);
+      if (userIdx !== -1) {
+        reacoesObj[reacao].splice(userIdx, 1);
+        if (reacoesObj[reacao].length === 0) delete reacoesObj[reacao];
+      } else {
+        reacoesObj[reacao].push(atendente_id);
+      }
+
+      const updatedStr = Object.keys(reacoesObj).length > 0 ? JSON.stringify(reacoesObj) : null;
+
+      db.run(`UPDATE tabela_chat_interno_mensagens SET reacoes = ? WHERE id = ?`, [updatedStr, message_id], () => {
+        io.to(`internal_${sala_id}`).emit('internal_message_reacted', {
+          message_id,
+          sala_id,
+          reacoes: updatedStr
+        });
+      });
+    });
+  });
+
   // 7. Desconexão de socket
   socket.on('disconnect', () => {
     const atendenteId = activeSockets.get(socket.id);
     activeSockets.delete(socket.id);
     console.log(`🔌 Conexão WebSocket encerrada: Socket ID ${socket.id} (Atendente: ${atendenteId || 'Não registrado'})`);
+    
+    // Notifica atualização de status dos operadores
+    io.emit('internal_operator_status_changed', { atendente_id: atendenteId, status: 'offline' });
   });
 });
 

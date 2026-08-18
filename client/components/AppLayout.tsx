@@ -8,14 +8,11 @@ import { Ticket, ShieldAlert, ArrowLeft, Clock } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import clsx from 'clsx';
 
+import GlobalInternalChat from "@/components/GlobalInternalChat";
+
 /**
  * Componente de Layout Principal da aplicação.
  * Gerencia a estrutura global, estados de carregamento e proteção de rotas (RBAC).
- */
-/**
- * Componente de Layout Principal (Shell da Aplicação).
- * Gerencia a estrutura global, estados de carregamento iniciais,
- * proteção de rotas (RBAC) e variantes de exibição (Login, Monitor, Desktop).
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const { user, loading } = useAuth();
@@ -167,7 +164,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </div>
                 </div>
             ) : isMonitorPage ? (
-                <main className="min-h-screen">{children}</main>
+                <main className="min-h-screen">
+                    {children}
+                    <GlobalInternalChat />
+                </main>
             ) : (
                 <div className="flex min-h-screen">
                     <Sidebar 
@@ -186,6 +186,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     >
                         {children}
                     </main>
+                    <GlobalInternalChat />
                 </div>
             )}
         </div>
