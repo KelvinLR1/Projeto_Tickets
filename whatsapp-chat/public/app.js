@@ -1197,6 +1197,332 @@ function closeTransferModal() {
   if (modal) modal.classList.add('hidden');
 }
 
+// ==============================================================================
+// 👥 GERENCIAMENTO DE PARTICIPANTES / CO-ATENDIMENTO
+// ==============================================================================
+let participantsTargetJid = null;
+let participantsTargetName = '';
+let currentChatParticipantsData = null;
+let currentParticipantsTab = 'active';
+let currentInviteSearchFilter = '';
+
+function openParticipantsModal(jid, name) {
+  participantsTargetJid = jid || selectedChatJid;
+  participantsTargetName = name || selectedChatName || 'este cliente';
+
+  if (!participantsTargetJid) return;
+
+  const modal = document.getElementById('participants-modal');
+  const clientNameEl = document.getElementById('participants-modal-client-name');
+  if (clientNameEl) clientNameEl.textContent = `Cliente: ${participantsTargetName}`;
+
+  // Reset tab to 'active' on open
+  currentInviteSearchFilter = '';
+  const searchInput = document.getElementById('input-search-invite-attendants');
+  if (searchInput) searchInput.value = '';
+
+  if (modal) modal.classList.remove('hidden');
+
+  switchParticipantsTab('active');
+
+  // Solicita dados atualizados ao servidor
+  socket.emit('get_chat_participants', { cliente_jid: participantsTargetJid });
+}
+
+function closeParticipantsModal() {
+  const modal = document.getElementById('participants-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function syncParticipantsModalHeight() {
+  requestAnimationFrame(() => {
+    const wrapper = document.getElementById('participants-panels-wrapper');
+    const panelActive = document.getElementById('participants-panel-active');
+    const panelInvite = document.getElementById('participants-panel-invite');
+    if (!wrapper || !panelActive || !panelInvite) return;
+
+    const targetPanel = currentParticipantsTab === 'active' ? panelActive : panelInvite;
+    const targetHeight = targetPanel.offsetHeight;
+    if (targetHeight > 0) {
+      wrapper.style.height = `${targetHeight}px`;
+    }
+  });
+}
+
+function switchParticipantsTab(tab) {
+  currentParticipantsTab = tab;
+  const pill = document.getElementById('participants-tab-pill');
+  const tabActive = document.getElementById('tab-participants-active');
+  const tabInvite = document.getElementById('tab-participants-invite');
+  const slider = document.getElementById('participants-panels-slider');
+
+  if (tab === 'active') {
+    if (pill) pill.style.transform = 'translateX(0%)';
+    if (slider) slider.style.transform = 'translateX(0%)';
+    if (tabActive) {
+      tabActive.className = "relative z-10 h-8 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-purple-300";
+    }
+    if (tabInvite) {
+      tabInvite.className = "relative z-10 h-8 rounded-xl text-xs font-semibold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+    }
+  } else {
+    if (pill) pill.style.transform = 'translateX(calc(100% + 2px))';
+    if (slider) slider.style.transform = 'translateX(-50%)';
+    if (tabInvite) {
+      tabInvite.className = "relative z-10 h-8 rounded-xl text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-purple-300";
+    }
+    if (tabActive) {
+      tabActive.className = "relative z-10 h-8 rounded-xl text-xs font-semibold transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200";
+    }
+    const searchInput = document.getElementById('input-search-invite-attendants');
+    if (searchInput) setTimeout(() => searchInput.focus(), 150);
+  }
+
+  syncParticipantsModalHeight();
+}
+
+function handleSearchAvailableAttendants(query) {
+  currentInviteSearchFilter = (query || '').toLowerCase().trim();
+  renderAvailableAttendantsList();
+}
+
+function renderAvailableAttendantsList() {
+  const container = document.getElementById('participants-available-list');
+  if (!container || !currentChatParticipantsData) return;
+
+  const available = currentChatParticipantsData.available_attendants || [];
+  let filtered = available;
+
+  if (currentInviteSearchFilter) {
+    filtered = available.filter(u => {
+      const name = (u.nome || '').toLowerCase();
+      const id = (u.id || '').toLowerCase();
+      return name.includes(currentInviteSearchFilter) || id.includes(currentInviteSearchFilter);
+    });
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-6 px-4 rounded-2xl border border-white/5 bg-slate-900/40 text-xs text-slate-500">
+        <p class="font-bold text-slate-400">Nenhum atendente encontrado</p>
+        <p class="text-[10px] text-slate-600 mt-1">Todos os atendentes disponíveis já estão na conversa ou não correspondem à busca.</p>
+      </div>
+    `;
+    syncParticipantsModalHeight();
+    return;
+  }
+
+  container.innerHTML = filtered.map(u => {
+    const initials = (u.nome || u.id).substring(0, 2).toUpperCase();
+    return `
+      <div class="p-2.5 rounded-2xl border border-white/5 bg-slate-900/60 hover:bg-white/[0.04] flex items-center justify-between gap-3 transition-all">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/25 text-purple-300 font-bold text-xs flex items-center justify-center shrink-0">
+            ${initials}
+          </div>
+          <div class="min-w-0 text-left">
+            <p class="text-xs font-bold text-slate-200 truncate">${u.nome || u.id}</p>
+            <p class="text-[10px] text-slate-500 font-mono">id: ${u.id}</p>
+          </div>
+        </div>
+        <button onclick="inviteAttendantToChat('${u.id}', '${(u.nome || u.id).replace(/'/g, "\\'")}')" class="px-3 h-8 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/20 cursor-pointer shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          <span>Convidar</span>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  syncParticipantsModalHeight();
+}
+
+function renderParticipantsModal(data) {
+  if (!data || data.cliente_jid !== participantsTargetJid) return;
+  currentChatParticipantsData = data;
+
+  const clientNameEl = document.getElementById('participants-modal-client-name');
+  const primaryNameEl = document.getElementById('participants-primary-name');
+  const primaryIdEl = document.getElementById('participants-primary-id');
+  const primaryAvatarEl = document.getElementById('participants-primary-avatar');
+  const primaryYouEl = document.getElementById('participants-primary-you');
+  const listContainer = document.getElementById('participants-list-container');
+  const totalBadge = document.getElementById('participants-total-badge');
+  const tabCount = document.getElementById('participants-tab-count');
+  const availableCount = document.getElementById('participants-available-count');
+  const coCountLabel = document.getElementById('participants-co-count-label');
+
+  if (clientNameEl) clientNameEl.textContent = `Cliente: ${participantsTargetName}`;
+
+  const participants = data.participants || [];
+  const available = data.available_attendants || [];
+  const totalInChat = 1 + participants.length;
+
+  if (totalBadge) totalBadge.textContent = totalInChat;
+  if (tabCount) tabCount.textContent = totalInChat;
+  if (availableCount) availableCount.textContent = available.length;
+  if (coCountLabel) coCountLabel.textContent = `${participants.length} participante(s)`;
+
+  // 1. Atendente Principal
+  if (data.primary) {
+    if (primaryNameEl) primaryNameEl.textContent = data.primary.nome || 'Atendente Principal';
+    if (primaryIdEl) primaryIdEl.textContent = `id: ${data.primary.id}`;
+    if (primaryAvatarEl) primaryAvatarEl.textContent = (data.primary.nome || 'OP').substring(0, 2).toUpperCase();
+    if (primaryYouEl) {
+      if (currentOperator && currentOperator.id === data.primary.id) {
+        primaryYouEl.classList.remove('hidden');
+      } else {
+        primaryYouEl.classList.add('hidden');
+      }
+    }
+  }
+
+  // 2. Lista de Participantes Convidados (Aba 1)
+  if (listContainer) {
+    if (participants.length === 0) {
+      listContainer.innerHTML = `
+        <div class="text-center py-5 px-4 rounded-2xl border border-white/5 bg-slate-900/30 text-xs text-slate-500">
+          <p class="font-semibold text-slate-400">Nenhum co-atendente convidado</p>
+          <p class="text-[10px] text-slate-600 mt-0.5">Apenas o atendente responsável está nesta conversa.</p>
+          <button type="button" onclick="switchParticipantsTab('invite')" class="mt-3 px-3 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 font-bold text-[11px] inline-flex items-center gap-1.5 transition-all cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+            <span>+ Convidar Membro da Equipe</span>
+          </button>
+        </div>
+      `;
+    } else {
+      listContainer.innerHTML = participants.map(p => {
+        const initials = (p.atendente_nome || 'OP').substring(0, 2).toUpperCase();
+        const isSelf = currentOperator && currentOperator.id === p.atendente_id;
+        return `
+          <div class="p-2.5 rounded-2xl border border-white/5 bg-slate-900/60 hover:bg-white/[0.04] flex items-center justify-between gap-2.5 transition-all">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/20 text-purple-300 flex items-center justify-center font-bold text-xs shrink-0">${initials}</div>
+              <div class="min-w-0 text-left">
+                <div class="flex items-center gap-1.5">
+                  <p class="text-xs font-bold text-slate-200 truncate">${p.atendente_nome || p.atendente_id}</p>
+                  ${isSelf ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white/10 text-slate-300">Você</span>' : ''}
+                </div>
+                <div class="flex items-center gap-2 text-[9px] text-slate-500 mt-0.5">
+                  <span class="font-mono">id: ${p.atendente_id}</span>
+                  ${p.adicionado_por ? `<span class="truncate">• Convite: ${p.adicionado_por}</span>` : ''}
+                </div>
+              </div>
+            </div>
+            <button onclick="handleRemoveParticipantClick('${p.atendente_id}', '${(p.atendente_nome || p.atendente_id).replace(/'/g, "\\'")}')" class="px-2.5 h-7 rounded-xl bg-red-500/10 hover:bg-red-500 hover:text-white border border-red-500/20 hover:border-transparent text-red-400 text-[10px] font-bold transition-all cursor-pointer active:scale-95 shrink-0 flex items-center gap-1" title="${isSelf ? 'Sair desta conversa' : 'Remover da conversa'}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <span>${isSelf ? 'Sair' : 'Remover'}</span>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // 3. Renderiza a lista de atendentes disponíveis (Aba 2)
+  renderAvailableAttendantsList();
+
+  syncParticipantsModalHeight();
+}
+
+function inviteAttendantToChat(selId, selName) {
+  if (!participantsTargetJid || !selId) return;
+
+  socket.emit('add_chat_participant', {
+    cliente_jid: participantsTargetJid,
+    atendente_id: selId,
+    atendente_nome: selName,
+    added_by_id: currentOperator.id,
+    added_by_name: currentOperator.name || currentOperator.id
+  });
+
+  if (typeof showToast === 'function') {
+    showToast(`${selName} foi adicionado(a) à conversa!`, 'Equipe Convidada', 'success');
+  }
+
+  // Switch back to active tab smoothly
+  switchParticipantsTab('active');
+}
+
+async function handleRemoveParticipantClick(atendenteId, atendenteNome) {
+  if (!participantsTargetJid || !atendenteId) return;
+
+  const isSelf = currentOperator && currentOperator.id === atendenteId;
+  const confirmTitle = isSelf ? 'Sair da Conversa?' : 'Remover Participante?';
+  const confirmMsg = isSelf
+    ? 'Deseja realmente sair do atendimento desta conversa?'
+    : `Deseja remover ${atendenteNome || atendenteId} do atendimento desta conversa?`;
+
+  const confirmed = await showCustomConfirm(confirmTitle, confirmMsg, 'danger');
+  if (confirmed) {
+    socket.emit('remove_chat_participant', {
+      cliente_jid: participantsTargetJid,
+      atendente_id: atendenteId,
+      atendente_nome: atendenteNome,
+      removed_by_id: currentOperator.id,
+      removed_by_name: currentOperator.name || currentOperator.id
+    });
+
+    if (typeof showToast === 'function') {
+      showToast(`${atendenteNome || atendenteId} foi removido(a) da conversa.`, 'Participante Removido', 'info');
+    }
+  }
+}
+
+// Atualiza os badges de participantes no cabeçalho do chat ativo
+function updateChatHeaderParticipantsUI(data) {
+  const badgeEl = document.getElementById('chat-header-participants-badge');
+  const coBadgeEl = document.getElementById('chat-header-co-badge');
+  const summaryEl = document.getElementById('chat-header-participants-summary');
+
+  if (!data || !data.cliente_jid || data.cliente_jid !== selectedChatJid) {
+    if (badgeEl) badgeEl.classList.add('hidden');
+    if (coBadgeEl) coBadgeEl.classList.add('hidden');
+    if (summaryEl) summaryEl.classList.add('hidden');
+    return;
+  }
+
+  const participantsCount = data.participants ? data.participants.length : 0;
+  const isCoAttendant = currentOperator && data.primary && data.primary.id !== currentOperator.id;
+
+  if (badgeEl) {
+    badgeEl.textContent = participantsCount;
+    if (participantsCount > 0) {
+      badgeEl.classList.remove('hidden');
+    } else {
+      badgeEl.classList.add('hidden');
+    }
+  }
+
+  if (coBadgeEl) {
+    if (isCoAttendant || participantsCount > 0) {
+      coBadgeEl.classList.remove('hidden');
+      coBadgeEl.textContent = isCoAttendant ? 'Co-atendimento' : `${participantsCount + 1} Atendentes`;
+    } else {
+      coBadgeEl.classList.add('hidden');
+    }
+  }
+
+  if (summaryEl) {
+    if (participantsCount > 0) {
+      summaryEl.classList.remove('hidden');
+      const names = [data.primary ? (data.primary.nome || data.primary.id) : 'Principal', ...data.participants.map(p => p.atendente_nome || p.atendente_id)].join(', ');
+      summaryEl.textContent = `👥 ${participantsCount + 1} atendentes: ${names}`;
+      summaryEl.title = `Clique para gerenciar participantes (${names})`;
+    } else {
+      summaryEl.classList.add('hidden');
+    }
+  }
+}
+
+socket.on('chat_participants_data', (data) => {
+  if (data && data.cliente_jid === participantsTargetJid) {
+    renderParticipantsModal(data);
+  }
+  if (data && data.cliente_jid === selectedChatJid) {
+    updateChatHeaderParticipantsUI(data);
+  }
+});
+
 // Fecha a bandeja lateral de informações do cliente
 function closeClientInfoDrawer() {
   currentDrawerJid = null;
@@ -1612,6 +1938,9 @@ function renderActiveChats() {
     const isSelected = selectedChatJid === chat.cliente_jid;
     const isUnread = chat.unread === 1 && !isSelected;
     const isGroup = chat.cliente_jid && chat.cliente_jid.endsWith('@g.us');
+    const isCoAttendant = chat.is_co_attendant === 1;
+    const participantsCount = chat.participantes_count || 0;
+
     return `
       <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" oncontextmenu="openChatContextMenu(event, '${chat.cliente_jid}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer border ${isSelected ? 'active' : ''}">
         ${renderContactAvatarHTML(chat)}
@@ -1621,8 +1950,21 @@ function renderActiveChats() {
             ${isGroup ? `
               <span class="text-[8px] bg-slate-800 text-slate-400 font-black px-1.5 py-0.5 rounded-md uppercase shrink-0">Grupo</span>
             ` : ''}
+            ${isCoAttendant ? `
+              <span class="text-[8px] bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold px-1.5 py-0.5 rounded-md uppercase shrink-0" title="Você é participante deste atendimento">Co-atendimento</span>
+            ` : (participantsCount > 0 ? `
+              <span class="text-[8px] bg-purple-500/15 text-purple-300 font-bold px-1.5 py-0.5 rounded-md uppercase shrink-0 flex items-center gap-0.5" title="${participantsCount} participante(s) adicional(is)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                +${participantsCount}
+              </span>
+            ` : '')}
           </div>
-          <span class="text-[9px] text-slate-500 font-mono mt-1 block truncate">${chat.cliente_jid.split('@')[0]}</span>
+          <div class="flex items-center gap-1.5 mt-1">
+            <span class="text-[9px] text-slate-500 font-mono block truncate">${chat.cliente_jid.split('@')[0]}</span>
+            ${isCoAttendant && chat.atendente_principal_nome ? `
+              <span class="text-[9px] text-amber-400/80 truncate">• Resp: ${chat.atendente_principal_nome}</span>
+            ` : ''}
+          </div>
         </div>
         ${isUnread ? `
           <div class="flex items-center gap-1.5 shrink-0" title="Nova mensagem não lida">
@@ -1730,6 +2072,9 @@ function selectChat(jid, name) {
 
     // Solicita histórico de mensagens
     socket.emit('select_chat', { cliente_jid: jid, atendente_id: currentOperator.id });
+
+    // Sincroniza participantes da conversa para o cabeçalho
+    socket.emit('get_chat_participants', { cliente_jid: jid });
 
     // Verifica se o chat está na fila de espera (modo de leitura)
     checkReadOnlyBanner();

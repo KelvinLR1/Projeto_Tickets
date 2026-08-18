@@ -770,6 +770,19 @@ db.serialize(() => {
     }
   });
 
+  // 3b. Tabela de Participantes Adicionais de Atendimento (Co-atendimento)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tabela_atendimento_participantes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cliente_jid TEXT NOT NULL,
+      atendente_id TEXT NOT NULL,
+      atendente_nome TEXT,
+      adicionado_por TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(cliente_jid, atendente_id)
+    )
+  `);
+
   // 4. Tabela de Respostas Rápidas (Globais vs Pessoais + Grupos + Setores)
   db.run(`
     CREATE TABLE IF NOT EXISTS tabela_respostas_rapidas (
@@ -1353,8 +1366,8 @@ io.on('connection', (socket) => {
               timestamp: new Date().toISOString()
             };
 
-            // Envia de volta para o atendente para atualizar a tela dele
-            io.to(atendente_id).emit('new_message', novaMsg);
+            // Envia para todos os participantes do atendimento (principal + adicionais)
+            emitToChatRooms(cliente_jid, 'new_message', novaMsg);
 
             // Simular resposta automática após 1.5 segundos
             setTimeout(() => {
@@ -1384,7 +1397,7 @@ io.on('connection', (socket) => {
                     timestamp: new Date().toISOString()
                   };
 
-                  io.to(atendente_id).emit('new_message', clientMsg);
+                  emitToChatRooms(cliente_jid, 'new_message', clientMsg);
                 }
               );
             }, 1500);
@@ -1422,7 +1435,7 @@ io.on('connection', (socket) => {
             [cliente_jid, atendente_id, opNome, isSigned, anexoTexto],
             function (err) {
               if (err) console.error('Erro ao salvar anexo no bd:', err.message);
-              io.to(atendente_id).emit('new_message', {
+              emitToChatRooms(cliente_jid, 'new_message', {
                 id: this.lastID,
                 cliente_jid: cliente_jid,
                 remetente: atendente_id,
@@ -1452,7 +1465,7 @@ io.on('connection', (socket) => {
           [cliente_jid, atendente_id, opNome, isSigned, texto],
           function (err) {
             if (err) console.error('Erro salvar áudio:', err.message);
-            io.to(atendente_id).emit('new_message', {
+            emitToChatRooms(cliente_jid, 'new_message', {
               id: this.lastID,
               cliente_jid,
               remetente: atendente_id,
@@ -1477,7 +1490,7 @@ io.on('connection', (socket) => {
           [cliente_jid, atendente_id, opNome, isSigned, texto],
           function (err) {
             if (err) console.error('Erro salvar txt:', err.message);
-            io.to(atendente_id).emit('new_message', {
+            emitToChatRooms(cliente_jid, 'new_message', {
               id: this.lastID,
               cliente_jid,
               remetente: atendente_id,
@@ -1544,7 +1557,8 @@ io.on('connection', (socket) => {
       [cliente_jid],
       (updateErr) => {
         if (updateErr) console.error('Erro ao marcar como lida:', updateErr.message);
-        sendActiveChats(atendente_id);
+        refreshActiveChatsForChat(cliente_jid);
+        if (atendente_id) sendActiveChats(atendente_id);
       }
     );
 
@@ -1559,18 +1573,32 @@ io.on('connection', (socket) => {
   });
 
   // 6. FINALIZAR CONVERSA
-  socket.on('finish_chat', ({ cliente_jid, atendente_id }) => {
+  socket.on('finish_chat', async ({ cliente_jid, atendente_id }) => {
     if (!cliente_jid || !atendente_id) return;
 
     console.log(`🏁 Atendimento finalizado para [${cliente_jid}] por [${atendente_id}]`);
 
+    // Captura participantes antes de limpar
+    const participantsToNotify = await getChatParticipantIds(cliente_jid);
+
     // Insere mensagem de sistema no histórico
+    const sysMsgText = 'Atendimento finalizado pelo atendente.';
     db.run(
-      `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento finalizado pelo atendente.')`,
-      [cliente_jid]
+      `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', ?)`,
+      [cliente_jid, sysMsgText],
+      function () {
+        const novaMsg = {
+          id: this.lastID,
+          cliente_jid,
+          remetente: 'sistema',
+          texto: sysMsgText,
+          timestamp: new Date().toISOString()
+        };
+        emitToChatRooms(cliente_jid, 'new_message', novaMsg);
+      }
     );
 
-    // Atualiza status do atendimento
+    // Atualiza status do atendimento e limpa participantes
     db.run(
       `UPDATE tabela_atendimentos SET status = 'finalizado' WHERE cliente_jid = ?`,
       [cliente_jid],
@@ -1580,20 +1608,26 @@ io.on('connection', (socket) => {
           return;
         }
 
-        // Atualiza a visualização do atendente e o histórico
-        sendActiveChats(atendente_id);
-        sendHistoryChats(atendente_id);
-        broadcastQueue();
+        db.run(`DELETE FROM tabela_atendimento_participantes WHERE cliente_jid = ?`, [cliente_jid], () => {
+          // Atualiza a visualização de todos os participantes anteriores e histórico
+          participantsToNotify.forEach(pId => {
+            sendActiveChats(pId);
+            sendHistoryChats(pId);
+          });
+          broadcastQueue();
+        });
       }
     );
   });
 
   // 6a. DEVOLVER ATENDIMENTO À FILA DE ESPERA
-  socket.on('return_to_queue', ({ cliente_jid, atendente_id }) => {
+  socket.on('return_to_queue', async ({ cliente_jid, atendente_id }) => {
     if (!cliente_jid) return;
     const opId = atendente_id || activeSockets.get(socket.id);
 
     console.log(`↩️ Atendimento [${cliente_jid}] devolvido à fila por [${opId}]`);
+
+    const participantsToNotify = await getChatParticipantIds(cliente_jid);
 
     db.run(
       `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, bot_node_id = NULL WHERE cliente_jid = ?`,
@@ -1609,19 +1643,26 @@ io.on('connection', (socket) => {
           [cliente_jid]
         );
 
-        broadcastQueue();
-        if (opId) sendActiveChats(opId);
+        db.run(`DELETE FROM tabela_atendimento_participantes WHERE cliente_jid = ?`, [cliente_jid], () => {
+          broadcastQueue();
+          participantsToNotify.forEach(pId => {
+            sendActiveChats(pId);
+          });
+          if (opId) sendActiveChats(opId);
+        });
       }
     );
   });
 
   // 6b. TRANSFERIR ATENDIMENTO DE SETOR / FILA
-  socket.on('transfer_chat', ({ cliente_jid, atendente_id, sector_id }) => {
+  socket.on('transfer_chat', async ({ cliente_jid, atendente_id, sector_id }) => {
     if (!cliente_jid) return;
     const opId = atendente_id || activeSockets.get(socket.id);
 
     const parsedSectorId = (sector_id !== null && sector_id !== undefined && sector_id !== '') ? parseInt(sector_id, 10) : null;
     console.log(`🔀 Transferindo atendimento de [${cliente_jid}] para o setor [${parsedSectorId}]`);
+
+    const participantsToNotify = await getChatParticipantIds(cliente_jid);
 
     db.run(
       `UPDATE tabela_atendimentos SET status = 'fila', atendente_id = NULL, sector_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
@@ -1637,8 +1678,13 @@ io.on('connection', (socket) => {
           [cliente_jid]
         );
 
-        broadcastQueue();
-        if (opId) sendActiveChats(opId);
+        db.run(`DELETE FROM tabela_atendimento_participantes WHERE cliente_jid = ?`, [cliente_jid], () => {
+          broadcastQueue();
+          participantsToNotify.forEach(pId => {
+            sendActiveChats(pId);
+          });
+          if (opId) sendActiveChats(opId);
+        });
       }
     );
   });
@@ -1655,16 +1701,19 @@ io.on('connection', (socket) => {
           console.error('Erro ao marcar chat como não lida:', err.message);
           return;
         }
+        refreshActiveChatsForChat(cliente_jid);
         sendActiveChats(atendente_id);
       }
     );
   });
 
   // 6d. FINALIZAR CONVERSA SILENCIOSAMENTE
-  socket.on('finish_chat_silently', ({ cliente_jid, atendente_id }) => {
+  socket.on('finish_chat_silently', async ({ cliente_jid, atendente_id }) => {
     if (!cliente_jid || !atendente_id) return;
 
     console.log(`🤫 Atendimento finalizado silenciosamente para [${cliente_jid}] por [${atendente_id}]`);
+
+    const participantsToNotify = await getChatParticipantIds(cliente_jid);
 
     // Atualiza status do atendimento sem inserir mensagem de sistema no histórico
     db.run(
@@ -1676,10 +1725,13 @@ io.on('connection', (socket) => {
           return;
         }
 
-        // Atualiza a visualização do atendente, fila e histórico
-        sendActiveChats(atendente_id);
-        sendHistoryChats(atendente_id);
-        broadcastQueue();
+        db.run(`DELETE FROM tabela_atendimento_participantes WHERE cliente_jid = ?`, [cliente_jid], () => {
+          participantsToNotify.forEach(pId => {
+            sendActiveChats(pId);
+            sendHistoryChats(pId);
+          });
+          broadcastQueue();
+        });
       }
     );
   });
@@ -1698,7 +1750,7 @@ io.on('connection', (socket) => {
           console.error('Erro ao excluir mensagem do banco de dados:', err.message);
           return;
         }
-        io.emit('message_deleted', { message_id, cliente_jid });
+        emitToChatRooms(cliente_jid, 'message_deleted', { message_id, cliente_jid });
       });
     });
   });
@@ -1735,9 +1787,188 @@ io.on('connection', (socket) => {
           console.error('Erro ao atualizar reação da mensagem:', err.message);
           return;
         }
-        io.emit('message_reacted', { message_id, reacao, cliente_jid });
+        emitToChatRooms(cliente_jid, 'message_reacted', { message_id, reacao, cliente_jid });
       });
     });
+  });
+
+  // 7. GESTÃO DE PARTICIPANTES ADICIONAIS NA CONVERSA (CO-ATENDIMENTO)
+  socket.on('get_chat_participants', async ({ cliente_jid }) => {
+    if (!cliente_jid) return;
+
+    try {
+      // 1. Obter atendente principal
+      db.get(
+        `SELECT a.atendente_id, at.nome as atendente_nome 
+         FROM tabela_atendimentos a
+         LEFT JOIN tabela_atendentes at ON at.id = a.atendente_id
+         WHERE a.cliente_jid = ?`,
+        [cliente_jid],
+        (err, mainRow) => {
+          if (err) {
+            console.error('Erro ao consultar atendente principal:', err.message);
+            return;
+          }
+
+          // 2. Obter participantes adicionais
+          db.all(
+            `SELECT p.*, at.nome as atendente_nome 
+             FROM tabela_atendimento_participantes p
+             LEFT JOIN tabela_atendentes at ON at.id = p.atendente_id
+             WHERE p.cliente_jid = ?
+             ORDER BY p.created_at ASC`,
+            [cliente_jid],
+            async (pErr, participantRows) => {
+              if (pErr) {
+                console.error('Erro ao consultar participantes:', pErr.message);
+                return;
+              }
+
+              // 3. Sincronizar e obter lista de atendentes disponíveis no sistema
+              try {
+                const resFastApi = await fetch('http://localhost:8080/users/attendants');
+                if (resFastApi.ok) {
+                  const fastApiUsers = await resFastApi.json();
+                  if (Array.isArray(fastApiUsers)) {
+                    for (const u of fastApiUsers) {
+                      const uid = String(u.id);
+                      const unome = u.name || uid;
+                      db.run(`INSERT OR IGNORE INTO tabela_atendentes (id, nome) VALUES (?, ?)`, [uid, unome]);
+                    }
+                  }
+                }
+              } catch (apiErr) {
+                // Fallback para tabela local
+              }
+
+              db.all(`SELECT id, nome FROM tabela_atendentes ORDER BY nome ASC`, [], (aErr, allAttendants) => {
+                const primaryId = mainRow ? mainRow.atendente_id : null;
+                const existingParticipantIds = new Set((participantRows || []).map(p => p.atendente_id));
+                if (primaryId) existingParticipantIds.add(primaryId);
+
+                const available = (allAttendants || []).filter(u => !existingParticipantIds.has(u.id));
+
+                socket.emit('chat_participants_data', {
+                  cliente_jid,
+                  primary: mainRow ? { id: mainRow.atendente_id, nome: mainRow.atendente_nome || mainRow.atendente_id } : null,
+                  participants: (participantRows || []).map(p => ({
+                    id: p.id,
+                    atendente_id: p.atendente_id,
+                    atendente_nome: p.atendente_nome || p.atendente_id,
+                    adicionado_por: p.adicionado_por,
+                    created_at: p.created_at
+                  })),
+                  available_attendants: available
+                });
+              });
+            }
+          );
+        }
+      );
+    } catch (e) {
+      console.error('Erro geral ao obter participantes:', e);
+    }
+  });
+
+  socket.on('add_chat_participant', ({ cliente_jid, atendente_id, atendente_nome, added_by_id, added_by_name }) => {
+    if (!cliente_jid || !atendente_id) return;
+
+    const opName = atendente_nome || atendente_id;
+    const addedByName = added_by_name || added_by_id || 'Atendente';
+
+    console.log(`👥 Adicionando [${opName}] (${atendente_id}) ao atendimento [${cliente_jid}] por [${addedByName}]`);
+
+    // Insere atendente na tabela de atendentes se não existir
+    db.run(`INSERT OR IGNORE INTO tabela_atendentes (id, nome) VALUES (?, ?)`, [atendente_id, opName]);
+
+    // Insere como participante
+    db.run(
+      `INSERT OR IGNORE INTO tabela_atendimento_participantes (cliente_jid, atendente_id, atendente_nome, adicionado_por) VALUES (?, ?, ?, ?)`,
+      [cliente_jid, atendente_id, opName, addedByName],
+      function (err) {
+        if (err) {
+          console.error('Erro ao adicionar participante:', err.message);
+          return;
+        }
+
+        // Insere mensagem de sistema
+        const sysMsgText = `👥 ${opName} foi adicionado(a) como participante da conversa por ${addedByName}.`;
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', ?)`,
+          [cliente_jid, sysMsgText],
+          function (msgErr) {
+            const novaMsg = {
+              id: this.lastID,
+              cliente_jid,
+              remetente: 'sistema',
+              texto: sysMsgText,
+              timestamp: new Date().toISOString()
+            };
+
+            // Notifica todos os participantes da nova mensagem
+            emitToChatRooms(cliente_jid, 'new_message', novaMsg);
+
+            // Atualiza a lista de conversas ativas para todos os envolvidos (incluindo o novo participante)
+            refreshActiveChatsForChat(cliente_jid);
+            sendActiveChats(atendente_id);
+
+            // Emite evento de participantes atualizados
+            emitChatParticipantsUpdate(cliente_jid);
+          }
+        );
+      }
+    );
+  });
+
+  socket.on('remove_chat_participant', ({ cliente_jid, atendente_id, atendente_nome, removed_by_id, removed_by_name }) => {
+    if (!cliente_jid || !atendente_id) return;
+
+    const opName = atendente_nome || atendente_id;
+    const removedByName = removed_by_name || removed_by_id || 'Atendente';
+    const isSelf = removed_by_id === atendente_id;
+
+    console.log(`👥 Removendo [${opName}] (${atendente_id}) do atendimento [${cliente_jid}] por [${removedByName}]`);
+
+    db.run(
+      `DELETE FROM tabela_atendimento_participantes WHERE cliente_jid = ? AND atendente_id = ?`,
+      [cliente_jid, atendente_id],
+      function (err) {
+        if (err) {
+          console.error('Erro ao remover participante:', err.message);
+          return;
+        }
+
+        // Mensagem de sistema
+        const sysMsgText = isSelf 
+          ? `👋 ${opName} saiu da conversa.` 
+          : `👋 ${opName} foi removido(a) da conversa por ${removedByName}.`;
+
+        db.run(
+          `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', ?)`,
+          [cliente_jid, sysMsgText],
+          function (msgErr) {
+            const novaMsg = {
+              id: this.lastID,
+              cliente_jid,
+              remetente: 'sistema',
+              texto: sysMsgText,
+              timestamp: new Date().toISOString()
+            };
+
+            // Notifica o próprio atendente removido e os participantes restantes
+            io.to(atendente_id).emit('new_message', novaMsg);
+            emitToChatRooms(cliente_jid, 'new_message', novaMsg);
+
+            // Atualiza lista de ativos para o atendente removido e para os restantes
+            sendActiveChats(atendente_id);
+            refreshActiveChatsForChat(cliente_jid);
+
+            // Emite evento de participantes atualizados
+            emitChatParticipantsUpdate(cliente_jid);
+          }
+        );
+      }
+    );
   });
 
   // 7. Desconexão de socket
@@ -1928,13 +2159,14 @@ async function processIncomingMessage(clienteJid, texto, clienteNome, profilePic
           db.run(`UPDATE tabela_atendimentos SET cliente_avatar = ? WHERE cliente_jid = ?`, [profilePicUrl, clienteJid]);
         }
 
-        // Marca como não lida no banco de dados e atualiza a lista do atendente
+        // Marca como não lida no banco de dados e atualiza a lista de todos os participantes
         db.run(
           `UPDATE tabela_atendimentos SET unread = 1 WHERE cliente_jid = ?`,
           [clienteJid],
           (updateErr) => {
             if (updateErr) console.error('Erro ao atualizar status unread:', updateErr.message);
-            sendActiveChats(atendenteId);
+            refreshActiveChatsForChat(clienteJid);
+            if (atendenteId) sendActiveChats(atendenteId);
           }
         );
 
@@ -1951,7 +2183,7 @@ async function processIncomingMessage(clienteJid, texto, clienteNome, profilePic
               texto: texto,
               timestamp: new Date().toISOString()
             };
-            io.to(atendenteId).emit('new_message', novaMsg);
+            emitToChatRooms(clienteJid, 'new_message', novaMsg);
           }
         );
       } else if (row && row.status === 'fila') {
@@ -2305,6 +2537,87 @@ function broadcastBotList() {
   );
 }
 
+// Retorna todos os IDs de atendentes associados a uma conversa (responsável principal + participantes adicionais)
+async function getChatParticipantIds(clienteJid) {
+  return new Promise((resolve) => {
+    db.get(`SELECT atendente_id FROM tabela_atendimentos WHERE cliente_jid = ?`, [clienteJid], (err, row) => {
+      const ids = new Set();
+      if (!err && row && row.atendente_id) {
+        ids.add(row.atendente_id);
+      }
+      db.all(`SELECT atendente_id FROM tabela_atendimento_participantes WHERE cliente_jid = ?`, [clienteJid], (pErr, rows) => {
+        if (!pErr && rows) {
+          rows.forEach(r => {
+            if (r.atendente_id) ids.add(r.atendente_id);
+          });
+        }
+        resolve(Array.from(ids));
+      });
+    });
+  });
+}
+
+// Emite um evento para todos os atendentes que participam da conversa
+async function emitToChatRooms(clienteJid, eventName, data) {
+  const attendantIds = await getChatParticipantIds(clienteJid);
+  attendantIds.forEach(attId => {
+    io.to(attId).emit(eventName, data);
+  });
+}
+
+// Atualiza a lista de conversas ativas para todos os participantes da conversa
+async function refreshActiveChatsForChat(clienteJid) {
+  const attendantIds = await getChatParticipantIds(clienteJid);
+  attendantIds.forEach(attId => {
+    sendActiveChats(attId);
+  });
+}
+
+// Emite dados completos e atualizados de participantes da conversa
+function emitChatParticipantsUpdate(clienteJid) {
+  db.get(
+    `SELECT a.atendente_id, at.nome as atendente_nome 
+     FROM tabela_atendimentos a
+     LEFT JOIN tabela_atendentes at ON at.id = a.atendente_id
+     WHERE a.cliente_jid = ?`,
+    [clienteJid],
+    (err, mainRow) => {
+      db.all(
+        `SELECT p.*, at.nome as atendente_nome 
+         FROM tabela_atendimento_participantes p
+         LEFT JOIN tabela_atendentes at ON at.id = p.atendente_id
+         WHERE p.cliente_jid = ?
+         ORDER BY p.created_at ASC`,
+        [clienteJid],
+        (pErr, participantRows) => {
+          db.all(`SELECT id, nome FROM tabela_atendentes ORDER BY nome ASC`, [], (aErr, allAttendants) => {
+            const primaryId = mainRow ? mainRow.atendente_id : null;
+            const existingParticipantIds = new Set((participantRows || []).map(p => p.atendente_id));
+            if (primaryId) existingParticipantIds.add(primaryId);
+            const available = (allAttendants || []).filter(u => !existingParticipantIds.has(u.id));
+
+            const payload = {
+              cliente_jid: clienteJid,
+              primary: mainRow ? { id: mainRow.atendente_id, nome: mainRow.atendente_nome || mainRow.atendente_id } : null,
+              participants: (participantRows || []).map(p => ({
+                id: p.id,
+                atendente_id: p.atendente_id,
+                atendente_nome: p.atendente_nome || p.atendente_id,
+                adicionado_por: p.adicionado_por,
+                created_at: p.created_at
+              })),
+              available_attendants: available
+            };
+
+            // Notifica primary e participantes
+            emitToChatRooms(clienteJid, 'chat_participants_data', payload);
+          });
+        }
+      );
+    }
+  );
+}
+
 // Envia dados iniciais consolidados para um atendente recém registrado
 function sendInitialData(socket, atendenteId) {
   // Fila de Espera
@@ -2316,12 +2629,20 @@ function sendInitialData(socket, atendenteId) {
     }
   );
 
-  // Conversas Ativas do atendente
+  // Conversas Ativas do atendente (incluindo onde é participante adicional)
   db.all(
-    `SELECT * FROM tabela_atendimentos WHERE atendente_id = ? AND status = 'em_atendimento' ORDER BY id ASC`,
-    [atendenteId],
+    `SELECT DISTINCT a.*,
+       (CASE WHEN a.atendente_id = ? THEN 0 ELSE 1 END) as is_co_attendant,
+       p_main.nome as atendente_principal_nome,
+       (SELECT COUNT(*) FROM tabela_atendimento_participantes p WHERE p.cliente_jid = a.cliente_jid) as participantes_count
+     FROM tabela_atendimentos a
+     LEFT JOIN tabela_atendentes p_main ON p_main.id = a.atendente_id
+     WHERE a.status = 'em_atendimento' 
+       AND (a.atendente_id = ? OR a.cliente_jid IN (SELECT cliente_jid FROM tabela_atendimento_participantes WHERE atendente_id = ?))
+     ORDER BY a.id ASC`,
+    [atendenteId, atendenteId, atendenteId],
     (err, activeRows) => {
-      if (!err) socket.emit('active_chats_list', activeRows);
+      if (!err) socket.emit('active_chats_list', activeRows || []);
     }
   );
 
@@ -2375,16 +2696,25 @@ function broadcastQueue() {
 
 // Transmite as conversas ativas atualizadas para o atendente correspondente
 function sendActiveChats(atendenteId) {
+  if (!atendenteId) return;
   db.all(
-    `SELECT * FROM tabela_atendimentos WHERE atendente_id = ? AND status = 'em_atendimento' ORDER BY id ASC`,
-    [atendenteId],
+    `SELECT DISTINCT a.*,
+       (CASE WHEN a.atendente_id = ? THEN 0 ELSE 1 END) as is_co_attendant,
+       p_main.nome as atendente_principal_nome,
+       (SELECT COUNT(*) FROM tabela_atendimento_participantes p WHERE p.cliente_jid = a.cliente_jid) as participantes_count
+     FROM tabela_atendimentos a
+     LEFT JOIN tabela_atendentes p_main ON p_main.id = a.atendente_id
+     WHERE a.status = 'em_atendimento' 
+       AND (a.atendente_id = ? OR a.cliente_jid IN (SELECT cliente_jid FROM tabela_atendimento_participantes WHERE atendente_id = ?))
+     ORDER BY a.id ASC`,
+    [atendenteId, atendenteId, atendenteId],
     (err, rows) => {
       if (err) {
         console.error('Erro ao ler chats ativos:', err.message);
         return;
       }
       // Envia apenas para os sockets na sala daquele atendente
-      io.to(atendenteId).emit('active_chats_list', rows);
+      io.to(atendenteId).emit('active_chats_list', rows || []);
     }
   );
 }
