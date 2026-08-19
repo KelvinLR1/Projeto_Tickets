@@ -1,7 +1,11 @@
 // Detecta e aplica tema enviado via Query Parameter pelo Next.js
 const urlParams = new URLSearchParams(window.location.search);
 const currentTheme = urlParams.get('theme') || 'dark';
-document.documentElement.className = `theme-${currentTheme}`;
+const isInternalOnly = urlParams.get('internal_only') === '1' || urlParams.get('view') === 'internal';
+document.documentElement.className = `theme-${currentTheme}` + (isInternalOnly ? ' internal-only-view' : '');
+if (isInternalOnly && document.body) {
+  document.body.classList.add('internal-only-view');
+}
 
 // Conexão Socket.io (conecta-se automaticamente ao host que serve o arquivo)
 const socket = io();
@@ -530,6 +534,12 @@ socket.on('start_chat_success', ({ cliente_jid, cliente_nome }) => {
 socket.on('whatsapp_status', ({ status, qr }) => {
   console.log(`Status do WhatsApp: ${status}`);
   
+  // No modo isolado de chat interno, não deve exibir nem bloquear a tela com o modal de QR code do WhatsApp
+  if (isInternalOnly) {
+    if (qrModal) qrModal.classList.add('hidden');
+    return;
+  }
+
   if (status === 'pronto' || status === 'autenticado') {
     // Esconde Modal do QR Code e reseta o bypass
     isQrBypassed = false;
@@ -7007,6 +7017,64 @@ function closeInternalChatDrawer() {
   }
 }
 
+// Atualiza a posição e tamanho do indicador animado (Pill) das abas
+function updateInternalTabIndicator(tab) {
+  const pill = document.getElementById('internal-tab-pill-indicator');
+  const targetTab = tab || internalDirectoryActiveTab || 'dms';
+  const btn = targetTab === 'dms' ? document.getElementById('tab-btn-internal-dms')
+            : targetTab === 'groups' ? document.getElementById('tab-btn-internal-groups')
+            : document.getElementById('tab-btn-internal-channels');
+
+  if (pill) {
+    if (btn) {
+      const container = pill.parentElement;
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const btnRect = btn.getBoundingClientRect();
+
+        if (btnRect.width > 0 && containerRect.width > 0) {
+          const leftOffset = Math.max(0, btnRect.left - containerRect.left - 4);
+          pill.style.width = `${btnRect.width}px`;
+          pill.style.transform = `translate3d(${leftOffset}px, 0, 0)`;
+          pill.style.opacity = '1';
+          return;
+        }
+      }
+    }
+
+    // Fallback instantâneo enquanto o layout da janela / iframe está sendo calculado
+    const index = targetTab === 'groups' ? 1 : targetTab === 'channels' ? 2 : 0;
+    pill.style.width = 'calc((100% - 16px) / 3)';
+    if (index === 0) {
+      pill.style.transform = 'translate3d(0px, 0, 0)';
+    } else if (index === 1) {
+      pill.style.transform = 'translate3d(calc(100% + 4px), 0, 0)';
+    } else if (index === 2) {
+      pill.style.transform = 'translate3d(calc(200% + 8px), 0, 0)';
+    }
+    pill.style.opacity = '1';
+  }
+}
+
+// Redimensionamento de janela recalcula posição do indicador
+window.addEventListener('resize', () => {
+  if (isInternalDrawerOpen || document.body.classList.contains('internal-only-view')) {
+    updateInternalTabIndicator(internalDirectoryActiveTab || 'dms');
+  }
+});
+
+// Inicialização de observador para recalcular quando o contêiner se tornar visível
+document.addEventListener('DOMContentLoaded', () => {
+  const tabContainer = document.querySelector('.internal-tab-container');
+  if (tabContainer && window.ResizeObserver) {
+    const ro = new ResizeObserver(() => {
+      updateInternalTabIndicator(internalDirectoryActiveTab || 'dms');
+    });
+    ro.observe(tabContainer);
+  }
+  updateInternalTabIndicator('dms');
+});
+
 // Alterna abas no diretório (Canais vs Grupos vs Conversas 1x1)
 function switchInternalDirectoryTab(tab) {
   internalDirectoryActiveTab = tab;
@@ -7018,26 +7086,41 @@ function switchInternalDirectoryTab(tab) {
   const panelGroups = document.getElementById('internal-groups-panel');
   const panelDMs = document.getElementById('internal-dms-panel');
 
-  const activeClass = 'flex-1 py-2.5 rounded-xl text-[11px] md:text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 internal-tab-active';
-  const inactiveClass = 'flex-1 py-2.5 rounded-xl text-[11px] md:text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 internal-tab-inactive';
+  const activeClass = 'flex-1 py-2.5 rounded-xl text-[11px] md:text-xs cursor-pointer flex items-center justify-center gap-1.5 internal-tab-btn internal-tab-active';
+  const inactiveClass = 'flex-1 py-2.5 rounded-xl text-[11px] md:text-xs cursor-pointer flex items-center justify-center gap-1.5 internal-tab-btn internal-tab-inactive';
 
   if (btnChannels) btnChannels.className = tab === 'channels' ? activeClass : inactiveClass;
   if (btnGroups) btnGroups.className = tab === 'groups' ? activeClass : inactiveClass;
   if (btnDMs) btnDMs.className = tab === 'dms' ? activeClass : inactiveClass;
 
+  // Atualiza o pill deslizante animado
+  updateInternalTabIndicator(tab);
+
   if (panelChannels) {
-    if (tab === 'channels') panelChannels.classList.remove('hidden');
-    else panelChannels.classList.add('hidden');
+    if (tab === 'channels') {
+      panelChannels.classList.remove('hidden');
+      panelChannels.classList.remove('internal-tab-pane-anim');
+      void panelChannels.offsetWidth; // Trigger reflow
+      panelChannels.classList.add('internal-tab-pane-anim');
+      renderInternalChannelsList();
+    } else {
+      panelChannels.classList.add('hidden');
+      panelChannels.classList.remove('internal-tab-pane-anim');
+    }
   }
 
   if (panelGroups) {
     if (tab === 'groups') {
       panelGroups.classList.remove('hidden');
       panelGroups.classList.add('flex');
+      panelGroups.classList.remove('internal-tab-pane-anim');
+      void panelGroups.offsetWidth;
+      panelGroups.classList.add('internal-tab-pane-anim');
       renderInternalGroupsList();
     } else {
       panelGroups.classList.add('hidden');
       panelGroups.classList.remove('flex');
+      panelGroups.classList.remove('internal-tab-pane-anim');
     }
   }
 
@@ -7045,10 +7128,14 @@ function switchInternalDirectoryTab(tab) {
     if (tab === 'dms') {
       panelDMs.classList.remove('hidden');
       panelDMs.classList.add('flex');
+      panelDMs.classList.remove('internal-tab-pane-anim');
+      void panelDMs.offsetWidth;
+      panelDMs.classList.add('internal-tab-pane-anim');
       renderInternalDMsList();
     } else {
       panelDMs.classList.add('hidden');
       panelDMs.classList.remove('flex');
+      panelDMs.classList.remove('internal-tab-pane-anim');
     }
   }
 }
@@ -7063,12 +7150,21 @@ function showInternalDirectoryView() {
   const membersEl = document.getElementById('internal-drawer-members-count');
   const iconContainer = document.getElementById('internal-drawer-icon-container');
 
-  if (dirView) dirView.classList.remove('hidden');
-  if (chatView) chatView.classList.add('hidden');
+  if (dirView) {
+    dirView.classList.remove('hidden');
+    dirView.classList.remove('internal-view-slide-right');
+    dirView.classList.remove('internal-view-slide-left');
+    void dirView.offsetWidth;
+    dirView.classList.add('internal-view-slide-left');
+  }
+  if (chatView) {
+    chatView.classList.add('hidden');
+    chatView.classList.remove('internal-view-slide-right', 'internal-view-slide-left');
+  }
   if (backBtn) backBtn.classList.add('hidden');
 
   if (iconContainer) {
-    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box';
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box transition-all duration-300';
     iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
   }
 
@@ -7083,6 +7179,7 @@ function showInternalDirectoryView() {
   }
 
   switchInternalDirectoryTab(internalDirectoryActiveTab || 'dms');
+  setTimeout(() => updateInternalTabIndicator(internalDirectoryActiveTab || 'dms'), 50);
 }
 
 // Renderiza a lista de Grupos Criados pelos Usuários
@@ -7108,7 +7205,7 @@ function renderInternalGroupsList() {
 
   if (groups.length === 0) {
     container.innerHTML = `
-      <div class="text-center py-10 px-4">
+      <div class="text-center py-10 px-4 internal-tab-pane-anim">
         <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center internal-icon-box opacity-70">
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         </div>
@@ -7124,7 +7221,7 @@ function renderInternalGroupsList() {
 
   let totalGroupsUnread = 0;
 
-  groups.forEach(group => {
+  groups.forEach((group, index) => {
     const unreadCount = internalRoomUnreads[group.id] || 0;
     totalGroupsUnread += unreadCount;
     const isUnread = unreadCount > 0;
@@ -7138,7 +7235,8 @@ function renderInternalGroupsList() {
     }
 
     const card = document.createElement('div');
-    card.className = `p-3.5 internal-card flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.style.animationDelay = `${Math.min(index, 12) * 0.04}s`;
     card.onclick = () => openInternalGroup(group.id, group.nome, group.descricao, memberCount, group.criado_por_nome);
 
     card.innerHTML = `
@@ -7148,10 +7246,10 @@ function renderInternalGroupsList() {
         </div>
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <h4 class="text-xs font-extrabold text-foreground truncate">${group.nome}</h4>
+            <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(group.nome)}</h4>
             ${memberCount ? `<span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${memberCount}</span>` : ''}
           </div>
-          <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${group.descricao || 'Grupo da equipe'}</p>
+          <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${escapeHtml(group.descricao || 'Grupo da equipe')}</p>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
@@ -7190,12 +7288,21 @@ function openInternalGroup(groupId, groupName, groupDesc, memberCount, creatorNa
   const membersEl = document.getElementById('internal-drawer-members-count');
   const iconContainer = document.getElementById('internal-drawer-icon-container');
 
-  if (dirView) dirView.classList.add('hidden');
-  if (chatView) chatView.classList.remove('hidden');
+  if (dirView) {
+    dirView.classList.add('hidden');
+    dirView.classList.remove('internal-view-slide-right', 'internal-view-slide-left');
+  }
+  if (chatView) {
+    chatView.classList.remove('hidden');
+    chatView.classList.remove('internal-view-slide-left');
+    chatView.classList.remove('internal-view-slide-right');
+    void chatView.offsetWidth;
+    chatView.classList.add('internal-view-slide-right');
+  }
   if (backBtn) backBtn.classList.remove('hidden');
 
   if (iconContainer) {
-    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box';
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box transition-all duration-300';
     iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
   }
 
@@ -7246,21 +7353,29 @@ function openCreateGroupModal() {
           ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-lg">` : (op.nome ? op.nome.charAt(0).toUpperCase() : 'U')}
         </div>
         <div class="min-w-0 flex-1">
-          <p class="text-xs font-bold text-foreground truncate leading-tight">${op.nome}</p>
-          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${op.setor || 'Equipe'}</p>
+          <p class="text-xs font-bold text-foreground truncate leading-tight">${escapeHtml(op.nome)}</p>
+          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(op.setor || 'Equipe')}</p>
         </div>
       `;
       checklist.appendChild(item);
     });
   }
 
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('internal-modal-overlay');
+    const dialog = modal.querySelector('.internal-card') || modal.firstElementChild;
+    if (dialog) dialog.classList.add('internal-modal-dialog');
+  }
   if (nameInput) setTimeout(() => nameInput.focus(), 50);
 }
 
 function closeCreateGroupModal() {
   const modal = document.getElementById('internal-create-group-modal');
-  if (modal) modal.classList.add('hidden');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('internal-modal-overlay');
+  }
 }
 
 function updateSelectedGroupMembersCount() {
@@ -7308,16 +7423,17 @@ function renderInternalChannelsList() {
 
   const channels = internalRoomsList.filter(r => r.tipo === 'canal');
   if (channels.length === 0) {
-    container.innerHTML = '<p class="text-xs text-[var(--color-text-muted)] text-center py-8">Nenhum canal cadastrado.</p>';
+    container.innerHTML = '<p class="text-xs text-[var(--color-text-muted)] text-center py-8 internal-tab-pane-anim">Nenhum canal cadastrado.</p>';
     return;
   }
 
-  channels.forEach(canal => {
+  channels.forEach((canal, index) => {
     const unreadCount = internalRoomUnreads[canal.id] || 0;
     const isUnread = unreadCount > 0;
 
     const card = document.createElement('div');
-    card.className = `p-3.5 internal-card flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.style.animationDelay = `${Math.min(index, 12) * 0.04}s`;
     card.onclick = () => openInternalChannel(canal.id, canal.nome, canal.descricao);
 
     card.innerHTML = `
@@ -7327,9 +7443,9 @@ function renderInternalChannelsList() {
         </div>
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <h4 class="text-xs font-extrabold text-foreground truncate">${canal.nome}</h4>
+            <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(canal.nome)}</h4>
           </div>
-          <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${canal.descricao || 'Canal de comunicação da equipe'}</p>
+          <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${escapeHtml(canal.descricao || 'Canal de comunicação da equipe')}</p>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
@@ -7361,7 +7477,7 @@ function renderInternalDMsList(filterQuery = '') {
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div class="text-center py-10 text-[var(--color-text-muted)]">
+      <div class="text-center py-10 text-[var(--color-text-muted)] internal-tab-pane-anim">
         <p class="text-xs font-bold">Nenhum colega encontrado</p>
       </div>
     `;
@@ -7370,7 +7486,7 @@ function renderInternalDMsList(filterQuery = '') {
 
   let totalDMsUnread = 0;
 
-  filtered.forEach(op => {
+  filtered.forEach((op, index) => {
     const dmRoomId = `dm_${[currentOpId || 'me', op.id].sort().join('_')}`;
     const unreadCount = internalRoomUnreads[dmRoomId] || 0;
     totalDMsUnread += unreadCount;
@@ -7380,7 +7496,8 @@ function renderInternalDMsList(filterQuery = '') {
     const statusLabel = op.status === 'online' ? '🟢 Online' : (op.status === 'atendendo' ? `🟡 Atendendo (${op.active_chats || 1})` : '⚪ Offline');
 
     const card = document.createElement('div');
-    card.className = `p-3.5 internal-card flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.style.animationDelay = `${Math.min(index, 12) * 0.04}s`;
     card.onclick = () => openInternalDM(op.id, op.nome, op.setor, op.status);
 
     const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'U';
@@ -7393,8 +7510,8 @@ function renderInternalDMsList(filterQuery = '') {
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
-            <h4 class="text-xs font-extrabold text-foreground truncate">${op.nome}</h4>
-            <span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${op.setor || 'Equipe'}</span>
+            <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(op.nome)}</h4>
+            <span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${escapeHtml(op.setor || 'Equipe')}</span>
           </div>
         </div>
       </div>
@@ -7439,12 +7556,21 @@ function openInternalChannel(channelId, channelName, channelDesc) {
   const membersEl = document.getElementById('internal-drawer-members-count');
   const iconContainer = document.getElementById('internal-drawer-icon-container');
 
-  if (dirView) dirView.classList.add('hidden');
-  if (chatView) chatView.classList.remove('hidden');
+  if (dirView) {
+    dirView.classList.add('hidden');
+    dirView.classList.remove('internal-view-slide-right', 'internal-view-slide-left');
+  }
+  if (chatView) {
+    chatView.classList.remove('hidden');
+    chatView.classList.remove('internal-view-slide-left');
+    chatView.classList.remove('internal-view-slide-right');
+    void chatView.offsetWidth;
+    chatView.classList.add('internal-view-slide-right');
+  }
   if (backBtn) backBtn.classList.remove('hidden');
 
   if (iconContainer) {
-    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center font-mono font-black text-lg shrink-0 internal-icon-box';
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center font-mono font-black text-lg shrink-0 internal-icon-box transition-all duration-300';
     iconContainer.innerHTML = '#';
   }
 
@@ -7486,8 +7612,17 @@ function openInternalDM(otherId, otherName, otherSector, otherStatus) {
   const membersEl = document.getElementById('internal-drawer-members-count');
   const iconContainer = document.getElementById('internal-drawer-icon-container');
 
-  if (dirView) dirView.classList.add('hidden');
-  if (chatView) chatView.classList.remove('hidden');
+  if (dirView) {
+    dirView.classList.add('hidden');
+    dirView.classList.remove('internal-view-slide-right', 'internal-view-slide-left');
+  }
+  if (chatView) {
+    chatView.classList.remove('hidden');
+    chatView.classList.remove('internal-view-slide-left');
+    chatView.classList.remove('internal-view-slide-right');
+    void chatView.offsetWidth;
+    chatView.classList.add('internal-view-slide-right');
+  }
   if (backBtn) backBtn.classList.remove('hidden');
 
   const op = internalOperatorsList.find(o => String(o.id) === String(otherId));
@@ -7496,7 +7631,7 @@ function openInternalDM(otherId, otherName, otherSector, otherStatus) {
   const statusLabel = otherStatus === 'online' ? '🟢 Online' : (otherStatus === 'atendendo' ? '🟡 Atendendo' : '⚪ Offline');
 
   if (iconContainer) {
-    iconContainer.className = 'relative w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar';
+    iconContainer.className = 'relative w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar transition-all duration-300';
     iconContainer.innerHTML = `
       ${op && op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-2xl">` : initial}
       <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]"></span>
@@ -7505,8 +7640,8 @@ function openInternalDM(otherId, otherName, otherSector, otherStatus) {
 
   if (titleEl) titleEl.textContent = otherName;
   if (descEl) {
-    descEl.textContent = statusLabel;
-    descEl.classList.remove('hidden');
+    descEl.textContent = '';
+    descEl.classList.add('hidden');
   }
   if (membersEl) {
     membersEl.textContent = otherSector || 'Equipe';
@@ -8457,12 +8592,20 @@ function openInternalShareModal(clienteJid, clienteNome) {
   }
 
   const modal = document.getElementById('internal-share-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('internal-modal-overlay');
+    const dialog = modal.querySelector('.animate-modal-content-in') || modal.querySelector('.relative');
+    if (dialog) dialog.classList.add('internal-modal-dialog');
+  }
 }
 
 function closeInternalShareModal() {
   const modal = document.getElementById('internal-share-modal');
-  if (modal) modal.classList.add('hidden');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('internal-modal-overlay');
+  }
   internalChatToShare = null;
 }
 
@@ -8604,6 +8747,15 @@ socket.on('internal_operator_status_changed', ({ atendente_id, status }) => {
   if (op) {
     op.status = status;
     renderInternalDMsList();
+
+    // Se estiver com a DM aberta com este operador, atualiza a bolinha no avatar do cabeçalho
+    if (currentInternalRoomId && currentInternalRoomId.includes(String(atendente_id))) {
+      const statusColor = status === 'online' ? 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20' : (status === 'atendendo' ? 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20' : 'bg-slate-500');
+      const dot = document.querySelector('#internal-drawer-icon-container span.rounded-full');
+      if (dot) {
+        dot.className = `absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]`;
+      }
+    }
   }
 });
 

@@ -50,7 +50,20 @@ export default function GlobalInternalChat() {
         };
 
         window.addEventListener('message', handleMessage);
-        return () => window.removeEventListener('message', handleMessage);
+        if (typeof window !== 'undefined') {
+            const fn = (count: number = 1) => {
+                setUnreadCount(count);
+            };
+            (window as any).simulateInternalUnread = fn;
+            (window as any).SimulateInternalUnread = fn;
+        }
+        return () => {
+            window.removeEventListener('message', handleMessage);
+            if (typeof window !== 'undefined') {
+                delete (window as any).simulateInternalUnread;
+                delete (window as any).SimulateInternalUnread;
+            }
+        };
     }, [router]);
 
     // Não exibir na tela de login
@@ -75,28 +88,43 @@ export default function GlobalInternalChat() {
                     setUnreadCount(0);
                 }}
                 className={clsx(
-                    "fixed right-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2.5 py-3 px-1.5 rounded-l-xl border-y border-l transition-all duration-300 shadow-xl cursor-pointer group hover:pl-2.5",
-                    isOpen ? "translate-x-full pointer-events-none opacity-0" : "translate-x-0 opacity-100",
-                    unreadCount > 0 && "ring-2 ring-rose-500/50 shadow-[0_0_25px_rgba(244,63,94,0.4)]"
+                    "fixed right-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2.5 py-3 px-1.5 rounded-l-xl border-y border-l transition-all duration-300 shadow-xl cursor-pointer group hover:pl-2.5 overflow-visible",
+                    isOpen ? "translate-x-full pointer-events-none opacity-0" : "translate-x-0 opacity-100"
                 )}
                 style={{
                     background: 'linear-gradient(135deg, color-mix(in srgb, var(--color-card, #172033) 85%, black), color-mix(in srgb, var(--color-background, #0b0f19) 95%, black))',
-                    borderColor: unreadCount > 0 ? '#f43f5e' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
                     backdropFilter: 'blur(20px)',
-                    boxShadow: unreadCount > 0 
-                        ? '0 0 25px rgba(244,63,94,0.4)' 
-                        : '0 6px 24px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
+                    borderColor: unreadCount > 0 ? '#ef4444' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
+                    boxShadow: unreadCount > 0 ? '0 0 16px rgba(239, 68, 68, 0.6)' : '0 6px 24px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
                 }}
                 title={unreadCount > 0 ? `Chat Interno: ${unreadCount} mensagem(ns) não lida(s)` : "Chat Interno da Equipe (Alt + C)"}
             >
+                {/* Borda Vermelha Neon Pulsante/Piscando Ativamente */}
+                {unreadCount > 0 && (
+                    <span 
+                        className="absolute inset-0 rounded-l-xl pointer-events-none animate-pulse"
+                        style={{
+                            borderTop: '2.5px solid #ef4444',
+                            borderBottom: '2.5px solid #ef4444',
+                            borderLeft: '2.5px solid #ef4444',
+                            boxShadow: '0 0 22px 3px #ef4444, 0 0 45px 8px rgba(239, 68, 68, 0.75), inset 0 0 14px rgba(239, 68, 68, 0.5)'
+                        }}
+                    />
+                )}
                 <div className="relative flex items-center justify-center">
                     <div 
                         className="w-6 h-6 rounded-lg flex items-center justify-center group-hover:scale-110 transition-all duration-300 relative"
                         style={{
-                            background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent)',
-                            color: 'var(--color-primary-theme, #ef4444)',
-                            border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
-                            boxShadow: '0 0 10px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
+                            background: unreadCount > 0 
+                                ? 'rgba(244, 63, 94, 0.25)' 
+                                : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent)',
+                            color: unreadCount > 0 ? '#fb7185' : 'var(--color-primary-theme, #ef4444)',
+                            border: unreadCount > 0 
+                                ? '1px solid rgba(244, 63, 94, 0.6)' 
+                                : '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
+                            boxShadow: unreadCount > 0 
+                                ? '0 0 14px rgba(244, 63, 94, 0.6)' 
+                                : '0 0 10px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
                         }}
                     >
                         <Users className="w-3.5 h-3.5" />

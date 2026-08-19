@@ -2454,12 +2454,19 @@ html.internal-only-view body > main,
 html.internal-only-view #whatsapp-init-loader,
 html.internal-only-view #btn-internal-chat-trigger,
 html.internal-only-view #internal-chat-backdrop,
+html.internal-only-view #qr-modal,
+html.internal-only-view #new-chat-modal,
+html.internal-only-view #attendant-modal,
 body.internal-only-view > main,
 body.internal-only-view #whatsapp-init-loader,
 body.internal-only-view #btn-internal-chat-trigger,
-body.internal-only-view #internal-chat-backdrop {
+body.internal-only-view #internal-chat-backdrop,
+body.internal-only-view #qr-modal,
+body.internal-only-view #new-chat-modal,
+body.internal-only-view #attendant-modal {
   display: none !important;
   visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 html.internal-only-view #internal-chat-drawer,
@@ -2523,28 +2530,54 @@ body.internal-only-view #forward-modal:not(.hidden) {
 
 /* Seletor Segmentado de Abas */
 .internal-tab-container {
+  position: relative !important;
   background: color-mix(in srgb, var(--color-card, #172033) 40%, black) !important;
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08)) !important;
   border-radius: 16px !important;
   padding: 4px !important;
 }
 
-.internal-tab-active {
+/* Indicador Deslizante (Pill) Ultra-Fluido */
+.internal-tab-pill-indicator {
+  position: absolute !important;
+  top: 4px !important;
+  bottom: 4px !important;
+  left: 4px !important;
+  width: calc((100% - 16px) / 3) !important;
+  border-radius: 12px !important;
   background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), var(--color-accent-theme, #f87171)) !important;
+  box-shadow: 0 4px 18px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 55%, transparent), 0 0 12px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent) !important;
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), width 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+  opacity: 1 !important;
+  will-change: transform, width;
+}
+
+.internal-tab-btn {
+  position: relative !important;
+  z-index: 2 !important;
+  background: transparent !important;
+  transition: color 0.22s ease, font-weight 0.22s ease, transform 0.15s ease !important;
+}
+
+.internal-tab-btn:active {
+  transform: scale(0.96) !important;
+}
+
+.internal-tab-active {
   color: #ffffff !important;
-  box-shadow: 0 4px 18px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 50%, transparent) !important;
   font-weight: 800 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
 }
 
 .internal-tab-inactive {
-  background: transparent !important;
   color: var(--color-text-muted, #94a3b8) !important;
   font-weight: 600 !important;
 }
 
 .internal-tab-inactive:hover {
   color: var(--color-foreground, #f8fafc) !important;
-  background: color-mix(in srgb, var(--color-card, #172033) 60%, transparent) !important;
 }
 
 /* Campo de Busca Ultra-Glass */
@@ -2675,6 +2708,183 @@ body.internal-only-view #forward-modal:not(.hidden) {
   border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, rgba(255, 255, 255, 0.25)) !important;
   background-color: color-mix(in srgb, var(--color-background, #0f172a) 92%, black 8%) !important;
   box-shadow: 0 12px 35px -5px rgba(0, 0, 0, 0.6), 0 0 25px -3px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+}
+
+/* ==============================================================================
+   ✨ ANIMAÇÕES ULTRA-PREMIUM E TRANSIÇÕES FLUIDAS DO CHAT INTERNO
+   ============================================================================== */
+
+@keyframes internalViewSlideInRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalViewSlideInLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(-24px, 0, 0) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalTabFadeIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes internalCardFadeUp {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalBubblePopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalSlideDownPreview {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalModalPopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalBackdropFadeIn {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes internalGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 22px 2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 55%, transparent);
+  }
+}
+
+/* Classes de Transição das Telas do Chat Interno */
+.internal-view-slide-right {
+  animation: internalViewSlideInRight 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+.internal-view-slide-left {
+  animation: internalViewSlideInLeft 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+.internal-tab-pane-anim {
+  animation: internalTabFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+/* Cards com Entrada Suave e Stagger */
+.internal-card-enter {
+  animation: internalCardFadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+/* Bolhas de Mensagem com Efeito Pop-in Suave */
+.internal-msg-bubble-self,
+.internal-msg-bubble-other,
+.internal-msg-bubble-deleted {
+  animation: internalBubblePopIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.internal-msg-bubble-self:hover,
+.internal-msg-bubble-other:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -2px rgba(0, 0, 0, 0.45);
+}
+
+/* Previews de Resposta e Anexo */
+#internal-reply-preview-container:not(.hidden),
+#internal-attachment-preview:not(.hidden) {
+  animation: internalSlideDownPreview 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Modais Internos Suaves */
+.internal-modal-dialog {
+  animation: internalModalPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+.internal-modal-overlay {
+  animation: internalBackdropFadeIn 0.25s ease-out forwards !important;
+  will-change: opacity, backdrop-filter;
+}
+
+/* Botão Voltar Micro-Interação */
+#btn-internal-back-to-list {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#btn-internal-back-to-list:hover {
+  transform: translateX(-2px) scale(1.05);
+}
+
+#btn-internal-back-to-list:active {
+  transform: scale(0.92);
+}
+
+/* Transição de Abas Segmentadas */
+.internal-tab-container button {
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.internal-tab-container button:active {
+  transform: scale(0.96);
 }
 
 
