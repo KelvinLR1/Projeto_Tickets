@@ -920,11 +920,16 @@ aside > div:last-child {
    ============================================================================== */
 #message-context-menu,
 #chat-context-menu {
+  z-index: 99999 !important;
   background: var(--color-card) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-color) !important;
   color: var(--color-foreground) !important;
+}
+
+#reaction-details-modal {
+  z-index: 99999 !important;
 }
 
 #message-context-menu button,
@@ -2446,12 +2451,10 @@ body.internal-only-view {
 }
 
 html.internal-only-view body > main,
-html.internal-only-view body > div:not(#internal-chat-drawer):not(#internal-share-modal),
 html.internal-only-view #whatsapp-init-loader,
 html.internal-only-view #btn-internal-chat-trigger,
 html.internal-only-view #internal-chat-backdrop,
 body.internal-only-view > main,
-body.internal-only-view > div:not(#internal-chat-drawer):not(#internal-share-modal),
 body.internal-only-view #whatsapp-init-loader,
 body.internal-only-view #btn-internal-chat-trigger,
 body.internal-only-view #internal-chat-backdrop {
@@ -2472,7 +2475,22 @@ body.internal-only-view #internal-chat-drawer {
   box-shadow: none !important;
   background-color: var(--color-background, #0b0f19) !important;
   display: flex !important;
-  z-index: 9999 !important;
+  z-index: 10 !important;
+}
+
+html.internal-only-view #message-context-menu:not(.hidden),
+body.internal-only-view #message-context-menu:not(.hidden),
+html.internal-only-view #chat-context-menu:not(.hidden),
+body.internal-only-view #chat-context-menu:not(.hidden),
+html.internal-only-view #reaction-details-modal:not(.hidden),
+body.internal-only-view #reaction-details-modal:not(.hidden),
+html.internal-only-view #message-info-modal:not(.hidden),
+body.internal-only-view #message-info-modal:not(.hidden),
+html.internal-only-view #forward-modal:not(.hidden),
+body.internal-only-view #forward-modal:not(.hidden) {
+  display: flex !important;
+  visibility: visible !important;
+  z-index: 99999 !important;
 }
 
 /* ==============================================================================

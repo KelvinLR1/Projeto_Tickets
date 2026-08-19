@@ -6,12 +6,26 @@ document.documentElement.className = `theme-${currentTheme}`;
 // Conexão Socket.io (conecta-se automaticamente ao host que serve o arquivo)
 const socket = io();
 
+// Função utilitária para sanitizar HTML
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // Re-registrar atendente automaticamente em caso de reconexão do socket para garantir associação de salas
 socket.on('connect', () => {
   const savedId = localStorage.getItem('tf_operator_id');
   const savedName = localStorage.getItem('tf_operator_name');
   if (savedId && savedName) {
     socket.emit('register_attendant', { atendente_id: savedId, nome: savedName });
+  }
+  if (typeof currentInternalRoomId !== 'undefined' && currentInternalRoomId) {
+    socket.emit('internal_join_room', { sala_id: currentInternalRoomId, atendente_id: savedId || 'admin' });
   }
 });
 
@@ -3038,6 +3052,9 @@ function hideAllContextMenus() {
 // Verifica se a mensagem pertence a um atendimento em aberto e à sessão atual (não anterior)
 function canReactOrDeleteMsg(msg) {
   if (!msg) return false;
+  if (msg.is_internal || msg.sala_id) {
+    return true;
+  }
   const targetJid = msg.cliente_jid || selectedChatJid;
   const isChatActive = activeChats.some(c => c.cliente_jid === targetJid);
   if (!isChatActive) return false;
@@ -3065,14 +3082,21 @@ function openMessageContextMenu(e, msg) {
   const menu = document.getElementById('message-context-menu');
   if (!menu) return;
 
+  const isInternal = Boolean(msg.is_internal || msg.sala_id);
   const isChatActiveAndCurrent = canReactOrDeleteMsg(msg);
   const isDeleted = msg.apagado === 1 || msg.apagado === true || msg.apagado === '1';
 
   // Permite reagir se o chat estiver ativo e a mensagem não tiver sido apagada
-  const canReact = isChatActiveAndCurrent && !isDeleted;
+  const canReact = isInternal ? !isDeleted : (isChatActiveAndCurrent && !isDeleted);
 
-  // NUNCA permite excluir mensagens enviadas pelo cliente. Apenas mensagens de atendentes/equipe e não apagadas
-  const canDelete = isChatActiveAndCurrent && !isDeleted && (msg.remetente !== 'cliente' && msg.remetente !== 'sistema');
+  // Permite excluir:
+  // Se for chat interno: apenas mensagens enviadas pelo próprio usuário (ou admin)
+  // Se for WhatsApp: apenas mensagens enviadas pela equipe/atendente
+  const isSelf = isInternal
+    ? (currentOperator && String(msg.remetente_id) === String(currentOperator.id))
+    : (msg.remetente !== 'cliente' && msg.remetente !== 'sistema');
+
+  const canDelete = isInternal ? (!isDeleted && isSelf) : (isChatActiveAndCurrent && !isDeleted && isSelf);
 
   const reactionsContainer = document.getElementById('context-recent-reactions');
   const reactBtn = document.getElementById('context-react-btn');
@@ -3163,7 +3187,7 @@ function handleContextInfo() {
   if (!modal || !content) return;
 
   const msg = activeContextMsgData;
-  const isClient = msg.remetente === 'cliente';
+  const isInternal = Boolean(msg.is_internal || msg.sala_id);
 
   // Formatador de datas
   let rawDateStr = msg.timestamp;
@@ -3187,7 +3211,7 @@ function handleContextInfo() {
   const lidoStr = formatFullDate(lidoObj);
 
   // Parsear e formatar reações em pills estilizados com largura flexível total
-  const reactions = parseReactions(msg.reacao);
+  const reactions = parseReactions(msg.reacao || msg.reacoes);
   let reactionBadgesHTML = `
     <div class="p-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between text-xs">
       <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Reações:</span>
@@ -3215,15 +3239,24 @@ function handleContextInfo() {
     `;
   }
 
-  // Tratar preview do conteúdo (Trata áudios gravados em Base64, Anexos e Textos)
+  const isDeleted = msg.apagado === 1 || msg.apagado === true || msg.apagado === '1' || (msg.texto && msg.texto.includes('Esta mensagem foi apagada'));
+
+  // Tratar preview do conteúdo
   let rawText = msg.texto || '';
   let previewContentHTML = '';
 
-  if (rawText.startsWith('data:audio') || rawText.startsWith('[AUDIO]')) {
+  if (isDeleted) {
+    previewContentHTML = `
+      <div class="flex items-center gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 italic text-xs">
+        <span class="text-base leading-none">🚫</span>
+        <span class="font-semibold text-rose-300">Esta mensagem foi apagada</span>
+      </div>
+    `;
+  } else if (rawText.startsWith('data:audio') || rawText.startsWith('[AUDIO]') || msg.midia_tipo === 'audio' || (msg.midia_url && msg.midia_url.includes('internal-voice-'))) {
     previewContentHTML = `
       <div class="flex items-center gap-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300">
         <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
         </div>
         <div class="flex flex-col text-left">
           <span class="text-xs font-bold">Mensagem de Voz</span>
@@ -3231,15 +3264,15 @@ function handleContextInfo() {
         </div>
       </div>
     `;
-  } else if (rawText.startsWith('[ANEXO] ')) {
-    const fileName = rawText.replace('[ANEXO] ', '');
+  } else if (rawText.startsWith('[ANEXO] ') || msg.midia_url) {
+    const fileName = msg.midia_url ? msg.midia_url.split('/').pop() : rawText.replace('[ANEXO] ', '');
     previewContentHTML = `
       <div class="flex items-center gap-3 p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300">
         <div class="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </div>
         <div class="flex flex-col text-left truncate">
-          <span class="text-xs font-bold truncate">${fileName}</span>
+          <span class="text-xs font-bold truncate">${escapeHtml(fileName)}</span>
           <span class="text-[10px] text-indigo-300/70 font-mono">Arquivo Anexo</span>
         </div>
       </div>
@@ -3254,7 +3287,7 @@ function handleContextInfo() {
       </div>
     `;
   } else {
-    previewContentHTML = `<p class="text-xs text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-sans">${rawText || '[Sem texto]'}</p>`;
+    previewContentHTML = `<p class="text-xs text-slate-200 whitespace-pre-wrap break-words leading-relaxed font-sans">${escapeHtml(rawText) || '[Sem texto]'}</p>`;
   }
 
   // Preencher conteúdo aproveitando a nova largura expandida (max-w-xl)
@@ -3392,6 +3425,52 @@ function handleContextReply() {
   hideAllContextMenus();
   if (!activeContextMsgData) return;
 
+  const isInternal = Boolean(activeContextMsgData.is_internal || activeContextMsgData.sala_id);
+
+  if (isInternal) {
+    internalReplyingToMessage = {
+      id: activeContextMsgData.id,
+      text: activeContextMsgData.texto,
+      sender: activeContextMsgData.remetente_nome || 'Colega'
+    };
+
+    // Efeito Visual de Destaque Pulsante na Mensagem Selecionada
+    const msgEl = document.querySelector(`[data-message-id="${activeContextMsgData.id}"][data-internal="true"]`) || document.querySelector(`[data-internal-msg-id="${activeContextMsgData.id}"]`);
+    if (msgEl) {
+      msgEl.classList.remove('message-reply-highlight');
+      void msgEl.offsetWidth; // Force reflow
+      msgEl.classList.add('message-reply-highlight');
+      setTimeout(() => msgEl.classList.remove('message-reply-highlight'), 850);
+    }
+
+    const previewContainer = document.getElementById('internal-reply-preview-container');
+    const previewText = document.getElementById('internal-reply-preview-text');
+    const previewTitle = document.getElementById('internal-reply-preview-title');
+
+    if (previewText) {
+      let cleanText = activeContextMsgData.texto || '';
+      if (cleanText.startsWith('data:audio') || cleanText.startsWith('[AUDIO]') || activeContextMsgData.midia_tipo === 'audio') {
+        cleanText = '🎵 Mensagem de Voz';
+      } else if (activeContextMsgData.midia_url) {
+        cleanText = '📎 Anexo / Mídia';
+      }
+      previewText.textContent = cleanText || 'Mensagem';
+    }
+
+    if (previewTitle) {
+      const senderName = activeContextMsgData.remetente_nome || 'Colega';
+      previewTitle.innerHTML = `<span style="color: var(--color-primary-theme, #ef4444); font-weight: 800;">Respondendo a</span> <span class="text-slate-100 font-bold">${escapeHtml(senderName)}</span>`;
+    }
+
+    if (previewContainer) {
+      previewContainer.classList.remove('hidden');
+    }
+
+    const input = document.getElementById('internal-chat-input');
+    if (input) input.focus();
+    return;
+  }
+
   replyingToMessage = {
     id: activeContextMsgData.id,
     text: activeContextMsgData.texto
@@ -3479,17 +3558,54 @@ function initEmojiGrid() {
   `).join('');
 }
 
-// Helper para parsear reações (Suporta string simples ex: "😂" ou JSON de múltiplas reações)
+// Helper para obter nome do colega por ID
+function getUserNameById(uId) {
+  const op = (internalOperatorsList || []).find(o => String(o.id) === String(uId));
+  return op ? op.nome : uId;
+}
+
+// Helper para parsear reações (Suporta string simples, Array JSON ou Dicionário { "👍": ["op1"] })
 function parseReactions(reacaoRaw) {
   if (!reacaoRaw) return [];
-  if (typeof reacaoRaw === 'object' && Array.isArray(reacaoRaw)) return reacaoRaw;
+  if (typeof reacaoRaw === 'object') {
+    if (Array.isArray(reacaoRaw)) return reacaoRaw;
+    const res = [];
+    Object.entries(reacaoRaw).forEach(([emoji, users]) => {
+      if (Array.isArray(users)) {
+        users.forEach(uId => {
+          const isMe = currentOperator && String(uId) === String(currentOperator.id);
+          res.push({
+            emoji,
+            remetente: String(uId),
+            nome: isMe ? 'Você' : (getUserNameById(uId) || String(uId))
+          });
+        });
+      }
+    });
+    return res;
+  }
 
   try {
     const parsed = JSON.parse(reacaoRaw);
     if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object') {
+      const res = [];
+      Object.entries(parsed).forEach(([emoji, users]) => {
+        if (Array.isArray(users)) {
+          users.forEach(uId => {
+            const isMe = currentOperator && String(uId) === String(currentOperator.id);
+            res.push({
+              emoji,
+              remetente: String(uId),
+              nome: isMe ? 'Você' : (getUserNameById(uId) || String(uId))
+            });
+          });
+        }
+      });
+      return res;
+    }
   } catch (e) {}
 
-  // Se for string simples legada (ex: "😂")
   return [{
     emoji: reacaoRaw,
     remetente: 'atendente',
@@ -3525,7 +3641,7 @@ function updateMsgReactionBadgeInDOM(msgId, reacaoRaw) {
   const msgDiv = document.querySelector(`[data-message-id="${msgId}"]`);
   if (!msgDiv) return;
 
-  const bubble = msgDiv.querySelector('.msg-bubble');
+  const bubble = msgDiv.querySelector('.msg-bubble') || msgDiv.querySelector('.internal-msg-bubble-self') || msgDiv.querySelector('.internal-msg-bubble-other');
   if (!bubble) return;
 
   let badge = bubble.querySelector('.msg-reaction-badge');
@@ -3552,12 +3668,25 @@ function applyReaction(emoji) {
   if (!activeContextMsgData || !canReactOrDeleteMsg(activeContextMsgData)) return;
 
   const msgId = activeContextMsgData.id;
-  const targetJid = activeContextMsgData.cliente_jid || selectedChatJid;
+  const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
   if (!msgId) return;
 
+  const isInternal = Boolean(activeContextMsgData.is_internal || activeContextMsgData.sala_id);
+
+  if (isInternal) {
+    const salaId = activeContextMsgData.sala_id || currentInternalRoomId;
+    socket.emit('internal_react_message', {
+      message_id: msgId,
+      sala_id: salaId,
+      reacao: emoji,
+      atendente_id: myOperatorId
+    });
+    return;
+  }
+
+  const targetJid = activeContextMsgData.cliente_jid || selectedChatJid;
   let reactions = parseReactions(activeContextMsgData.reacao);
 
-  const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
   reactions = reactions.filter(r => r.nome !== 'Você' && r.remetente !== myOperatorId);
 
   reactions.push({
@@ -3587,9 +3716,22 @@ function removeReaction(msgId, emojiToRemove) {
   const msgObj = currentChatMessages.find(m => String(m.id) === String(msgId)) || (activeContextMsgData && String(activeContextMsgData.id) === String(msgId) ? activeContextMsgData : null);
   if (!msgObj || !canReactOrDeleteMsg(msgObj)) return;
 
+  const isInternal = Boolean(msgObj.is_internal || msgObj.sala_id);
+  const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
+
+  if (isInternal) {
+    const salaId = msgObj.sala_id || currentInternalRoomId;
+    socket.emit('internal_react_message', {
+      message_id: msgId,
+      sala_id: salaId,
+      reacao: emojiToRemove,
+      atendente_id: myOperatorId
+    });
+    return;
+  }
+
   const targetJid = msgObj.cliente_jid || selectedChatJid;
   let reactions = parseReactions(msgObj.reacao);
-  const myOperatorId = currentOperator ? currentOperator.id : 'sistema';
 
   if (emojiToRemove) {
     reactions = reactions.filter(r => !(r.emoji === emojiToRemove && (r.nome === 'Você' || r.remetente === myOperatorId)));
@@ -3612,12 +3754,21 @@ function removeReaction(msgId, emojiToRemove) {
 
 // Recupera dados de reação de forma ultra robusta (Procura por ID, contexto ativo ou memória)
 function getMsgReactionData(msgId) {
-  if (activeContextMsgData && activeContextMsgData.reacao && (String(activeContextMsgData.id) === String(msgId) || !msgId)) {
+  if (activeContextMsgData && (activeContextMsgData.reacao || activeContextMsgData.reacoes) && (String(activeContextMsgData.id) === String(msgId) || !msgId)) {
     return activeContextMsgData;
   }
   let found = currentChatMessages.find(m => String(m.id) === String(msgId));
-  if (found && found.reacao) return found;
-  if (activeContextMsgData && activeContextMsgData.reacao) return activeContextMsgData;
+  if (found && (found.reacao || found.reacoes)) return found;
+
+  // Busca também nas mensagens do chat interno
+  if (typeof internalMessagesMap !== 'undefined') {
+    for (const salaId in internalMessagesMap) {
+      const im = internalMessagesMap[salaId].find(m => String(m.id) === String(msgId));
+      if (im && (im.reacao || im.reacoes)) return im;
+    }
+  }
+
+  if (activeContextMsgData && (activeContextMsgData.reacao || activeContextMsgData.reacoes)) return activeContextMsgData;
   return currentChatMessages.find(m => m.reacao) || null;
 }
 
@@ -3822,6 +3973,29 @@ function submitForwardToPhone() {
 function handleContextDelete() {
   hideAllContextMenus();
   if (!activeContextMsgData) return;
+
+  const isInternal = Boolean(activeContextMsgData.is_internal || activeContextMsgData.sala_id);
+
+  if (isInternal) {
+    const isSelf = currentOperator && String(activeContextMsgData.remetente_id) === String(currentOperator.id);
+    if (!isSelf) {
+      showToast('Apenas o autor pode apagar esta mensagem.', 'Aviso', 'warning');
+      return;
+    }
+    const salaId = activeContextMsgData.sala_id || currentInternalRoomId;
+    activeContextMsgData.apagado = 1;
+    activeContextMsgData.texto = '🚫 Esta mensagem foi apagada';
+    activeContextMsgData.midia_url = null;
+    activeContextMsgData.card_meta = null;
+    socket.emit('internal_delete_message', {
+      message_id: activeContextMsgData.id,
+      sala_id: salaId,
+      atendente_id: currentOperator ? currentOperator.id : 'sistema'
+    });
+    showToast('Mensagem apagada com sucesso.', 'Chat Interno', 'info');
+    return;
+  }
+
   if (activeContextMsgData.remetente === 'cliente') {
     showToast('Mensagens do cliente não podem ser apagadas.', 'Aviso', 'warning');
     return;
@@ -7392,14 +7566,56 @@ function renderInternalMessages() {
   });
 }
 
+let internalReplyingToMessage = null;
+
+function cancelInternalReply() {
+  internalReplyingToMessage = null;
+  const preview = document.getElementById('internal-reply-preview-container');
+  if (preview) preview.classList.add('hidden');
+}
+
 // Cria o elemento visual de uma mensagem interna
 function createInternalMessageElement(msg) {
   const isSelf = currentOperator && String(msg.remetente_id) === String(currentOperator.id);
+  const isDeleted = msg.apagado === 1 || msg.apagado === true || msg.apagado === '1';
   const timeFormatted = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const msgDiv = document.createElement('div');
   msgDiv.className = `flex flex-col ${isSelf ? 'items-end' : 'items-start'} gap-1 w-full`;
   msgDiv.dataset.internalMsgId = msg.id;
+  msgDiv.setAttribute('data-message-id', msg.id);
+  msgDiv.setAttribute('data-internal', 'true');
+
+  // Adiciona evento de menu de contexto ao clicar com botão direito
+  msgDiv.addEventListener('contextmenu', (e) => {
+    msg.is_internal = true;
+    openMessageContextMenu(e, msg);
+  });
+
+  if (isDeleted) {
+    msgDiv.innerHTML = `
+      <div class="flex items-center gap-1.5 text-[10px] text-slate-400 px-1">
+        <span class="font-bold text-slate-300">${isSelf ? 'Você' : (msg.remetente_nome || 'Colega')}</span>
+        <span>•</span>
+        <span>${timeFormatted}</span>
+      </div>
+      <div class="internal-msg-bubble-deleted p-3 rounded-2xl max-w-[88%] shadow-none opacity-60 italic border border-dashed border-rose-500/35 bg-black/20">
+        <p class="text-xs leading-relaxed italic text-slate-400">🚫 Esta mensagem foi apagada</p>
+      </div>
+    `;
+    return msgDiv;
+  }
+
+  // Citação / Resposta (reply_to)
+  let quoteHTML = '';
+  if (msg.reply_to_text) {
+    quoteHTML = `
+      <div class="p-2 mb-2 rounded-lg bg-black/25 border-l-4 border-[var(--color-primary-theme,#ef4444)] text-[11px] text-slate-300 opacity-90 truncate max-w-xs select-none">
+        <span class="font-bold text-[10px] text-[var(--color-primary-theme,#ef4444)] block">${escapeHtml(msg.reply_to_sender || 'Colega')}</span>
+        <span class="truncate block">${escapeHtml(msg.reply_to_text)}</span>
+      </div>
+    `;
+  }
 
   let cardHTML = '';
   if (msg.card_meta) {
@@ -7412,12 +7628,12 @@ function createInternalMessageElement(msg) {
               ${card.cliente_avatar ? `<img src="${card.cliente_avatar}" class="w-full h-full object-cover">` : (card.cliente_nome ? card.cliente_nome.charAt(0) : 'C')}
             </div>
             <div class="min-w-0 flex-1">
-              <h4 class="text-xs font-bold text-slate-100 truncate">${card.cliente_nome || 'Cliente'}</h4>
-              <p class="text-[10px] text-slate-400 font-mono">${card.cliente_telefone || card.cliente_jid}</p>
+              <h4 class="text-xs font-bold text-slate-100 truncate">${escapeHtml(card.cliente_nome || 'Cliente')}</h4>
+              <p class="text-[10px] text-slate-400 font-mono">${escapeHtml(card.cliente_telefone || card.cliente_jid)}</p>
             </div>
             <span class="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold uppercase tracking-wider">WhatsApp</span>
           </div>
-          <p class="text-xs text-slate-300 italic mb-2.5 line-clamp-2 bg-black/20 p-2 rounded-lg border border-white/5">"${card.resumo || 'Atendimento em andamento'}"</p>
+          <p class="text-xs text-slate-300 italic mb-2.5 line-clamp-2 bg-black/20 p-2 rounded-lg border border-white/5">"${escapeHtml(card.resumo || 'Atendimento em andamento')}"</p>
           <button onclick="handleOpenSharedChat('${card.cliente_jid}', '${card.cliente_nome || ''}')" class="w-full h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/25 transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Abrir Conversa no Painel
@@ -7451,6 +7667,9 @@ function createInternalMessageElement(msg) {
     }
   }
 
+  // Reações
+  const reactionHTML = renderReactionBadgeHTML(msg.id, msg.reacoes || msg.reacao);
+
   const bubbleClass = isSelf ? 'internal-msg-bubble-self' : 'internal-msg-bubble-other';
 
   msgDiv.innerHTML = `
@@ -7459,10 +7678,12 @@ function createInternalMessageElement(msg) {
       <span>•</span>
       <span>${timeFormatted}</span>
     </div>
-    <div class="${bubbleClass} p-3 rounded-2xl max-w-[88%] shadow-md">
+    <div class="${bubbleClass} p-3 rounded-2xl max-w-[88%] shadow-md relative">
+      ${quoteHTML}
       ${cardHTML}
       ${mediaHTML}
       ${msg.texto ? `<p class="text-xs leading-relaxed whitespace-pre-wrap select-text">${escapeHtml(msg.texto)}</p>` : ''}
+      ${reactionHTML}
     </div>
   `;
 
@@ -7496,6 +7717,12 @@ function sendInternalMessage() {
 
   if (!texto && !internalSelectedFile) return;
 
+  const replyPayload = internalReplyingToMessage ? {
+    reply_to_id: internalReplyingToMessage.id,
+    reply_to_text: internalReplyingToMessage.text,
+    reply_to_sender: internalReplyingToMessage.sender
+  } : {};
+
   if (internalSelectedFile) {
     const formData = new FormData();
     formData.append('file', internalSelectedFile);
@@ -7515,9 +7742,11 @@ function sendInternalMessage() {
         remetente_nome: currentOperator ? currentOperator.name || currentOperator.nome : 'Atendente',
         texto: texto || '',
         midia_url: fileUrl,
-        midia_tipo: fileType
+        midia_tipo: fileType,
+        ...replyPayload
       });
 
+      cancelInternalReply();
       clearInternalAttachment();
       if (input) input.value = '';
     })
@@ -7534,9 +7763,11 @@ function sendInternalMessage() {
       sala_id: currentInternalRoomId,
       remetente_id: currentOperator ? currentOperator.id : 'anon',
       remetente_nome: currentOperator ? currentOperator.name || currentOperator.nome : 'Atendente',
-      texto
+      texto,
+      ...replyPayload
     });
 
+    cancelInternalReply();
     if (input) {
       input.value = '';
       input.style.height = '20px';
@@ -8335,6 +8566,10 @@ socket.on('internal_new_message', (msg) => {
   if (currentInternalRoomId === msg.sala_id) {
     const container = document.getElementById('internal-messages-container');
     if (container) {
+      // Remove placeholder de estado vazio caso exista
+      const emptyEls = container.querySelectorAll('.py-16');
+      emptyEls.forEach(el => el.remove());
+
       const msgEl = createInternalMessageElement(msg);
       const anchor = document.getElementById('internal-scroll-anchor');
       if (anchor) {
@@ -8369,6 +8604,46 @@ socket.on('internal_operator_status_changed', ({ atendente_id, status }) => {
   if (op) {
     op.status = status;
     renderInternalDMsList();
+  }
+});
+
+// Reação em mensagem do chat interno
+socket.on('internal_message_reacted', ({ message_id, sala_id, reacoes }) => {
+  if (internalMessagesMap[sala_id]) {
+    const targetMsg = internalMessagesMap[sala_id].find(m => String(m.id) === String(message_id));
+    if (targetMsg) {
+      targetMsg.reacoes = reacoes;
+    }
+  }
+  updateMsgReactionBadgeInDOM(message_id, reacoes);
+});
+
+// Exclusão de mensagem do chat interno
+socket.on('internal_message_deleted', ({ message_id, sala_id }) => {
+  if (internalMessagesMap[sala_id]) {
+    const targetMsg = internalMessagesMap[sala_id].find(m => String(m.id) === String(message_id));
+    if (targetMsg) {
+      targetMsg.apagado = 1;
+      targetMsg.texto = '🚫 Esta mensagem foi apagada';
+      targetMsg.midia_url = null;
+      targetMsg.card_meta = null;
+    }
+  }
+  if (activeContextMsgData && String(activeContextMsgData.id) === String(message_id)) {
+    activeContextMsgData.apagado = 1;
+    activeContextMsgData.texto = '🚫 Esta mensagem foi apagada';
+    activeContextMsgData.midia_url = null;
+    activeContextMsgData.card_meta = null;
+  }
+  if (currentInternalRoomId === sala_id) {
+    const msgDiv = document.querySelector(`[data-message-id="${message_id}"][data-internal="true"]`) || document.querySelector(`[data-internal-msg-id="${message_id}"]`);
+    if (msgDiv) {
+      const bubble = msgDiv.querySelector('.internal-msg-bubble-self') || msgDiv.querySelector('.internal-msg-bubble-other');
+      if (bubble) {
+        bubble.className = 'internal-msg-bubble-deleted p-3 rounded-2xl max-w-[88%] shadow-none opacity-60 italic border border-dashed border-rose-500/35 bg-black/20';
+        bubble.innerHTML = '<p class="text-xs leading-relaxed italic text-slate-400">🚫 Esta mensagem foi apagada</p>';
+      }
+    }
   }
 });
 

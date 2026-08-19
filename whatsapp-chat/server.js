@@ -878,6 +878,9 @@ db.serialize(() => {
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  db.run("ALTER TABLE tabela_chat_interno_mensagens ADD COLUMN reply_to_id INTEGER", () => {});
+  db.run("ALTER TABLE tabela_chat_interno_mensagens ADD COLUMN reply_to_text TEXT", () => {});
+  db.run("ALTER TABLE tabela_chat_interno_mensagens ADD COLUMN reply_to_sender TEXT", () => {});
 
   // 9. Verificar se a base está vazia e popular dados de exemplo para testes
   setTimeout(() => {
@@ -2225,8 +2228,8 @@ io.on('connection', (socket) => {
     if (!sala_id) return;
     
     // Se for DM, garante que a sala exista no banco
-    if (sala_id.startsWith('dm-')) {
-      const parts = sala_id.replace('dm-', '').split('_');
+    if (sala_id.startsWith('dm-') || sala_id.startsWith('dm_')) {
+      const parts = sala_id.replace(/^dm[-_]/, '').split('_');
       const otherId = parts.find(id => id !== atendente_id) || parts[0];
       
       db.run(
@@ -2290,7 +2293,7 @@ io.on('connection', (socket) => {
   });
 
   // 3. Enviar mensagem no Chat Interno (Texto, Áudio, Anexo ou Card)
-  socket.on('internal_send_message', async ({ sala_id, remetente_id, remetente_nome, remetente_avatar, texto, midia_url, midia_tipo, card_meta, audio_base64 }) => {
+  socket.on('internal_send_message', async ({ sala_id, remetente_id, remetente_nome, remetente_avatar, texto, midia_url, midia_tipo, card_meta, audio_base64, reply_to_id, reply_to_text, reply_to_sender }) => {
     if (!sala_id || (!texto && !midia_url && !card_meta && !audio_base64)) return;
 
     let finalMidiaUrl = midia_url || null;
@@ -2318,8 +2321,8 @@ io.on('connection', (socket) => {
     const cardMetaStr = card_meta ? (typeof card_meta === 'string' ? card_meta : JSON.stringify(card_meta)) : null;
 
     db.run(
-      `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, remetente_avatar, texto, midia_url, midia_tipo, card_meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [sala_id, remetente_id, remetente_nome, remetente_avatar || null, texto || '', finalMidiaUrl, finalMidiaTipo, cardMetaStr],
+      `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, remetente_avatar, texto, midia_url, midia_tipo, card_meta, reply_to_id, reply_to_text, reply_to_sender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [sala_id, remetente_id, remetente_nome, remetente_avatar || null, texto || '', finalMidiaUrl, finalMidiaTipo, cardMetaStr, reply_to_id || null, reply_to_text || null, reply_to_sender || null],
       function (err) {
         if (err) return console.error('Erro ao salvar mensagem interna:', err.message);
 
@@ -2333,7 +2336,11 @@ io.on('connection', (socket) => {
           midia_url: finalMidiaUrl,
           midia_tipo: finalMidiaTipo,
           card_meta: cardMetaStr,
+          reply_to_id: reply_to_id || null,
+          reply_to_text: reply_to_text || null,
+          reply_to_sender: reply_to_sender || null,
           reacoes: null,
+          apagado: 0,
           timestamp: new Date().toISOString()
         };
 
@@ -2346,6 +2353,22 @@ io.on('connection', (socket) => {
           remetente_id,
           remetente_nome,
           texto: texto || (finalMidiaTipo === 'audio' ? '🎙️ Mensagem de voz' : (cardMetaStr ? '🔗 Atendimento compartilhado' : '📎 Anexo'))
+        });
+      }
+    );
+  });
+
+  // 3.5. Excluir Mensagem Interna
+  socket.on('internal_delete_message', ({ message_id, sala_id, atendente_id }) => {
+    if (!message_id) return;
+    db.run(
+      `UPDATE tabela_chat_interno_mensagens SET apagado = 1, texto = '🚫 Esta mensagem foi apagada', midia_url = NULL, card_meta = NULL WHERE id = ?`,
+      [message_id],
+      (err) => {
+        if (err) return console.error('Erro ao apagar mensagem interna:', err.message);
+        io.to(`internal_${sala_id}`).emit('internal_message_deleted', {
+          message_id,
+          sala_id
         });
       }
     );
