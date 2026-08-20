@@ -25,8 +25,10 @@ function escapeHtml(str) {
 socket.on('connect', () => {
   const savedId = localStorage.getItem('tf_operator_id');
   const savedName = localStorage.getItem('tf_operator_name');
+  const savedManualStatus = localStorage.getItem('tf_operator_manual_status') || 'auto';
   if (savedId && savedName) {
     socket.emit('register_attendant', { atendente_id: savedId, nome: savedName });
+    socket.emit('internal_set_status', { atendente_id: savedId, status: savedManualStatus });
   }
   if (typeof currentInternalRoomId !== 'undefined' && currentInternalRoomId) {
     socket.emit('internal_join_room', { sala_id: currentInternalRoomId, atendente_id: savedId || 'admin' });
@@ -171,6 +173,12 @@ function initOperator() {
     
     // Registra no Socket
     socket.emit('register_attendant', { atendente_id: savedId, nome: savedName });
+    
+    // Sincroniza status manual do atendente
+    const savedManualStatus = localStorage.getItem('tf_operator_manual_status') || 'auto';
+    currentUserManualStatus = savedManualStatus;
+    socket.emit('internal_set_status', { atendente_id: savedId, status: savedManualStatus });
+
     // Garante que o modal fique ocultado
     attendantModal.classList.add('hidden');
   } else {
@@ -792,12 +800,18 @@ setTimeout(dismissInitLoader, 2000);
 
 // Recebe Lista de Conversas Ativas
 socket.on('active_chats_list', (rows) => {
-  activeChats = rows;
-  updateBadge(activeCountBadge, rows.length);
+  activeChats = rows || [];
+  updateBadge(activeCountBadge, activeChats.length);
   renderActiveChats();
   checkReadOnlyBanner();
   refreshClientInfoDrawerIfOpen();
   dismissInitLoader();
+
+  // Sincroniza status dinâmico do operador se estiver em modo automático
+  if (currentUserManualStatus === 'auto') {
+    const effectiveStatus = activeChats.length > 0 ? 'atendendo' : 'online';
+    updateUserStatusUI(effectiveStatus, 'auto');
+  }
 });
 
 // Recebe Lista de Conversas do Histórico
@@ -6896,6 +6910,199 @@ let internalAudioChunks = [];
 let internalSelectedFile = null;
 let internalChatToShare = null;
 let internalDirectoryActiveTab = 'dms'; // 'dms', 'channels' ou 'groups'
+let internalDmsSubTab = 'active'; // 'active' (Conversas Abertas) ou 'all' (Outros Colegas A-Z)
+let internalRecentMessagesMap = {}; // sala_id -> última mensagem
+let internalClosedDMsMap = {}; // sala_id -> timestamp de fechamento
+let currentUserManualStatus = localStorage.getItem('tf_operator_manual_status') || 'auto';
+
+// Encerrar conversa particular (move de volta para Outros Colegas sem apagar mensagens)
+function closeInternalDMById(dmRoomId, operatorName) {
+  if (!currentOperator || !currentOperator.id) return;
+  const now = new Date().toISOString();
+  socket.emit('internal_close_dm', {
+    atendente_id: currentOperator.id,
+    sala_id: dmRoomId
+  });
+  internalClosedDMsMap[dmRoomId] = now;
+  showInputBarNotification(`Conversa com ${operatorName || 'colega'} encerrada. O histórico continua salvo!`);
+  if (currentInternalRoomId === dmRoomId) {
+    showInternalDirectoryView();
+  }
+  renderInternalDMsList();
+}
+
+function closeCurrentInternalDM() {
+  if (!currentInternalRoomId || !currentInternalRoomId.startsWith('dm_')) return;
+  const titleEl = document.getElementById('internal-drawer-title');
+  const opName = titleEl ? titleEl.textContent : 'Colega';
+  closeInternalDMById(currentInternalRoomId, opName);
+}
+
+// Alterna entre as sub-abas de Particulares (Conversas Abertas vs Outros Colegas A-Z)
+function switchInternalDmsSubTab(subTab) {
+  internalDmsSubTab = subTab;
+
+  const btnActive = document.getElementById('subtab-btn-dms-active');
+  const btnAll = document.getElementById('subtab-btn-dms-all');
+  const pill = document.getElementById('internal-dms-subtab-pill');
+
+  const activeClass = 'flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-active';
+  const inactiveClass = 'flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive';
+
+  if (btnActive) btnActive.className = subTab === 'active' ? activeClass : inactiveClass;
+  if (btnAll) btnAll.className = subTab === 'all' ? activeClass : inactiveClass;
+
+  if (pill) {
+    pill.style.transform = subTab === 'active' ? 'translate3d(0, 0, 0)' : 'translate3d(calc(100% + 4px), 0, 0)';
+  }
+
+  const searchInput = document.getElementById('internal-dms-search-input');
+  const query = searchInput ? searchInput.value.trim() : '';
+  renderInternalDMsList(query);
+}
+
+// Formata timestamp relativo amigável
+function formatInternalRelativeTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) {
+    return timeStr;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `Ontem, ${timeStr}`;
+  }
+  return `${date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} • ${timeStr}`;
+}
+
+// ==============================================================================
+// 🟢 GERENCIAMENTO DE STATUS DO USUÁRIO (MANUAL & AUTOMÁTICO)
+// ==============================================================================
+
+function toggleUserStatusMenu(e) {
+  if (e) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  const menu = document.getElementById('user-status-menu');
+  const chevron = document.getElementById('user-status-chevron');
+  if (!menu) return;
+
+  const isHidden = menu.classList.contains('hidden');
+  if (isHidden) {
+    const opts = menu.querySelectorAll('.status-opt');
+    opts.forEach(opt => {
+      const st = opt.getAttribute('data-status');
+      if (st === currentUserManualStatus) {
+        opt.setAttribute('data-active', 'true');
+      } else {
+        opt.removeAttribute('data-active');
+      }
+    });
+
+    const usernameEl = document.getElementById('user-status-current-username');
+    if (usernameEl && currentOperator) {
+      usernameEl.textContent = currentOperator.name || currentOperator.id || 'Operador';
+    }
+
+    menu.classList.remove('hidden');
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+  } else {
+    menu.classList.add('hidden');
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
+  }
+}
+
+function setUserStatus(status) {
+  currentUserManualStatus = status;
+  localStorage.setItem('tf_operator_manual_status', status);
+
+  const menu = document.getElementById('user-status-menu');
+  const chevron = document.getElementById('user-status-chevron');
+  if (menu) menu.classList.add('hidden');
+  if (chevron) chevron.style.transform = 'rotate(0deg)';
+
+  if (currentOperator && currentOperator.id) {
+    socket.emit('internal_set_status', {
+      atendente_id: currentOperator.id,
+      status: status
+    });
+  }
+
+  let effectiveStatus = status;
+  if (status === 'auto') {
+    effectiveStatus = (activeChats && activeChats.length > 0) ? 'atendendo' : 'online';
+  }
+
+  updateUserStatusUI(effectiveStatus, status);
+}
+
+function updateUserStatusUI(effectiveStatus, manualStatus) {
+  const dot = document.getElementById('current-user-status-dot');
+  const label = document.getElementById('current-user-status-label');
+  const manual = manualStatus || currentUserManualStatus || 'auto';
+
+  const statusMap = {
+    online: {
+      label: 'Disponível',
+      dotClass: 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20'
+    },
+    atendendo: {
+      label: 'Atendendo',
+      dotClass: 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20'
+    },
+    ocupado: {
+      label: 'Ocupado',
+      dotClass: 'bg-rose-500 shadow-sm shadow-rose-500 ring-2 ring-rose-500/20'
+    },
+    ausente: {
+      label: 'Ausente',
+      dotClass: 'bg-orange-500 shadow-sm shadow-orange-500 ring-2 ring-orange-500/20'
+    },
+    offline: {
+      label: 'Invisível',
+      dotClass: 'bg-slate-500'
+    }
+  };
+
+  const currentCfg = statusMap[effectiveStatus] || statusMap.online;
+
+  if (dot) {
+    dot.className = `w-2.5 h-2.5 rounded-full shrink-0 ${currentCfg.dotClass}`;
+  }
+
+  if (label) {
+    label.textContent = currentCfg.label;
+  }
+
+  const menu = document.getElementById('user-status-menu');
+  if (menu) {
+    const opts = menu.querySelectorAll('.status-opt');
+    opts.forEach(opt => {
+      const st = opt.getAttribute('data-status');
+      if (st === manual) {
+        opt.setAttribute('data-active', 'true');
+      } else {
+        opt.removeAttribute('data-active');
+      }
+    });
+  }
+}
+
+// Fechar menu de status ao clicar fora
+document.addEventListener('click', (e) => {
+  const container = document.getElementById('user-status-dropdown-container');
+  const menu = document.getElementById('user-status-menu');
+  const chevron = document.getElementById('user-status-chevron');
+  if (container && menu && !container.contains(e.target) && !menu.classList.contains('hidden')) {
+    menu.classList.add('hidden');
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
+  }
+});
 
 // 📢 Som 3: Notificação do CHAT INTERNO DA EQUIPE (Arpejo duplo harmônico de sino "team chime" a 587Hz -> 784Hz)
 function playInternalChatNotificationSound() {
@@ -7163,6 +7370,12 @@ function showInternalDirectoryView() {
   }
   if (backBtn) backBtn.classList.add('hidden');
 
+  const closeDmBtn = document.getElementById('btn-internal-close-dm');
+  if (closeDmBtn) {
+    closeDmBtn.classList.add('hidden');
+    closeDmBtn.classList.remove('flex');
+  }
+
   if (iconContainer) {
     iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box transition-all duration-300';
     iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
@@ -7301,6 +7514,17 @@ function openInternalGroup(groupId, groupName, groupDesc, memberCount, creatorNa
   }
   if (backBtn) backBtn.classList.remove('hidden');
 
+  const voiceCallBtn = document.getElementById('btn-internal-voice-call');
+  if (voiceCallBtn) {
+    voiceCallBtn.classList.remove('hidden');
+    voiceCallBtn.classList.add('flex');
+  }
+
+  const closeDmBtn = document.getElementById('btn-internal-close-dm');
+  if (closeDmBtn) {
+    closeDmBtn.classList.add('hidden');
+    closeDmBtn.classList.remove('flex');
+  }
   if (iconContainer) {
     iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box transition-all duration-300';
     iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
@@ -7327,39 +7551,22 @@ function openInternalGroup(groupId, groupName, groupDesc, memberCount, creatorNa
   }, 100);
 }
 
+let groupSelectedMemberIds = new Set();
+
 // Modal de Criação de Grupo
 function openCreateGroupModal() {
   const modal = document.getElementById('internal-create-group-modal');
   const nameInput = document.getElementById('input-group-name');
   const descInput = document.getElementById('input-group-desc');
-  const checklist = document.getElementById('group-members-checklist');
-  const countSpan = document.getElementById('group-selected-members-count');
+  const searchInput = document.getElementById('input-group-search-members');
+
+  groupSelectedMemberIds.clear();
 
   if (nameInput) nameInput.value = '';
   if (descInput) descInput.value = '';
-  if (countSpan) countSpan.textContent = '0 selecionados';
+  if (searchInput) searchInput.value = '';
 
-  if (checklist) {
-    checklist.innerHTML = '';
-    const currentOpId = currentOperator ? String(currentOperator.id) : null;
-    internalOperatorsList.forEach(op => {
-      if (currentOpId && String(op.id) === currentOpId) return;
-
-      const item = document.createElement('label');
-      item.className = 'flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors select-none';
-      item.innerHTML = `
-        <input type="checkbox" value="${op.id}" onchange="updateSelectedGroupMembersCount()" class="w-4 h-4 rounded accent-[var(--color-primary-theme)] cursor-pointer group-member-chk">
-        <div class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 internal-avatar">
-          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-lg">` : (op.nome ? op.nome.charAt(0).toUpperCase() : 'U')}
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-xs font-bold text-foreground truncate leading-tight">${escapeHtml(op.nome)}</p>
-          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(op.setor || 'Equipe')}</p>
-        </div>
-      `;
-      checklist.appendChild(item);
-    });
-  }
+  renderGroupDualLists();
 
   if (modal) {
     modal.classList.remove('hidden');
@@ -7376,20 +7583,165 @@ function closeCreateGroupModal() {
     modal.classList.add('hidden');
     modal.classList.remove('internal-modal-overlay');
   }
+  groupSelectedMemberIds.clear();
 }
 
-function updateSelectedGroupMembersCount() {
-  const chks = document.querySelectorAll('.group-member-chk:checked');
-  const countSpan = document.getElementById('group-selected-members-count');
+// Renderiza ambas as listagens lado a lado (Disponíveis e Selecionados)
+function renderGroupDualLists() {
+  const searchInput = document.getElementById('input-group-search-members');
+  const q = searchInput ? searchInput.value : '';
+  renderGroupAvailableMembersList(q);
+  renderGroupSelectedMembersList();
+}
+
+// 1. Renderiza a lista da esquerda: Colegas Disponíveis para Adicionar
+function renderGroupAvailableMembersList(query = '') {
+  const container = document.getElementById('group-members-checklist');
+  const countSpan = document.getElementById('group-available-members-count');
+  if (!container) return;
+
+  container.innerHTML = '';
+  const currentOpId = currentOperator ? String(currentOperator.id) : null;
+  const q = (query || '').trim().toLowerCase();
+
+  // Deduplica colegas
+  const uniqueOps = [];
+  const seenIds = new Set();
+  const seenNames = new Set();
+
+  (internalOperatorsList || []).forEach(op => {
+    if (!op || (currentOpId && String(op.id) === currentOpId)) return;
+    const cleanName = (op.nome || '').trim().toLowerCase();
+    if (seenIds.has(String(op.id)) || (cleanName && seenNames.has(cleanName))) return;
+    seenIds.add(String(op.id));
+    if (cleanName) seenNames.add(cleanName);
+    uniqueOps.push(op);
+  });
+
+  // Filtra apenas os que AINDA NÃO FORAM ADICIONADOS ao grupo
+  const availableOps = uniqueOps.filter(op => !groupSelectedMemberIds.has(String(op.id)));
+
   if (countSpan) {
-    countSpan.textContent = `${chks.length} selecionado${chks.length === 1 ? '' : 's'}`;
+    countSpan.textContent = `${availableOps.length} disponível${availableOps.length === 1 ? '' : 'is'}`;
   }
+
+  // Aplica busca por texto
+  const filtered = availableOps.filter(op => {
+    if (!q) return true;
+    return (op.nome && op.nome.toLowerCase().includes(q)) || (op.setor && op.setor.toLowerCase().includes(q));
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="h-full flex flex-col items-center justify-center text-center py-10 text-[var(--color-text-muted)]">
+        <p class="text-xs font-bold">${availableOps.length === 0 ? 'Todos os colegas já foram incluídos!' : 'Nenhum colega encontrado'}</p>
+        ${q && availableOps.length > 0 ? `<p class="text-[10px] mt-0.5 text-slate-400">Tente buscar por outro termo</p>` : ''}
+      </div>
+    `;
+    return;
+  }
+
+  filtered.forEach(op => {
+    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'U';
+
+    const item = document.createElement('div');
+    item.className = 'flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 cursor-pointer transition-all select-none group';
+    item.onclick = () => addMemberToGroup(op.id);
+
+    item.innerHTML = `
+      <div class="flex items-center gap-2.5 min-w-0 flex-1">
+        <div class="relative w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 internal-avatar">
+          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-lg">` : initial}
+          <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ${op.status === 'online' ? 'bg-emerald-500' : (op.status === 'atendendo' ? 'bg-amber-500' : 'bg-slate-500')}"></span>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-foreground truncate leading-tight">${escapeHtml(op.nome)}</p>
+          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(op.setor || 'Equipe')}</p>
+        </div>
+      </div>
+      <button type="button" class="w-6 h-6 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/20 group-hover:border-emerald-500/40 flex items-center justify-center transition-all shrink-0 cursor-pointer shadow-xs" title="Adicionar ao grupo">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    `;
+    container.appendChild(item);
+  });
+}
+
+// 2. Renderiza a lista da direita: Membros já Adicionados ao Grupo
+function renderGroupSelectedMembersList() {
+  const container = document.getElementById('group-selected-list');
+  const countSpan = document.getElementById('group-selected-members-count');
+  if (!container) return;
+
+  const count = groupSelectedMemberIds.size;
+  if (countSpan) {
+    countSpan.textContent = `${count} adicionado${count === 1 ? '' : 's'}`;
+  }
+
+  container.innerHTML = '';
+
+  if (count === 0) {
+    container.innerHTML = `
+      <div class="h-full flex flex-col items-center justify-center text-center p-4 text-[var(--color-text-muted)] my-auto">
+        <div class="w-9 h-9 rounded-xl mb-2 flex items-center justify-center internal-icon-box opacity-60">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>
+        </div>
+        <p class="text-xs font-bold text-foreground">Nenhum membro no grupo</p>
+        <p class="text-[10px] text-[var(--color-text-muted)] mt-0.5 max-w-[180px]">Clique nos colegas à esquerda para incluí-los no grupo.</p>
+      </div>
+    `;
+    return;
+  }
+
+  groupSelectedMemberIds.forEach(id => {
+    const op = internalOperatorsList.find(o => String(o.id) === String(id));
+    const name = op ? op.nome : id;
+    const setor = op ? op.setor : 'Equipe';
+    const avatar = op ? op.avatar : null;
+    const initial = name ? name.charAt(0).toUpperCase() : 'U';
+
+    const item = document.createElement('div');
+    item.className = 'flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all select-none group';
+
+    item.innerHTML = `
+      <div class="flex items-center gap-2.5 min-w-0 flex-1">
+        <div class="relative w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 internal-avatar bg-[var(--color-primary-theme)] text-white">
+          ${avatar ? `<img src="${avatar}" class="w-full h-full object-cover rounded-lg">` : initial}
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-foreground truncate leading-tight">${escapeHtml(name)}</p>
+          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(setor)}</p>
+        </div>
+      </div>
+      <button type="button" onclick="removeMemberFromGroup('${id}')" class="w-6 h-6 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/20 hover:border-rose-500/40 flex items-center justify-center transition-all shrink-0 cursor-pointer shadow-xs" title="Remover ${escapeHtml(name)} do grupo">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function filterGroupMembersChecklist() {
+  const searchInput = document.getElementById('input-group-search-members');
+  const q = searchInput ? searchInput.value : '';
+  renderGroupAvailableMembersList(q);
+}
+
+function addMemberToGroup(opId) {
+  const idStr = String(opId);
+  groupSelectedMemberIds.add(idStr);
+  renderGroupDualLists();
+}
+
+function removeMemberFromGroup(opId) {
+  const idStr = String(opId);
+  groupSelectedMemberIds.delete(idStr);
+  renderGroupDualLists();
 }
 
 function submitCreateGroup() {
   const nameInput = document.getElementById('input-group-name');
   const descInput = document.getElementById('input-group-desc');
-  const chks = document.querySelectorAll('.group-member-chk:checked');
 
   const nome = nameInput ? nameInput.value.trim() : '';
   if (!nome) {
@@ -7398,7 +7750,7 @@ function submitCreateGroup() {
   }
 
   const descricao = descInput ? descInput.value.trim() : '';
-  const membros = Array.from(chks).map(c => c.value);
+  const membros = Array.from(groupSelectedMemberIds);
 
   const opId = currentOperator ? currentOperator.id : 'admin';
   const opNome = currentOperator ? currentOperator.nome : 'Administrador';
@@ -7460,7 +7812,7 @@ function renderInternalChannelsList() {
   });
 }
 
-// Renderiza a lista de Colegas para Conversas 1x1 (DMs)
+// Renderiza a lista de Colegas para Conversas 1x1 (DMs) com sub-abas (Abertas / Atividade Recente vs Outros Colegas A-Z)
 function renderInternalDMsList(filterQuery = '') {
   const container = document.getElementById('internal-dms-list');
   if (!container) return;
@@ -7468,62 +7820,101 @@ function renderInternalDMsList(filterQuery = '') {
   container.innerHTML = '';
 
   const currentOpId = currentOperator ? String(currentOperator.id) : null;
-  const filtered = internalOperatorsList.filter(op => {
-    if (currentOpId && String(op.id) === currentOpId) return false; // Não exibir a si mesmo
-    if (!filterQuery) return true;
-    const q = filterQuery.toLowerCase();
-    return op.nome.toLowerCase().includes(q) || (op.setor && op.setor.toLowerCase().includes(q));
+
+  // Deduplica e remove a si próprio
+  const uniqueOps = [];
+  const seenIds = new Set();
+  const seenNames = new Set();
+
+  (internalOperatorsList || []).forEach(op => {
+    if (!op || (currentOpId && String(op.id) === currentOpId)) return;
+    const cleanName = (op.nome || '').trim().toLowerCase();
+    if (seenIds.has(String(op.id)) || (cleanName && seenNames.has(cleanName))) return;
+    seenIds.add(String(op.id));
+    if (cleanName) seenNames.add(cleanName);
+    uniqueOps.push(op);
   });
 
-  if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="text-center py-10 text-[var(--color-text-muted)] internal-tab-pane-anim">
-        <p class="text-xs font-bold">Nenhum colega encontrado</p>
-      </div>
-    `;
-    return;
-  }
-
+  // Mapeia histórico, status e última atividade de cada colega
   let totalDMsUnread = 0;
+  let totalOpenDMsCount = 0;
 
-  filtered.forEach((op, index) => {
+  const mappedOps = uniqueOps.map(op => {
     const dmRoomId = `dm_${[currentOpId || 'me', op.id].sort().join('_')}`;
     const unreadCount = internalRoomUnreads[dmRoomId] || 0;
     totalDMsUnread += unreadCount;
-    const isUnread = unreadCount > 0;
 
-    const statusColor = op.status === 'online' ? 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20' : (op.status === 'atendendo' ? 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20' : 'bg-slate-500');
-    const statusLabel = op.status === 'online' ? '🟢 Online' : (op.status === 'atendendo' ? `🟡 Atendendo (${op.active_chats || 1})` : '⚪ Offline');
+    const lastMsg = internalRecentMessagesMap[dmRoomId] || (internalMessagesMap[dmRoomId] && internalMessagesMap[dmRoomId].length > 0 ? internalMessagesMap[dmRoomId][internalMessagesMap[dmRoomId].length - 1] : null);
 
-    const card = document.createElement('div');
-    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
-    card.style.animationDelay = `${Math.min(index, 12) * 0.04}s`;
-    card.onclick = () => openInternalDM(op.id, op.nome, op.setor, op.status);
+    const isClosed = internalClosedDMsMap[dmRoomId] && lastMsg && new Date(lastMsg.timestamp).getTime() <= new Date(internalClosedDMsMap[dmRoomId]).getTime();
+    const hasConversation = !!lastMsg && !isClosed;
+    if (hasConversation) totalOpenDMsCount++;
 
-    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'U';
+    const lastTimestamp = lastMsg && lastMsg.timestamp ? new Date(lastMsg.timestamp).getTime() : 0;
 
-    card.innerHTML = `
-      <div class="flex items-center gap-3.5 min-w-0">
-        <div class="relative w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar">
-          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-2xl">` : initial}
-          <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]" title="${statusLabel}"></span>
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(op.nome)}</h4>
-            <span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${escapeHtml(op.setor || 'Equipe')}</span>
-          </div>
-        </div>
-      </div>
-      <div class="flex items-center gap-2.5 shrink-0">
-        ${unreadCount > 0 ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold internal-unread-badge">${unreadCount}</span>` : ''}
-        <button class="px-3 py-1.5 text-xs internal-btn-action cursor-pointer">Conversar</button>
-      </div>
-    `;
+    let statusColor = 'bg-slate-500';
+    let statusLabel = 'Offline';
+    if (op.status === 'online') {
+      statusColor = 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20';
+      statusLabel = 'Disponível';
+    } else if (op.status === 'atendendo') {
+      statusColor = 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20';
+      statusLabel = op.active_chats > 0 ? `Em Atendimento (${op.active_chats})` : 'Em Atendimento';
+    } else if (op.status === 'ocupado') {
+      statusColor = 'bg-rose-500 shadow-sm shadow-rose-500 ring-2 ring-rose-500/20';
+      statusLabel = 'Ocupado';
+    } else if (op.status === 'ausente') {
+      statusColor = 'bg-orange-500 shadow-sm shadow-orange-500 ring-2 ring-orange-500/20';
+      statusLabel = 'Ausente';
+    } else if (op.status === 'offline') {
+      statusColor = 'bg-slate-500';
+      statusLabel = 'Offline';
+    }
 
-    container.appendChild(card);
+    return {
+      ...op,
+      dmRoomId,
+      unreadCount,
+      lastMsg,
+      hasConversation,
+      lastTimestamp,
+      statusColor,
+      statusLabel
+    };
   });
 
+  // 1. Conversas Abertas: ordenadas por atividade mais recente (timestamp DESC)
+  const openConversations = mappedOps
+    .filter(o => o.hasConversation)
+    .sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+
+  // 2. Outros Colegas: ordenados em ordem alfabética (A-Z)
+  const otherColleagues = mappedOps
+    .filter(o => !o.hasConversation)
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+
+  // Atualiza badges das sub-abas
+  const badgeActiveCount = document.getElementById('badge-dms-active-count');
+  if (badgeActiveCount) {
+    if (totalOpenDMsCount > 0) {
+      badgeActiveCount.textContent = totalOpenDMsCount;
+      badgeActiveCount.classList.remove('hidden');
+    } else {
+      badgeActiveCount.classList.add('hidden');
+    }
+  }
+
+  const badgeAllCount = document.getElementById('badge-dms-all-count');
+  if (badgeAllCount) {
+    if (otherColleagues.length > 0) {
+      badgeAllCount.textContent = otherColleagues.length;
+      badgeAllCount.classList.remove('hidden');
+    } else {
+      badgeAllCount.classList.add('hidden');
+    }
+  }
+
+  // Atualiza badge principal da aba de Particulares
   const badgeDMs = document.getElementById('badge-internal-dms-unread');
   if (badgeDMs) {
     if (totalDMsUnread > 0) {
@@ -7533,6 +7924,131 @@ function renderInternalDMsList(filterQuery = '') {
       badgeDMs.classList.add('hidden');
     }
   }
+
+  // Define lista alvo conforme a sub-aba ativa
+  const currentSubTab = internalDmsSubTab || 'active';
+  const targetGroup = currentSubTab === 'active' ? openConversations : otherColleagues;
+
+  // Aplica filtro de busca (se houver)
+  const q = filterQuery.trim().toLowerCase();
+  const filtered = targetGroup.filter(op => {
+    if (!q) return true;
+    return (op.nome && op.nome.toLowerCase().includes(q)) || (op.setor && op.setor.toLowerCase().includes(q));
+  });
+
+  // Renderização de Estado Vazio
+  if (filtered.length === 0) {
+    if (currentSubTab === 'active') {
+      if (!q && openConversations.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 px-4 internal-tab-pane-anim flex flex-col items-center">
+            <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center internal-icon-box opacity-70">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <p class="text-xs font-bold text-foreground">Nenhuma conversa aberta no momento</p>
+            <p class="text-[11px] text-[var(--color-text-muted)] mt-1 max-w-[240px]">Inicie uma conversa direta 1x1 com qualquer colega da equipe.</p>
+            <button onclick="switchInternalDmsSubTab('all')" type="button" class="mt-4 px-4 py-2 text-xs internal-btn-action font-bold cursor-pointer inline-flex items-center gap-1.5">
+              <span>Ver Todos os Colegas (${otherColleagues.length})</span>
+            </button>
+          </div>
+        `;
+        return;
+      }
+    }
+
+    container.innerHTML = `
+      <div class="text-center py-10 text-[var(--color-text-muted)] internal-tab-pane-anim">
+        <p class="text-xs font-bold">Nenhum colega encontrado</p>
+        ${q ? `<p class="text-[10px] mt-1 text-slate-400">Tente buscar por outro termo</p>` : ''}
+      </div>
+    `;
+    return;
+  }
+
+  // Renderiza os cards da lista
+  filtered.forEach((op, index) => {
+    const isUnread = op.unreadCount > 0;
+    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'U';
+
+    const card = document.createElement('div');
+    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
+    card.style.animationDelay = `${Math.min(index, 12) * 0.035}s`;
+    card.onclick = () => openInternalDM(op.id, op.nome, op.setor, op.status);
+
+    if (currentSubTab === 'active') {
+      // Formato Rico para Conversas Abertas: Prévia da última mensagem e hora
+      let lastMsgSnippet = 'Iniciar conversa...';
+      let timeFormatted = '';
+
+      if (op.lastMsg) {
+        timeFormatted = formatInternalRelativeTime(op.lastMsg.timestamp);
+        const isFromMe = currentOperator && String(op.lastMsg.remetente_id) === String(currentOperator.id);
+        const senderPrefix = isFromMe ? '<span class="text-slate-400 font-semibold">Você: </span>' : '';
+
+        if (op.lastMsg.card_meta) {
+          lastMsgSnippet = `${senderPrefix}💼 Card de Atendimento`;
+        } else if (op.lastMsg.midia_tipo === 'audio') {
+          lastMsgSnippet = `${senderPrefix}🎵 Áudio de voz`;
+        } else if (op.lastMsg.midia_url) {
+          lastMsgSnippet = `${senderPrefix}📎 Arquivo anexo`;
+        } else if (op.lastMsg.texto) {
+          lastMsgSnippet = `${senderPrefix}${escapeHtml(op.lastMsg.texto)}`;
+        }
+      }
+
+      card.innerHTML = `
+        <div class="flex items-center gap-3.5 min-w-0 flex-1">
+          <div class="relative w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar">
+            ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-2xl">` : initial}
+            <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${op.statusColor} border-2 border-[var(--color-card,#0f172a)]" title="${op.statusLabel}"></span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(op.nome)}</h4>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${escapeHtml(op.setor || 'Equipe')}</span>
+              ${op.unreadCount > 0 ? `<span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white leading-none animate-pulse">${op.unreadCount}</span>` : ''}
+            </div>
+            <p class="text-[11px] text-[var(--color-text-muted)] truncate font-medium">${lastMsgSnippet}</p>
+          </div>
+        </div>
+        <div class="flex flex-col items-end justify-center gap-1.5 shrink-0 pl-2">
+          ${timeFormatted ? `
+            <div class="w-[94px] h-[26px] flex items-center justify-center text-[10px] font-bold text-slate-300 bg-white/5 border border-white/10 rounded-lg select-none shadow-xs whitespace-nowrap">
+              ${timeFormatted}
+            </div>
+          ` : `
+            <div class="w-[94px] h-[26px]"></div>
+          `}
+          <button type="button" onclick="event.stopPropagation(); closeInternalDMById('${op.dmRoomId}', '${escapeHtml(op.nome)}')" class="w-[94px] h-[26px] rounded-lg text-[10px] font-bold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs select-none" title="Encerrar conversa (o histórico continuará salvo e o contato volta para Outros Colegas)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Encerrar</span>
+          </button>
+        </div>
+      `;
+    } else {
+      // Formato de Diretório Alfabético A-Z para Outros Colegas
+      card.innerHTML = `
+        <div class="flex items-center gap-3.5 min-w-0 flex-1">
+          <div class="relative w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar">
+            ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-2xl">` : initial}
+            <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${op.statusColor} border-2 border-[var(--color-card,#0f172a)]" title="${op.statusLabel}"></span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(op.nome)}</h4>
+              <span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider internal-sector-tag">${escapeHtml(op.setor || 'Equipe')}</span>
+            </div>
+            <p class="text-[10px] text-[var(--color-text-muted)] mt-0.5 truncate">${op.statusLabel}</p>
+          </div>
+        </div>
+        <div class="flex items-center justify-end shrink-0 pl-2">
+          <button class="w-[94px] h-[26px] rounded-lg text-[10px] internal-btn-action cursor-pointer font-bold flex items-center justify-center shadow-xs">Conversar</button>
+        </div>
+      `;
+    }
+
+    container.appendChild(card);
+  });
 }
 
 // Filtra a lista de DMs pelo input de busca
@@ -7540,6 +8056,96 @@ function filterInternalDMsList() {
   const input = document.getElementById('internal-dms-search-input');
   const q = input ? input.value.trim() : '';
   renderInternalDMsList(q);
+}
+
+// Abrir Conversa Particular 1x1 (DM)
+function openInternalDM(otherId, otherName, otherSetor, otherStatus) {
+  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+  const dmRoomId = `dm_${[currentOpId, String(otherId)].sort().join('_')}`;
+  
+  currentInternalRoomId = dmRoomId;
+  internalRoomUnreads[dmRoomId] = 0;
+  updateInternalTotalUnreadBadge();
+
+  const dirView = document.getElementById('internal-directory-view');
+  const chatView = document.getElementById('internal-chat-view');
+  const backBtn = document.getElementById('btn-internal-back-to-list');
+  const titleEl = document.getElementById('internal-drawer-title');
+  const descEl = document.getElementById('internal-drawer-desc');
+  const membersEl = document.getElementById('internal-drawer-members-count');
+  const iconContainer = document.getElementById('internal-drawer-icon-container');
+
+  if (dirView) {
+    dirView.classList.add('hidden');
+    dirView.classList.remove('internal-view-slide-right', 'internal-view-slide-left');
+  }
+  if (chatView) {
+    chatView.classList.remove('hidden');
+    chatView.classList.remove('internal-view-slide-left');
+    chatView.classList.remove('internal-view-slide-right');
+    void chatView.offsetWidth;
+    chatView.classList.add('internal-view-slide-right');
+  }
+  if (backBtn) backBtn.classList.remove('hidden');
+
+  const voiceCallBtn = document.getElementById('btn-internal-voice-call');
+  if (voiceCallBtn) {
+    voiceCallBtn.classList.remove('hidden');
+    voiceCallBtn.classList.add('flex');
+  }
+
+  const closeDmBtn = document.getElementById('btn-internal-close-dm');
+  if (closeDmBtn) {
+    closeDmBtn.classList.remove('hidden');
+    closeDmBtn.classList.add('flex');
+  }
+
+  if (iconContainer) {
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box transition-all duration-300';
+    iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  }
+
+  if (titleEl) titleEl.textContent = otherName || 'Colega';
+  if (descEl) {
+    descEl.textContent = `${otherSetor || 'Equipe'}`;
+    descEl.classList.remove('hidden');
+  }
+  if (membersEl) {
+    membersEl.textContent = otherStatus ? String(otherStatus).toUpperCase() : 'CONVERSA';
+    membersEl.classList.remove('hidden');
+  }
+
+  if (currentOperator) {
+    socket.emit('internal_join_room', { sala_id: dmRoomId, atendente_id: currentOperator.id });
+  }
+
+  renderInternalMessages();
+  setTimeout(() => {
+    const input = document.getElementById('internal-chat-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+// Encerrar a conversa DM ativa atual
+function closeCurrentInternalDM() {
+  if (!currentInternalRoomId || !currentInternalRoomId.startsWith('dm_')) return;
+  closeInternalDMById(currentInternalRoomId);
+}
+
+// Encerrar conversa DM por ID (move para Outros Colegas mantendo histórico)
+function closeInternalDMById(roomId, contactName) {
+  if (!roomId || !currentOperator) return;
+  socket.emit('internal_close_dm', {
+    atendente_id: currentOperator.id,
+    sala_id: roomId
+  });
+  internalClosedDMsMap[roomId] = new Date().toISOString();
+  if (currentInternalRoomId === roomId) {
+    showInternalDirectoryView();
+  } else {
+    renderInternalDMsList();
+  }
+  showInputBarNotification(`Conversa ${contactName ? 'com ' + contactName : ''} encerrada.`);
 }
 
 // Abrir Canal da Equipe
@@ -7569,6 +8175,17 @@ function openInternalChannel(channelId, channelName, channelDesc) {
   }
   if (backBtn) backBtn.classList.remove('hidden');
 
+  const voiceCallBtn = document.getElementById('btn-internal-voice-call');
+  if (voiceCallBtn) {
+    voiceCallBtn.classList.remove('hidden');
+    voiceCallBtn.classList.add('flex');
+  }
+
+  const closeDmBtn = document.getElementById('btn-internal-close-dm');
+  if (closeDmBtn) {
+    closeDmBtn.classList.add('hidden');
+    closeDmBtn.classList.remove('flex');
+  }
   if (iconContainer) {
     iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center font-mono font-black text-lg shrink-0 internal-icon-box transition-all duration-300';
     iconContainer.innerHTML = '#';
@@ -7625,10 +8242,36 @@ function openInternalDM(otherId, otherName, otherSector, otherStatus) {
   }
   if (backBtn) backBtn.classList.remove('hidden');
 
+  const closeDmBtn = document.getElementById('btn-internal-close-dm');
+  if (closeDmBtn) {
+    closeDmBtn.classList.remove('hidden');
+    closeDmBtn.classList.add('flex');
+  }
+
+  const voiceCallBtn = document.getElementById('btn-internal-voice-call');
+  if (voiceCallBtn) {
+    voiceCallBtn.classList.remove('hidden');
+    voiceCallBtn.classList.add('flex');
+  }
+
   const op = internalOperatorsList.find(o => String(o.id) === String(otherId));
   const initial = otherName ? otherName.charAt(0).toUpperCase() : 'U';
-  const statusColor = otherStatus === 'online' ? 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20' : (otherStatus === 'atendendo' ? 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20' : 'bg-slate-500');
-  const statusLabel = otherStatus === 'online' ? '🟢 Online' : (otherStatus === 'atendendo' ? '🟡 Atendendo' : '⚪ Offline');
+  
+  let statusColor = 'bg-slate-500';
+  let statusLabel = 'Offline';
+  if (otherStatus === 'online') {
+    statusColor = 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20';
+    statusLabel = 'Disponível';
+  } else if (otherStatus === 'atendendo') {
+    statusColor = 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20';
+    statusLabel = 'Em Atendimento';
+  } else if (otherStatus === 'ocupado') {
+    statusColor = 'bg-rose-500 shadow-sm shadow-rose-500 ring-2 ring-rose-500/20';
+    statusLabel = 'Ocupado';
+  } else if (otherStatus === 'ausente') {
+    statusColor = 'bg-orange-500 shadow-sm shadow-orange-500 ring-2 ring-orange-500/20';
+    statusLabel = 'Ausente';
+  }
 
   if (iconContainer) {
     iconContainer.className = 'relative w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar transition-all duration-300';
@@ -8669,11 +9312,32 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Recebe dados das salas e operadores
-socket.on('internal_rooms_data', ({ salas, atendentes }) => {
+socket.on('internal_rooms_data', ({ salas, atendentes, recent_messages, closed_dms }) => {
   internalRoomsList = salas || [];
   internalOperatorsList = atendentes || [];
+  if (recent_messages) {
+    internalRecentMessagesMap = { ...internalRecentMessagesMap, ...recent_messages };
+  }
+  if (closed_dms) {
+    internalClosedDMsMap = { ...internalClosedDMsMap, ...closed_dms };
+  }
+
+  if (currentOperator && currentOperator.id) {
+    const me = internalOperatorsList.find(o => String(o.id) === String(currentOperator.id));
+    if (me) {
+      if (me.manual_status) currentUserManualStatus = me.manual_status;
+      updateUserStatusUI(me.status, me.manual_status);
+    }
+  }
+
   renderInternalChannelsList();
   renderInternalGroupsList();
+  renderInternalDMsList();
+});
+
+// Atualização de status de fechamento de conversa particular
+socket.on('internal_dm_status_updated', ({ sala_id, fechada_em }) => {
+  internalClosedDMsMap[sala_id] = fechada_em;
   renderInternalDMsList();
 });
 
@@ -8705,6 +9369,8 @@ socket.on('internal_new_message', (msg) => {
     internalMessagesMap[msg.sala_id] = [];
   }
   internalMessagesMap[msg.sala_id].push(msg);
+  internalRecentMessagesMap[msg.sala_id] = msg;
+  renderInternalDMsList();
 
   if (currentInternalRoomId === msg.sala_id) {
     const container = document.getElementById('internal-messages-container');
@@ -8727,6 +9393,14 @@ socket.on('internal_new_message', (msg) => {
 
 // Alerta sonoro e badge de mensagem de colega
 socket.on('internal_message_alert', ({ sala_id, remetente_id, remetente_nome, texto }) => {
+  internalRecentMessagesMap[sala_id] = {
+    sala_id,
+    remetente_id,
+    remetente_nome,
+    texto,
+    timestamp: new Date().toISOString()
+  };
+
   const isFromMe = currentOperator && String(remetente_id) === String(currentOperator.id);
   if (!isFromMe) {
     playInternalChatNotificationSound();
@@ -8738,19 +9412,33 @@ socket.on('internal_message_alert', ({ sala_id, remetente_id, remetente_nome, te
       renderInternalGroupsList();
       renderInternalDMsList();
     }
+  } else {
+    renderInternalDMsList();
   }
 });
 
 // Atualização de status de operadores
-socket.on('internal_operator_status_changed', ({ atendente_id, status }) => {
+socket.on('internal_operator_status_changed', ({ atendente_id, status, manual_status }) => {
+  const isMe = currentOperator && String(currentOperator.id) === String(atendente_id);
+  if (isMe) {
+    if (manual_status) currentUserManualStatus = manual_status;
+    updateUserStatusUI(status, manual_status || currentUserManualStatus);
+  }
+
   const op = internalOperatorsList.find(o => String(o.id) === String(atendente_id));
   if (op) {
     op.status = status;
+    if (manual_status) op.manual_status = manual_status;
     renderInternalDMsList();
 
     // Se estiver com a DM aberta com este operador, atualiza a bolinha no avatar do cabeçalho
     if (currentInternalRoomId && currentInternalRoomId.includes(String(atendente_id))) {
-      const statusColor = status === 'online' ? 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20' : (status === 'atendendo' ? 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20' : 'bg-slate-500');
+      let statusColor = 'bg-slate-500';
+      if (status === 'online') statusColor = 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20';
+      else if (status === 'atendendo') statusColor = 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20';
+      else if (status === 'ocupado') statusColor = 'bg-rose-500 shadow-sm shadow-rose-500 ring-2 ring-rose-500/20';
+      else if (status === 'ausente') statusColor = 'bg-orange-500 shadow-sm shadow-orange-500 ring-2 ring-orange-500/20';
+
       const dot = document.querySelector('#internal-drawer-icon-container span.rounded-full');
       if (dot) {
         dot.className = `absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]`;
@@ -8798,5 +9486,910 @@ socket.on('internal_message_deleted', ({ message_id, sala_id }) => {
     }
   }
 });
+
+// ==============================================================================
+// 🎙️ SISTEMA DE BATE-PAPO E CHAMADAS DE VOZ EM TEMPO REAL (WebRTC Full Mesh)
+// ==============================================================================
+let currentVoiceSession = null;
+let incomingVoiceCallData = null;
+let voiceLocalAudioStream = null;
+let voicePeerConnections = new Map(); // socketId -> RTCPeerConnection
+let voiceAudioContext = null;
+let voiceAnalyserNode = null;
+let voiceVadAnimationFrame = null;
+let voiceRingtoneInterval = null;
+let voiceRingtoneAudioCtx = null;
+let voiceCallSeconds = 0;
+let voiceCallTimerInterval = null;
+
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ]
+};
+
+// Transmite o estado completo da chamada de voz para o portal pai Next.js
+function broadcastVoiceStateToParent() {
+  if (window.parent && window.parent !== window) {
+    try {
+      const state = {
+        inCall: !!currentVoiceSession,
+        session: currentVoiceSession ? {
+          id: currentVoiceSession.id,
+          title: currentVoiceSession.title,
+          type: currentVoiceSession.type,
+          isMuted: currentVoiceSession.isMuted,
+          isSpeaking: currentVoiceSession.isSpeaking,
+          participants: currentVoiceSession.participants || [],
+          seconds: voiceCallSeconds || 0
+        } : null,
+        incomingCall: incomingVoiceCallData ? {
+          session_id: incomingVoiceCallData.session_id,
+          title: incomingVoiceCallData.title,
+          type: incomingVoiceCallData.type,
+          caller_id: incomingVoiceCallData.caller_id,
+          caller_name: incomingVoiceCallData.caller_name,
+          caller_avatar: incomingVoiceCallData.caller_avatar,
+          is_escalated: incomingVoiceCallData.is_escalated
+        } : null
+      };
+      window.parent.postMessage({ type: 'TICKETFLOW_VOICE_STATE', state }, '*');
+    } catch (e) {
+      console.warn('Erro ao transmitir estado de voz para janela pai:', e);
+    }
+  }
+}
+window.broadcastVoiceStateToParent = broadcastVoiceStateToParent;
+
+// Sintetizador de Ringtone Sonoro (Web Audio API - Sem necessidade de arquivos externos)
+function playSynthesizedVoiceRingtone(type = 'incoming') {
+  stopSynthesizedVoiceRingtone();
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    voiceRingtoneAudioCtx = new AudioContextClass();
+
+    const playBeep = () => {
+      if (!voiceRingtoneAudioCtx || voiceRingtoneAudioCtx.state === 'closed') return;
+      const now = voiceRingtoneAudioCtx.currentTime;
+
+      // Frequências harmoniosas (440Hz + 480Hz para tom de chamada)
+      const osc1 = voiceRingtoneAudioCtx.createOscillator();
+      const osc2 = voiceRingtoneAudioCtx.createOscillator();
+      const gain = voiceRingtoneAudioCtx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(type === 'incoming' ? 440 : 400, now);
+      osc2.frequency.setValueAtTime(type === 'incoming' ? 480 : 450, now);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+      gain.gain.linearRampToValueAtTime(0.08, now + 0.8);
+      gain.gain.linearRampToValueAtTime(0, now + 0.95);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(voiceRingtoneAudioCtx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 1);
+      osc2.stop(now + 1);
+    };
+
+    playBeep();
+    voiceRingtoneInterval = setInterval(playBeep, 2400);
+  } catch (e) {
+    console.warn('Erro ao inicializar ringtone sintetizado:', e);
+  }
+}
+
+function stopSynthesizedVoiceRingtone() {
+  if (voiceRingtoneInterval) {
+    clearInterval(voiceRingtoneInterval);
+    voiceRingtoneInterval = null;
+  }
+  if (voiceRingtoneAudioCtx) {
+    try { voiceRingtoneAudioCtx.close(); } catch (e) {}
+    voiceRingtoneAudioCtx = null;
+  }
+}
+
+// Inicializa o fluxo de microfone local e Detecção de Atividade de Voz (VAD)
+async function initVoiceLocalAudio() {
+  if (voiceLocalAudioStream) return voiceLocalAudioStream;
+
+  try {
+    voiceLocalAudioStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    });
+
+    // Inicia monitor de voz (Voice Activity Detection - VAD)
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        voiceAudioContext = new AudioCtx();
+        const source = voiceAudioContext.createMediaStreamSource(voiceLocalAudioStream);
+        voiceAnalyserNode = voiceAudioContext.createAnalyser();
+        voiceAnalyserNode.fftSize = 256;
+        source.connect(voiceAnalyserNode);
+
+        const dataArray = new Uint8Array(voiceAnalyserNode.frequencyBinCount);
+        let speakingDebounce = null;
+        let lastSpeakingState = false;
+
+        const checkSpeaking = () => {
+          if (!voiceLocalAudioStream || !currentVoiceSession) return;
+          voiceAnalyserNode.getByteFrequencyData(dataArray);
+
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+          const average = sum / dataArray.length;
+
+          const isMuted = currentVoiceSession && currentVoiceSession.isMuted;
+          const isSpeakingNow = !isMuted && average > 14;
+
+          if (isSpeakingNow) {
+            if (speakingDebounce) clearTimeout(speakingDebounce);
+            if (!lastSpeakingState) {
+              lastSpeakingState = true;
+              if (currentVoiceSession) {
+                currentVoiceSession.isSpeaking = true;
+                socket.emit('voice_speaking_state', { session_id: currentVoiceSession.id, isSpeaking: true });
+                updateVoiceActiveBarUI();
+              }
+            }
+          } else if (lastSpeakingState) {
+            if (!speakingDebounce) {
+              speakingDebounce = setTimeout(() => {
+                lastSpeakingState = false;
+                speakingDebounce = null;
+                if (currentVoiceSession) {
+                  currentVoiceSession.isSpeaking = false;
+                  socket.emit('voice_speaking_state', { session_id: currentVoiceSession.id, isSpeaking: false });
+                  updateVoiceActiveBarUI();
+                }
+              }, 400);
+            }
+          }
+
+          voiceVadAnimationFrame = requestAnimationFrame(checkSpeaking);
+        };
+
+        checkSpeaking();
+      }
+    } catch (vadErr) {
+      console.warn('VAD não inicializado:', vadErr);
+    }
+
+    return voiceLocalAudioStream;
+  } catch (err) {
+    console.error('Erro ao acessar microfone:', err);
+    alert('Permissão de microfone necessária para o bate-papo de voz.');
+    throw err;
+  }
+}
+
+// Iniciar Chamada de Voz a partir da sala atualmente aberta
+async function startCurrentRoomVoiceCall() {
+  if (!currentInternalRoomId) return;
+
+  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente';
+  const currentOpAvatar = currentOperator ? currentOperator.avatar : null;
+
+  try {
+    await initVoiceLocalAudio();
+  } catch (e) {
+    return;
+  }
+
+  const isDM = currentInternalRoomId.startsWith('dm_');
+  const isGroup = currentInternalRoomId.startsWith('group_');
+
+  let targetType = 'channel';
+  let targetId = currentInternalRoomId;
+  let sessionTitle = 'Sala de Voz';
+
+  if (isDM) {
+    targetType = 'direct';
+    const parts = currentInternalRoomId.replace('dm_', '').split('_');
+    const otherId = parts.find(id => id !== currentOpId) || parts[0];
+    targetId = otherId;
+    const op = internalOperatorsList.find(o => String(o.id) === String(otherId));
+    sessionTitle = op ? `Chamada: ${op.nome}` : 'Chamada Particular';
+  } else if (isGroup) {
+    targetType = 'group';
+    const group = internalRoomsList.find(r => r.id === currentInternalRoomId);
+    sessionTitle = group ? `Voz: ${group.nome}` : 'Chamada em Grupo';
+  } else {
+    targetType = 'channel';
+    const channel = internalRoomsList.find(r => r.id === currentInternalRoomId);
+    sessionTitle = channel ? `Voz: #${channel.nome}` : 'Canal de Voz';
+  }
+
+  const sessionId = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  currentVoiceSession = {
+    id: sessionId,
+    title: sessionTitle,
+    type: targetType,
+    isMuted: false,
+    isSpeaking: false,
+    participants: [{
+      socketId: socket.id,
+      operatorId: currentOpId,
+      operatorName: currentOpName,
+      avatar: currentOpAvatar,
+      isMuted: false,
+      isSpeaking: false
+    }],
+    startedAt: Date.now()
+  };
+
+  // Se for 1x1, toca som de chamada chamando até o colega atender
+  if (targetType === 'direct') {
+    playSynthesizedVoiceRingtone('outgoing');
+  }
+
+  socket.emit('voice_start_call', {
+    session_id: sessionId,
+    target_id: targetId,
+    target_type: targetType,
+    title: sessionTitle,
+    caller_id: currentOpId,
+    caller_name: currentOpName,
+    caller_avatar: currentOpAvatar
+  });
+
+  startVoiceCallTimer();
+  updateVoiceActiveBarUI();
+  broadcastVoiceStateToParent();
+}
+
+// Aceitar Chamada de Voz Recebida
+async function acceptIncomingVoiceCall() {
+  if (!incomingVoiceCallData) return;
+
+  stopSynthesizedVoiceRingtone();
+  const callData = incomingVoiceCallData;
+  incomingVoiceCallData = null;
+
+  const modal = document.getElementById('voice-incoming-modal');
+  if (modal) modal.classList.add('hidden');
+
+  try {
+    await initVoiceLocalAudio();
+  } catch (e) {
+    return;
+  }
+
+  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente';
+  const currentOpAvatar = currentOperator ? currentOperator.avatar : null;
+
+  currentVoiceSession = {
+    id: callData.session_id,
+    title: callData.title || `Chamada: ${callData.caller_name}`,
+    type: callData.type || 'direct',
+    isMuted: false,
+    isSpeaking: false,
+    participants: [{
+      socketId: socket.id,
+      operatorId: currentOpId,
+      operatorName: currentOpName,
+      avatar: currentOpAvatar,
+      isMuted: false,
+      isSpeaking: false
+    }],
+    startedAt: Date.now()
+  };
+
+  socket.emit('voice_accept_call', {
+    session_id: callData.session_id,
+    operator_id: currentOpId,
+    operator_name: currentOpName,
+    avatar: currentOpAvatar
+  });
+
+  startVoiceCallTimer();
+  updateVoiceActiveBarUI();
+}
+
+// Recusar Chamada de Voz Recebida
+function rejectIncomingVoiceCall() {
+  stopSynthesizedVoiceRingtone();
+
+  if (incomingVoiceCallData) {
+    const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+    const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente';
+
+    socket.emit('voice_reject_call', {
+      session_id: incomingVoiceCallData.session_id,
+      operator_id: currentOpId,
+      operator_name: currentOpName,
+      reason: 'declined'
+    });
+  }
+
+  incomingVoiceCallData = null;
+  const modal = document.getElementById('voice-incoming-modal');
+  if (modal) modal.classList.add('hidden');
+  broadcastVoiceStateToParent();
+}
+
+// Criação de RTCPeerConnection para sinalização Full Mesh
+async function createVoicePeerConnection(peerSocketId, isInitiator, peerInfo = null) {
+  if (voicePeerConnections.has(peerSocketId)) {
+    return voicePeerConnections.get(peerSocketId);
+  }
+
+  const pc = new RTCPeerConnection(rtcConfig);
+  voicePeerConnections.set(peerSocketId, pc);
+
+  // Adiciona tracks de áudio local
+  if (voiceLocalAudioStream) {
+    voiceLocalAudioStream.getTracks().forEach(track => {
+      pc.addTrack(track, voiceLocalAudioStream);
+    });
+  }
+
+  // Envio de ICE Candidates
+  pc.onicecandidate = (event) => {
+    if (event.candidate && currentVoiceSession) {
+      socket.emit('voice_signal', {
+        toSocketId: peerSocketId,
+        session_id: currentVoiceSession.id,
+        signal: { candidate: event.candidate },
+        fromOperatorId: currentOperator ? currentOperator.id : 'me',
+        fromOperatorName: currentOperator ? currentOperator.nome : 'Colega'
+      });
+    }
+  };
+
+  // Recebimento de Stream Remoto de Áudio
+  pc.ontrack = (event) => {
+    let remoteAudio = document.getElementById(`voice-remote-audio-${peerSocketId}`);
+    if (!remoteAudio) {
+      remoteAudio = document.createElement('audio');
+      remoteAudio.id = `voice-remote-audio-${peerSocketId}`;
+      remoteAudio.autoplay = true;
+      remoteAudio.playsInline = true;
+      const container = document.getElementById('voice-remote-audio-container');
+      if (container) container.appendChild(remoteAudio);
+    }
+    remoteAudio.srcObject = event.streams[0];
+    remoteAudio.play().catch(e => console.warn('Autoplay bloqueado pelo navegador:', e));
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      removeVoicePeer(peerSocketId);
+    }
+  };
+
+  // Se este par for o iniciador da oferta
+  if (isInitiator) {
+    try {
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+
+      socket.emit('voice_signal', {
+        toSocketId: peerSocketId,
+        session_id: currentVoiceSession ? currentVoiceSession.id : '',
+        signal: offer,
+        fromOperatorId: currentOperator ? currentOperator.id : 'me',
+        fromOperatorName: currentOperator ? currentOperator.nome : 'Colega'
+      });
+    } catch (err) {
+      console.error('Erro ao criar oferta WebRTC:', err);
+    }
+  }
+
+  return pc;
+}
+
+function removeVoicePeer(peerSocketId) {
+  const pc = voicePeerConnections.get(peerSocketId);
+  if (pc) {
+    try { pc.close(); } catch (e) {}
+    voicePeerConnections.delete(peerSocketId);
+  }
+  const audioEl = document.getElementById(`voice-remote-audio-${peerSocketId}`);
+  if (audioEl) audioEl.remove();
+}
+
+// Inicia / Reseta o Timer de Duração da Chamada
+function startVoiceCallTimer() {
+  if (voiceCallTimerInterval) clearInterval(voiceCallTimerInterval);
+  voiceCallSeconds = 0;
+  const timerEl = document.getElementById('voice-bar-timer');
+  const bannerTimerEl = document.getElementById('voice-banner-timer');
+  if (timerEl) timerEl.textContent = '00:00';
+  if (bannerTimerEl) bannerTimerEl.textContent = '00:00';
+
+  voiceCallTimerInterval = setInterval(() => {
+    voiceCallSeconds++;
+    const mins = String(Math.floor(voiceCallSeconds / 60)).padStart(2, '0');
+    const secs = String(voiceCallSeconds % 60).padStart(2, '0');
+    const formatted = `${mins}:${secs}`;
+    if (timerEl) timerEl.textContent = formatted;
+    if (bannerTimerEl) bannerTimerEl.textContent = formatted;
+    broadcastVoiceStateToParent();
+  }, 1000);
+}
+
+// Atualiza a Barra Flutuante de Voz e o Banner Superior da Conversa
+function updateVoiceActiveBarUI() {
+  broadcastVoiceStateToParent();
+  const bar = document.getElementById('voice-active-bar');
+  const banner = document.getElementById('voice-chat-banner');
+  const voiceCallBtn = document.getElementById('btn-internal-voice-call');
+
+  if (!currentVoiceSession) {
+    if (bar) bar.classList.add('hidden');
+    if (banner) banner.classList.add('hidden');
+    if (voiceCallBtn) {
+      voiceCallBtn.className = 'h-8 md:h-9 px-3 rounded-xl items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 hover:text-white border border-emerald-500/30 hover:border-emerald-500/50 shadow-sm transition-all cursor-pointer select-none text-xs font-bold shrink-0 flex';
+      voiceCallBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        <span class="hidden sm:inline">Voz</span>
+      `;
+    }
+    return;
+  }
+
+  // Se estiver em chamada ativa, exibe o Banner Superior e a Barra Flutuante
+  if (bar) bar.classList.remove('hidden');
+  if (banner) banner.classList.remove('hidden');
+
+  // Atualiza botão do cabeçalho
+  if (voiceCallBtn) {
+    voiceCallBtn.className = 'h-8 md:h-9 px-3 rounded-xl items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm transition-all cursor-pointer select-none text-xs font-extrabold shrink-0 flex animate-pulse';
+    voiceCallBtn.innerHTML = `
+      <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+      <span class="hidden sm:inline">Em Chamada</span>
+    `;
+  }
+
+  const titleEl = document.getElementById('voice-bar-title');
+  const bannerTitleEl = document.getElementById('voice-banner-title');
+  if (titleEl) titleEl.textContent = currentVoiceSession.title || 'Chamada de Voz';
+  if (bannerTitleEl) bannerTitleEl.textContent = currentVoiceSession.title || 'Chamada de Voz';
+
+  // Atualiza botão de mudo da barra flutuante e do banner
+  const unmutedIcon = document.getElementById('icon-voice-unmuted');
+  const mutedIcon = document.getElementById('icon-voice-muted');
+  const muteLabel = document.getElementById('label-voice-mute');
+  const btnMute = document.getElementById('btn-voice-mute');
+
+  const bannerUnmutedIcon = document.getElementById('icon-voice-banner-unmuted');
+  const bannerMutedIcon = document.getElementById('icon-voice-banner-muted');
+  const bannerMuteLabel = document.getElementById('label-voice-banner-mute');
+  const btnBannerMute = document.getElementById('btn-voice-banner-mute');
+
+  if (currentVoiceSession.isMuted) {
+    if (unmutedIcon) unmutedIcon.classList.add('hidden');
+    if (mutedIcon) mutedIcon.classList.remove('hidden');
+    if (muteLabel) muteLabel.textContent = 'Desmutar';
+    if (btnMute) btnMute.className = 'h-8 px-2.5 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none';
+
+    if (bannerUnmutedIcon) bannerUnmutedIcon.classList.add('hidden');
+    if (bannerMutedIcon) bannerMutedIcon.classList.remove('hidden');
+    if (bannerMuteLabel) bannerMuteLabel.textContent = 'Desmutar';
+    if (btnBannerMute) btnBannerMute.className = 'h-7 px-2 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer select-none';
+  } else {
+    if (unmutedIcon) unmutedIcon.classList.remove('hidden');
+    if (mutedIcon) mutedIcon.classList.add('hidden');
+    if (muteLabel) muteLabel.textContent = 'Mutar';
+    if (btnMute) btnMute.className = 'h-8 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border border-white/10 transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none';
+
+    if (bannerUnmutedIcon) bannerUnmutedIcon.classList.remove('hidden');
+    if (bannerMutedIcon) bannerMutedIcon.classList.add('hidden');
+    if (bannerMuteLabel) bannerMuteLabel.textContent = 'Mutar';
+    if (btnBannerMute) btnBannerMute.className = 'h-7 px-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border border-white/10 transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer select-none';
+  }
+
+  // Renderiza avatares dos participantes na barra e no banner
+  const avatarsContainer = document.getElementById('voice-bar-avatars');
+  const bannerAvatarsContainer = document.getElementById('voice-banner-avatars');
+
+  const renderAvatarsInto = (container, isSmall = false) => {
+    if (!container) return;
+    container.innerHTML = '';
+    (currentVoiceSession.participants || []).forEach(p => {
+      const isMe = currentOperator && String(p.operatorId) === String(currentOperator.id);
+      const isSpeaking = isMe ? currentVoiceSession.isSpeaking : p.isSpeaking;
+      const initial = p.operatorName ? p.operatorName.charAt(0).toUpperCase() : 'U';
+      const sizeClass = isSmall ? 'w-6 h-6' : 'w-7 h-7';
+
+      const avatarDiv = document.createElement('div');
+      avatarDiv.className = `relative ${sizeClass} rounded-full flex items-center justify-center font-bold text-xs shrink-0 border-2 border-[#0f172a] transition-all duration-200 ${isSpeaking ? 'voice-speaking-ring scale-110 z-10' : ''} ${p.isMuted ? 'opacity-50' : ''}`;
+      avatarDiv.style.backgroundColor = isMe ? 'var(--color-primary-theme, #ef4444)' : '#3b82f6';
+      avatarDiv.title = `${p.operatorName || 'Participante'} ${p.isMuted ? '(Mutado)' : (isSpeaking ? '(Falando...)' : '')}`;
+
+      avatarDiv.innerHTML = `
+        ${p.avatar ? `<img src="${p.avatar}" class="w-full h-full object-cover rounded-full">` : `<span class="text-white text-[10px]">${initial}</span>`}
+        ${p.isMuted ? '<span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-[#0f172a]"></span>' : ''}
+      `;
+      container.appendChild(avatarDiv);
+    });
+  };
+
+  renderAvatarsInto(avatarsContainer, false);
+  renderAvatarsInto(bannerAvatarsContainer, true);
+}
+
+// Mutar / Desmutar Microfone
+function toggleVoiceMute() {
+  if (!currentVoiceSession || !voiceLocalAudioStream) return;
+
+  currentVoiceSession.isMuted = !currentVoiceSession.isMuted;
+  voiceLocalAudioStream.getAudioTracks().forEach(track => {
+    track.enabled = !currentVoiceSession.isMuted;
+  });
+
+  socket.emit('voice_mute_state', {
+    session_id: currentVoiceSession.id,
+    isMuted: currentVoiceSession.isMuted
+  });
+
+  updateVoiceActiveBarUI();
+}
+
+// Modal de Adicionar Participante à Chamada Ativa (Escalonamento 1x1 ➡️ Grupo)
+function openVoiceAddParticipantModal() {
+  const modal = document.getElementById('voice-add-participant-modal');
+  const searchInput = document.getElementById('input-voice-search-operator');
+  if (searchInput) searchInput.value = '';
+
+  filterVoiceInviteList('');
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('internal-modal-overlay');
+  }
+}
+
+function closeVoiceAddParticipantModal() {
+  const modal = document.getElementById('voice-add-participant-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('internal-modal-overlay');
+  }
+}
+
+function filterVoiceInviteList(query = '') {
+  const container = document.getElementById('voice-invite-operators-list');
+  if (!container || !currentVoiceSession) return;
+
+  const q = (query || '').trim().toLowerCase();
+  const existingOpIds = new Set((currentVoiceSession.participants || []).map(p => String(p.operatorId)));
+  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+
+  const available = (internalOperatorsList || []).filter(op => {
+    if (!op || String(op.id) === currentOpId || existingOpIds.has(String(op.id))) return false;
+    if (!q) return true;
+    return (op.nome && op.nome.toLowerCase().includes(q)) || (op.setor && op.setor.toLowerCase().includes(q));
+  });
+
+  container.innerHTML = '';
+
+  if (available.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-6 text-[var(--color-text-muted)]">
+        <p class="text-xs font-bold">Nenhum colega disponível</p>
+        <p class="text-[10px] mt-0.5 text-slate-400">Todos os colegas disponíveis já estão na chamada ou offline.</p>
+      </div>
+    `;
+    return;
+  }
+
+  available.forEach(op => {
+    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'U';
+    const item = document.createElement('div');
+    item.className = 'flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 transition-all select-none';
+
+    item.innerHTML = `
+      <div class="flex items-center gap-2.5 min-w-0 flex-1">
+        <div class="relative w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 internal-avatar">
+          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-lg">` : initial}
+          <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ${op.status === 'online' ? 'bg-emerald-500' : (op.status === 'atendendo' ? 'bg-amber-500' : 'bg-slate-500')}"></span>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-bold text-foreground truncate leading-tight">${escapeHtml(op.nome)}</p>
+          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(op.setor || 'Equipe')}</p>
+        </div>
+      </div>
+      <button type="button" onclick="inviteOperatorToVoiceCall('${op.id}', '${escapeHtml(op.nome)}')" class="px-3 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer">
+        Convidar
+      </button>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function inviteOperatorToVoiceCall(operatorId, operatorName) {
+  if (!currentVoiceSession) return;
+
+  const inviterName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Colega';
+
+  socket.emit('voice_invite_user', {
+    session_id: currentVoiceSession.id,
+    target_operator_id: operatorId,
+    inviter_name: inviterName
+  });
+
+  closeVoiceAddParticipantModal();
+  showInputBarNotification(`Convite de voz enviado para ${operatorName}!`);
+}
+
+// Sair / Desconectar da Chamada de Voz
+function leaveCurrentVoiceCall() {
+  stopSynthesizedVoiceRingtone();
+
+  if (voiceCallTimerInterval) {
+    clearInterval(voiceCallTimerInterval);
+    voiceCallTimerInterval = null;
+  }
+  if (voiceVadAnimationFrame) {
+    cancelAnimationFrame(voiceVadAnimationFrame);
+    voiceVadAnimationFrame = null;
+  }
+
+  if (currentVoiceSession) {
+    socket.emit('voice_leave_call', { session_id: currentVoiceSession.id });
+  }
+
+  // Fecha todas as conexões WebRTC
+  voicePeerConnections.forEach(pc => {
+    try { pc.close(); } catch (e) {}
+  });
+  voicePeerConnections.clear();
+
+  // Para o microfone local
+  if (voiceLocalAudioStream) {
+    voiceLocalAudioStream.getTracks().forEach(track => track.stop());
+    voiceLocalAudioStream = null;
+  }
+
+  if (voiceAudioContext) {
+    try { voiceAudioContext.close(); } catch (e) {}
+    voiceAudioContext = null;
+  }
+
+  // Limpa elementos de áudio remotos
+  const remoteContainer = document.getElementById('voice-remote-audio-container');
+  if (remoteContainer) remoteContainer.innerHTML = '';
+
+  currentVoiceSession = null;
+  updateVoiceActiveBarUI();
+  broadcastVoiceStateToParent();
+}
+
+// ==============================================================================
+// 🎙️ SOCKET LISTENERS DO SISTEMA DE VOZ WEBRTC
+// ==============================================================================
+
+// 1. Recebimento de Chamada de Voz
+socket.on('voice_incoming_call', (data) => {
+  incomingVoiceCallData = data;
+  playSynthesizedVoiceRingtone('incoming');
+  broadcastVoiceStateToParent();
+
+  const modal = document.getElementById('voice-incoming-modal');
+  const nameEl = document.getElementById('voice-incoming-name');
+  const descEl = document.getElementById('voice-incoming-desc');
+  const badgeEl = document.getElementById('voice-incoming-badge');
+  const avatarEl = document.getElementById('voice-incoming-avatar');
+
+  if (nameEl) nameEl.textContent = data.caller_name || 'Colega';
+  if (descEl) {
+    descEl.textContent = data.is_escalated
+      ? `${data.caller_name} convidou você para a chamada em grupo em andamento.`
+      : (data.type === 'group' ? `Chamada em grupo iniciada por ${data.caller_name}.` : 'Deseja iniciar bate-papo de voz com você.');
+  }
+  if (badgeEl) {
+    badgeEl.textContent = data.is_escalated ? 'Convite de Voz em Grupo' : (data.type === 'group' ? 'Chamada em Grupo' : 'Chamada de Voz Particular');
+  }
+  if (avatarEl) {
+    const initial = data.caller_name ? data.caller_name.charAt(0).toUpperCase() : 'U';
+    avatarEl.innerHTML = data.caller_avatar ? `<img src="${data.caller_avatar}" class="w-full h-full object-cover rounded-full">` : initial;
+  }
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('internal-modal-overlay');
+  }
+});
+
+// 2. Novo Participante Entrou na Sessão de Voz (WebRTC Mesh: estabelece oferta/resposta)
+socket.on('voice_user_joined', async ({ session_id, newParticipant, participants }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+
+  stopSynthesizedVoiceRingtone(); // Conectou com sucesso!
+  currentVoiceSession.participants = participants || [];
+  updateVoiceActiveBarUI();
+
+  // Se eu já estava na sala, eu inicio a conexão (oferta) com o novo participante
+  if (newParticipant.socketId !== socket.id) {
+    await createVoicePeerConnection(newParticipant.socketId, true, newParticipant);
+  }
+});
+
+// 3. Sinalização WebRTC (Ofertas, Respostas e ICE Candidates)
+socket.on('voice_signal', async ({ fromSocketId, session_id, signal, fromOperatorId, fromOperatorName }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+
+  let pc = voicePeerConnections.get(fromSocketId);
+
+  if (signal.type === 'offer') {
+    if (!pc) {
+      pc = await createVoicePeerConnection(fromSocketId, false, { operatorId: fromOperatorId, operatorName: fromOperatorName });
+    }
+    await pc.setRemoteDescription(new RTCSessionDescription(signal));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    socket.emit('voice_signal', {
+      toSocketId: fromSocketId,
+      session_id,
+      signal: answer,
+      fromOperatorId: currentOperator ? currentOperator.id : 'me',
+      fromOperatorName: currentOperator ? currentOperator.nome : 'Colega'
+    });
+  } else if (signal.type === 'answer') {
+    if (pc) {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal));
+    }
+  } else if (signal.candidate) {
+    if (pc) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      } catch (err) {
+        console.warn('Erro ao adicionar ICE candidate:', err);
+      }
+    }
+  }
+});
+
+// 4. Participante Saiu da Sessão de Voz
+socket.on('voice_user_left', ({ session_id, leavingSocketId, operatorId, participants }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+
+  removeVoicePeer(leavingSocketId);
+  currentVoiceSession.participants = participants || [];
+  updateVoiceActiveBarUI();
+
+  if (currentVoiceSession.participants.length <= 1 && currentVoiceSession.type === 'direct') {
+    showInputBarNotification('O colega encerrou a chamada.');
+    leaveCurrentVoiceCall();
+  }
+});
+
+// 5. Atualização de Estado da Sessão
+socket.on('voice_session_updated', ({ session_id, title, type, participants }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+
+  if (participants && participants.length > 1) {
+    stopSynthesizedVoiceRingtone();
+  }
+
+  currentVoiceSession.title = title || currentVoiceSession.title;
+  currentVoiceSession.type = type || currentVoiceSession.type;
+  currentVoiceSession.participants = participants || currentVoiceSession.participants;
+  updateVoiceActiveBarUI();
+  broadcastVoiceStateToParent();
+});
+
+// 6. Atividade de Voz (Quem está falando)
+socket.on('voice_speaking_state', ({ session_id, socketId, operatorId, isSpeaking }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+
+  const p = (currentVoiceSession.participants || []).find(part => part.socketId === socketId || String(part.operatorId) === String(operatorId));
+  if (p) {
+    p.isSpeaking = !!isSpeaking;
+    updateVoiceActiveBarUI();
+    broadcastVoiceStateToParent();
+  }
+});
+
+// 7. Estado de Microfone Mutado
+socket.on('voice_mute_state', ({ session_id, socketId, operatorId, isMuted }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+
+  const p = (currentVoiceSession.participants || []).find(part => part.socketId === socketId || String(part.operatorId) === String(operatorId));
+  if (p) {
+    p.isMuted = !!isMuted;
+    updateVoiceActiveBarUI();
+    broadcastVoiceStateToParent();
+  }
+});
+
+// 8. Chamada Recusada ou Encerrada
+socket.on('voice_call_rejected', ({ session_id, operator_name }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+  stopSynthesizedVoiceRingtone();
+  showInputBarNotification(`${operator_name || 'O colega'} recusou a chamada.`);
+  leaveCurrentVoiceCall();
+  broadcastVoiceStateToParent();
+});
+
+socket.on('voice_call_ended', ({ session_id }) => {
+  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
+  stopSynthesizedVoiceRingtone();
+  showInputBarNotification('A chamada de voz foi encerrada.');
+  leaveCurrentVoiceCall();
+  broadcastVoiceStateToParent();
+});
+
+socket.on('voice_error', ({ message }) => {
+  stopSynthesizedVoiceRingtone();
+  if (message) showInputBarNotification(message);
+});
+
+// ==============================================================================
+// 📡 TRANSMISSÃO DE ESTADO DE VOZ PARA A JANELA PAI (NEXT.JS PORTAL)
+// ==============================================================================
+
+function broadcastVoiceStateToParent() {
+  if (window.parent && window.parent !== window) {
+    try {
+      const state = {
+        inCall: !!currentVoiceSession,
+        session: currentVoiceSession ? {
+          id: currentVoiceSession.id,
+          title: currentVoiceSession.title,
+          type: currentVoiceSession.type,
+          isMuted: currentVoiceSession.isMuted,
+          isSpeaking: currentVoiceSession.isSpeaking,
+          participants: currentVoiceSession.participants || [],
+          seconds: voiceCallSeconds || 0
+        } : null,
+        incomingCall: incomingVoiceCallData ? {
+          session_id: incomingVoiceCallData.session_id,
+          title: incomingVoiceCallData.title,
+          type: incomingVoiceCallData.type,
+          caller_id: incomingVoiceCallData.caller_id,
+          caller_name: incomingVoiceCallData.caller_name,
+          caller_avatar: incomingVoiceCallData.caller_avatar,
+          is_escalated: incomingVoiceCallData.is_escalated
+        } : null
+      };
+      window.parent.postMessage({ type: 'TICKETFLOW_VOICE_STATE', state }, '*');
+    } catch (e) {
+      console.warn('Erro ao transmitir estado de voz para janela pai:', e);
+    }
+  }
+}
+
+// Ouve comandos vindos da janela pai Next.js (ex: mutar pela barra flutuante global, atender, recusar, sair)
+window.addEventListener('message', (event) => {
+  if (!event.data || typeof event.data !== 'object') return;
+  if (event.data.type === 'TICKETFLOW_VOICE_ACTION') {
+    const action = event.data.action;
+    if (action === 'toggle_mute') {
+      toggleVoiceMute();
+    } else if (action === 'leave_call') {
+      leaveCurrentVoiceCall();
+    } else if (action === 'accept_call') {
+      acceptIncomingVoiceCall();
+    } else if (action === 'reject_call') {
+      rejectIncomingVoiceCall();
+    } else if (action === 'open_invite_modal') {
+      openVoiceAddParticipantModal();
+    }
+  }
+});
+
+
 
 

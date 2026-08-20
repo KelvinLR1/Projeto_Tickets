@@ -918,6 +918,32 @@ aside > div:last-child {
 /* ==============================================================================
    ESTILOS DO MENU DE CONTEXTO E BANNER DE RESPOSTA (GLASSMORPHISM COERENTE)
    ============================================================================== */
+html.internal-only-view #message-context-menu:not(.hidden),
+body.internal-only-view #message-context-menu:not(.hidden),
+html.internal-only-view #chat-context-menu:not(.hidden),
+body.internal-only-view #chat-context-menu:not(.hidden),
+html.internal-only-view #reaction-details-modal:not(.hidden),
+body.internal-only-view #reaction-details-modal:not(.hidden),
+html.internal-only-view #message-info-modal:not(.hidden),
+body.internal-only-view #message-info-modal:not(.hidden),
+html.internal-only-view #forward-modal:not(.hidden),
+body.internal-only-view #forward-modal:not(.hidden),
+html.internal-only-view #voice-incoming-modal:not(.hidden),
+body.internal-only-view #voice-incoming-modal:not(.hidden),
+html.internal-only-view #voice-add-participant-modal:not(.hidden),
+body.internal-only-view #voice-add-participant-modal:not(.hidden),
+html.internal-only-view #voice-active-bar:not(.hidden),
+body.internal-only-view #voice-active-bar:not(.hidden) {
+  display: flex !important;
+  visibility: visible !important;
+  z-index: 999999 !important;
+}
+
+#voice-chat-banner:not(.hidden) {
+  display: flex !important;
+  visibility: visible !important;
+}
+
 #message-context-menu,
 #chat-context-menu {
   z-index: 99999 !important;
@@ -2485,21 +2511,6 @@ body.internal-only-view #internal-chat-drawer {
   z-index: 10 !important;
 }
 
-html.internal-only-view #message-context-menu:not(.hidden),
-body.internal-only-view #message-context-menu:not(.hidden),
-html.internal-only-view #chat-context-menu:not(.hidden),
-body.internal-only-view #chat-context-menu:not(.hidden),
-html.internal-only-view #reaction-details-modal:not(.hidden),
-body.internal-only-view #reaction-details-modal:not(.hidden),
-html.internal-only-view #message-info-modal:not(.hidden),
-body.internal-only-view #message-info-modal:not(.hidden),
-html.internal-only-view #forward-modal:not(.hidden),
-body.internal-only-view #forward-modal:not(.hidden) {
-  display: flex !important;
-  visibility: visible !important;
-  z-index: 99999 !important;
-}
-
 /* ==============================================================================
    💎 DESIGN SYSTEM ULTRA-PREMIUM DO CHAT INTERNO (100% DINÂMICO COM O TEMA)
    ============================================================================== */
@@ -2510,6 +2521,8 @@ body.internal-only-view #forward-modal:not(.hidden) {
 }
 
 .internal-header-surface {
+  position: relative !important;
+  z-index: 60 !important;
   background: color-mix(in srgb, var(--color-card, #172033) 85%, transparent) !important;
   border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1)) !important;
   backdrop-filter: blur(20px) !important;
@@ -2577,6 +2590,50 @@ body.internal-only-view #forward-modal:not(.hidden) {
 }
 
 .internal-tab-inactive:hover {
+  color: var(--color-foreground, #f8fafc) !important;
+}
+
+/* Sub-Abas Segmentadas (Conversas Abertas vs Outros Colegas) */
+.internal-subtab-container {
+  position: relative !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 30%, black) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06)) !important;
+  border-radius: 12px !important;
+  padding: 3px !important;
+}
+
+.internal-dms-subtab-pill {
+  position: absolute !important;
+  top: 3px !important;
+  bottom: 3px !important;
+  left: 3px !important;
+  width: calc((100% - 10px) / 2) !important;
+  border-radius: 9px !important;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 90%, black), color-mix(in srgb, var(--color-accent-theme, #f87171) 90%, black)) !important;
+  box-shadow: 0 2px 10px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent) !important;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+}
+
+.internal-subtab-btn {
+  position: relative !important;
+  z-index: 2 !important;
+  background: transparent !important;
+  transition: all 0.2s ease !important;
+}
+
+.internal-subtab-active {
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.internal-subtab-inactive {
+  color: var(--color-text-muted, #94a3b8) !important;
+  font-weight: 600 !important;
+}
+
+.internal-subtab-inactive:hover {
   color: var(--color-foreground, #f8fafc) !important;
 }
 
@@ -2887,4 +2944,281 @@ body.internal-only-view #forward-modal:not(.hidden) {
   transform: scale(0.96);
 }
 
+/* ==============================================================================
+   🟢 SELETOR DE STATUS MANUAL DO OPERADOR
+   ============================================================================== */
+#user-status-dropdown-container {
+  position: relative !important;
+  z-index: 70 !important;
+}
 
+#user-status-menu {
+  position: absolute !important;
+  z-index: 9999 !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 95%, black) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15)) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+.status-opt {
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border: 1px solid transparent !important;
+}
+
+.status-opt:hover {
+  background: color-mix(in srgb, var(--color-foreground, #fff) 8%, transparent) !important;
+}
+
+.status-opt[data-active="true"] {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 14%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+}
+
+.status-opt[data-active="true"] .status-check {
+  opacity: 1 !important;
+}
+
+#btn-user-status-toggle {
+  width: 130px !important;
+  min-width: 130px !important;
+  max-width: 130px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+@keyframes internalTabFadeIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes internalCardFadeUp {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalBubblePopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalSlideDownPreview {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalModalPopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes internalBackdropFadeIn {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes internalGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 22px 2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 55%, transparent);
+  }
+}
+
+/* Classes de Transição das Telas do Chat Interno */
+.internal-view-slide-right {
+  animation: internalViewSlideInRight 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+.internal-view-slide-left {
+  animation: internalViewSlideInLeft 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+.internal-tab-pane-anim {
+  animation: internalTabFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+/* Cards com Entrada Suave e Stagger */
+.internal-card-enter {
+  animation: internalCardFadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+/* Bolhas de Mensagem com Efeito Pop-in Suave */
+.internal-msg-bubble-self,
+.internal-msg-bubble-other,
+.internal-msg-bubble-deleted {
+  animation: internalBubblePopIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.internal-msg-bubble-self:hover,
+.internal-msg-bubble-other:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -2px rgba(0, 0, 0, 0.45);
+}
+
+/* Previews de Resposta e Anexo */
+#internal-reply-preview-container:not(.hidden),
+#internal-attachment-preview:not(.hidden) {
+  animation: internalSlideDownPreview 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Modais Internos Suaves */
+.internal-modal-dialog {
+  animation: internalModalPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  will-change: transform, opacity;
+}
+
+.internal-modal-overlay {
+  animation: internalBackdropFadeIn 0.25s ease-out forwards !important;
+  will-change: opacity, backdrop-filter;
+}
+
+/* Botão Voltar Micro-Interação */
+#btn-internal-back-to-list {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#btn-internal-back-to-list:hover {
+  transform: translateX(-2px) scale(1.05);
+}
+
+#btn-internal-back-to-list:active {
+  transform: scale(0.92);
+}
+
+/* Transição de Abas Segmentadas */
+.internal-tab-container button {
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.internal-tab-container button:active {
+  transform: scale(0.96);
+}
+
+/* ==============================================================================
+   🟢 SELETOR DE STATUS MANUAL DO OPERADOR
+   ============================================================================== */
+#user-status-dropdown-container {
+  position: relative !important;
+  z-index: 70 !important;
+}
+
+#user-status-menu {
+  position: absolute !important;
+  z-index: 9999 !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 95%, black) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15)) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+.status-opt {
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border: 1px solid transparent !important;
+}
+
+.status-opt:hover {
+  background: color-mix(in srgb, var(--color-foreground, #fff) 8%, transparent) !important;
+}
+
+.status-opt[data-active="true"] {
+  background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 14%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+}
+
+.status-opt[data-active="true"] .status-check {
+  opacity: 1 !important;
+}
+
+#btn-user-status-toggle {
+  width: 130px !important;
+  min-width: 130px !important;
+  max-width: 130px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 80%, transparent) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12)) !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+#btn-user-status-toggle:hover {
+  background: color-mix(in srgb, var(--color-card, #172033) 100%, white 5%) !important;
+  border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, transparent) !important;
+  box-shadow: 0 0 14px -3px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+}
+
+/* ==============================================================================
+   🎙️ ESTILOS DO SISTEMA DE BATE-PAPO DE VOZ (WebRTC)
+   ============================================================================== */
+.voice-speaking-ring {
+  box-shadow: 0 0 0 2px var(--color-primary-theme, #ef4444), 0 0 14px 3px color-mix(in srgb, var(--color-primary-theme, #ef4444) 65%, transparent) !important;
+  animation: voice-glow-pulse 1.2s infinite ease-in-out !important;
+}
+
+@keyframes voice-glow-pulse {
+  0% {
+    box-shadow: 0 0 0 2px var(--color-primary-theme, #ef4444), 0 0 8px 1px color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 3.5px var(--color-primary-theme, #ef4444), 0 0 18px 5px color-mix(in srgb, var(--color-primary-theme, #ef4444) 75%, transparent);
+    transform: scale(1.05);
+  }
+  100% {
+    box-shadow: 0 0 0 2px var(--color-primary-theme, #ef4444), 0 0 8px 1px color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent);
+    transform: scale(1);
+  }
+}
+
+#voice-active-bar {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#voice-active-bar:hover {
+  transform: translate(-50%, -2px);
+}

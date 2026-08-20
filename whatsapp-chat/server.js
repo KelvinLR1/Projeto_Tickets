@@ -733,6 +733,7 @@ db.serialize(() => {
   `);
   db.run("ALTER TABLE tabela_atendentes ADD COLUMN setor TEXT DEFAULT 'Geral'", () => {});
   db.run("ALTER TABLE tabela_atendentes ADD COLUMN avatar TEXT", () => {});
+  db.run("ALTER TABLE tabela_atendentes ADD COLUMN manual_status TEXT DEFAULT 'auto'", () => {});
 
   // 2. Tabela de Atendimentos
   db.run(`
@@ -881,6 +882,16 @@ db.serialize(() => {
   db.run("ALTER TABLE tabela_chat_interno_mensagens ADD COLUMN reply_to_id INTEGER", () => {});
   db.run("ALTER TABLE tabela_chat_interno_mensagens ADD COLUMN reply_to_text TEXT", () => {});
   db.run("ALTER TABLE tabela_chat_interno_mensagens ADD COLUMN reply_to_sender TEXT", () => {});
+
+  // 8b. Tabela de Status de Conversas Particulares (Para permitir encerrar/arquivar mantendo o histórico)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tabela_chat_interno_dm_status (
+      atendente_id TEXT NOT NULL,
+      sala_id TEXT NOT NULL,
+      fechada_em DATETIME NOT NULL,
+      PRIMARY KEY (atendente_id, sala_id)
+    )
+  `);
 
   // 9. Verificar se a base está vazia e popular dados de exemplo para testes
   setTimeout(() => {
@@ -1292,6 +1303,38 @@ wwebClient.on('message_revoke_everyone', async (after, before) => {
 
 // Mapeamento de Sockets Conectados por Atendente
 const activeSockets = new Map(); // socket.id -> atendenteId
+
+// Memória para Sessões de Voz em Tempo Real (WebRTC Mesh Signaling)
+const activeVoiceSessions = new Map();
+
+function handleLeaveVoiceSession(socket, sessionId) {
+  if (!sessionId) return;
+  const session = activeVoiceSessions.get(sessionId);
+  if (!session) return;
+
+  const leavingParticipant = session.participants.get(socket.id);
+  session.participants.delete(socket.id);
+  socket.leave(session.roomId);
+
+  if (session.participants.size === 0) {
+    activeVoiceSessions.delete(sessionId);
+    console.log(`🎙️ Sessão de voz encerrada: ${sessionId}`);
+  } else {
+    const participantsArray = Array.from(session.participants.values());
+    io.to(session.roomId).emit('voice_user_left', {
+      session_id: sessionId,
+      leavingSocketId: socket.id,
+      operatorId: leavingParticipant ? leavingParticipant.operatorId : null,
+      participants: participantsArray
+    });
+    io.to(session.roomId).emit('voice_session_updated', {
+      session_id: sessionId,
+      title: session.title,
+      type: session.type,
+      participants: participantsArray
+    });
+  }
+}
 
 io.on('connection', (socket) => {
   console.log(`🔌 Novo atendente conectado via WebSocket (Socket ID: ${socket.id})`);
@@ -2188,7 +2231,7 @@ io.on('connection', (socket) => {
         if (err) return console.error('Erro ao buscar salas internas:', err.message);
 
         // Busca todos os atendentes cadastrados
-        db.all(`SELECT id, nome, avatar, setor FROM tabela_atendentes ORDER BY nome ASC`, [], (opErr, atendentes) => {
+        db.all(`SELECT id, nome, avatar, setor, manual_status FROM tabela_atendentes ORDER BY nome ASC`, [], (opErr, atendentes) => {
           // Busca atendimentos em andamento para calcular quem está 'atendendo'
           db.all(`SELECT atendente_id, COUNT(*) as total FROM tabela_atendimentos WHERE status = 'em_atendimento' GROUP BY atendente_id`, [], (atErr, atCounts) => {
             const atMap = {};
@@ -2199,9 +2242,16 @@ io.on('connection', (socket) => {
             const atendentesList = (atendentes || []).map(op => {
               const isOnline = connectedIds.has(op.id);
               const activeChatsCount = atMap[op.id] || 0;
+              const manualStatus = op.manual_status || 'auto';
               let status = 'offline';
-              if (isOnline) {
-                status = activeChatsCount > 0 ? 'atendendo' : 'online';
+              if (manualStatus && manualStatus !== 'auto') {
+                status = manualStatus;
+              } else {
+                if (isOnline) {
+                  status = activeChatsCount > 0 ? 'atendendo' : 'online';
+                } else {
+                  status = 'offline';
+                }
               }
               return {
                 id: String(op.id),
@@ -2209,14 +2259,56 @@ io.on('connection', (socket) => {
                 avatar: op.avatar || null,
                 setor: op.setor || 'Geral',
                 status,
+                manual_status: manualStatus,
                 active_chats: activeChatsCount
               };
             });
 
-            socket.emit('internal_rooms_data', {
-              salas: salas || [],
-              atendentes: atendentesList
-            });
+            // Busca a última mensagem de cada sala / DM para ordenar conversas por atividade recente
+            db.all(
+              `SELECT m.sala_id, m.texto, m.timestamp, m.remetente_id, m.remetente_nome, m.midia_tipo, m.midia_url, m.card_meta
+               FROM tabela_chat_interno_mensagens m
+               INNER JOIN (
+                 SELECT sala_id, MAX(id) as max_id
+                 FROM tabela_chat_interno_mensagens
+                 WHERE apagado = 0 OR apagado IS NULL
+                 GROUP BY sala_id
+               ) latest ON m.id = latest.max_id`,
+              [],
+              (mErr, recentRows) => {
+                const recentMap = {};
+                (recentRows || []).forEach(r => {
+                  recentMap[r.sala_id] = {
+                    texto: r.texto,
+                    timestamp: r.timestamp,
+                    remetente_id: r.remetente_id,
+                    remetente_nome: r.remetente_nome,
+                    midia_tipo: r.midia_tipo,
+                    midia_url: r.midia_url,
+                    card_meta: r.card_meta
+                  };
+                });
+
+                // Busca conversas particulares que foram encerradas/arquivadas pelo usuário
+                db.all(
+                  `SELECT sala_id, fechada_em FROM tabela_chat_interno_dm_status WHERE atendente_id = ?`,
+                  [String(atendente_id || '')],
+                  (dmStErr, dmStRows) => {
+                    const closedMap = {};
+                    (dmStRows || []).forEach(r => {
+                      closedMap[r.sala_id] = r.fechada_em;
+                    });
+
+                    socket.emit('internal_rooms_data', {
+                      salas: salas || [],
+                      atendentes: atendentesList,
+                      recent_messages: recentMap,
+                      closed_dms: closedMap
+                    });
+                  }
+                );
+              }
+            );
           });
         });
       });
@@ -2467,14 +2559,266 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 7. Desconexão de socket
+  // 6e. ALTERAR STATUS MANUAL DO ATENDENTE NO CHAT INTERNO
+  socket.on('internal_set_status', ({ atendente_id, status }) => {
+    if (!atendente_id) return;
+    const cleanStatus = ['online', 'atendendo', 'ocupado', 'ausente', 'offline', 'auto'].includes(status) ? status : 'auto';
+
+    db.run(`UPDATE tabela_atendentes SET manual_status = ? WHERE id = ?`, [cleanStatus, String(atendente_id)], () => {
+      refreshOperatorDynamicStatus(atendente_id);
+    });
+  });
+
+  // 6f. ENCERRAR CONVERSA PARTICULAR (Move para 'Outros Colegas', mantendo todo o histórico 100% intacto)
+  socket.on('internal_close_dm', ({ atendente_id, sala_id }) => {
+    if (!atendente_id || !sala_id) return;
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO tabela_chat_interno_dm_status (atendente_id, sala_id, fechada_em)
+       VALUES (?, ?, ?)
+       ON CONFLICT(atendente_id, sala_id) DO UPDATE SET fechada_em = excluded.fechada_em`,
+      [String(atendente_id), sala_id, now],
+      () => {
+        socket.emit('internal_dm_status_updated', {
+          sala_id,
+          fechada_em: now
+        });
+      }
+    );
+  });
+
+  // ==============================================================================
+  // 🎙️ SISTEMA DE BATE-PAPO E CHAMADAS DE VOZ (WebRTC Full Mesh)
+  // ==============================================================================
+
+  // 1. Iniciar Chamada 1x1, em Grupo ou Sala de Voz
+  socket.on('voice_start_call', ({ session_id, target_id, target_type, title, caller_id, caller_name, caller_avatar }) => {
+    if (!session_id || !caller_id) return;
+
+    let session = activeVoiceSessions.get(session_id);
+    if (!session) {
+      session = {
+        id: session_id,
+        title: title || 'Chamada de Voz',
+        type: target_type || 'direct',
+        roomId: `voice_room_${session_id}`,
+        initiatorId: String(caller_id),
+        initiatorName: caller_name || 'Colega',
+        createdAt: new Date(),
+        participants: new Map()
+      };
+      activeVoiceSessions.set(session_id, session);
+    }
+
+    socket.join(session.roomId);
+    session.participants.set(socket.id, {
+      socketId: socket.id,
+      operatorId: String(caller_id),
+      operatorName: caller_name || 'Colega',
+      avatar: caller_avatar || null,
+      isMuted: false,
+      isSpeaking: false
+    });
+
+    const participantsArray = Array.from(session.participants.values());
+
+    // Se for chamada direta 1x1
+    if (target_type === 'direct' && target_id) {
+      io.to(String(target_id)).emit('voice_incoming_call', {
+        session_id,
+        title: title || `Chamada de ${caller_name}`,
+        type: 'direct',
+        caller_id: String(caller_id),
+        caller_name: caller_name || 'Colega',
+        caller_avatar: caller_avatar || null,
+        participantsCount: 1
+      });
+    } else if (target_type === 'group' && target_id) {
+      // Se for chamada em grupo
+      db.get(`SELECT membros FROM tabela_chat_interno_salas WHERE id = ?`, [target_id], (err, row) => {
+        let membros = [];
+        try { if (row && row.membros) membros = JSON.parse(row.membros); } catch (e) {}
+        membros.forEach(mId => {
+          if (String(mId) !== String(caller_id)) {
+            io.to(String(mId)).emit('voice_incoming_call', {
+              session_id,
+              title: title || 'Chamada em Grupo',
+              type: 'group',
+              caller_id: String(caller_id),
+              caller_name: caller_name || 'Colega',
+              caller_avatar: caller_avatar || null,
+              participantsCount: participantsArray.length
+            });
+          }
+        });
+      });
+    }
+
+    socket.emit('voice_session_updated', {
+      session_id,
+      title: session.title,
+      type: session.type,
+      participants: participantsArray
+    });
+  });
+
+  // 2. Aceitar Chamada / Entrar na Sessão de Voz
+  socket.on('voice_accept_call', ({ session_id, operator_id, operator_name, avatar }) => {
+    if (!session_id || !operator_id) return;
+    const session = activeVoiceSessions.get(session_id);
+    if (!session) {
+      socket.emit('voice_error', { message: 'A chamada não está mais ativa.' });
+      return;
+    }
+
+    socket.join(session.roomId);
+    const newParticipant = {
+      socketId: socket.id,
+      operatorId: String(operator_id),
+      operatorName: operator_name || 'Colega',
+      avatar: avatar || null,
+      isMuted: false,
+      isSpeaking: false
+    };
+    session.participants.set(socket.id, newParticipant);
+
+    const participantsArray = Array.from(session.participants.values());
+
+    // Informa os outros membros sobre o novo participante
+    io.to(session.roomId).emit('voice_user_joined', {
+      session_id,
+      newParticipant,
+      participants: participantsArray
+    });
+
+    io.to(session.roomId).emit('voice_session_updated', {
+      session_id,
+      title: session.title,
+      type: session.type,
+      participants: participantsArray
+    });
+  });
+
+  // 3. Recusar Chamada
+  socket.on('voice_reject_call', ({ session_id, operator_id, operator_name, reason }) => {
+    if (!session_id) return;
+    const session = activeVoiceSessions.get(session_id);
+    if (session) {
+      io.to(session.roomId).emit('voice_call_rejected', {
+        session_id,
+        operator_id: String(operator_id),
+        operator_name,
+        reason: reason || 'declined'
+      });
+      if (session.type === 'direct' && session.participants.size <= 1) {
+        io.to(session.roomId).emit('voice_call_ended', { session_id, reason: 'recusada' });
+        activeVoiceSessions.delete(session_id);
+      }
+    }
+  });
+
+  // 4. Escalonar Chamada (Adicionar participante à chamada 1x1 ou grupo ativo sem desligar)
+  socket.on('voice_invite_user', ({ session_id, target_operator_id, inviter_name }) => {
+    if (!session_id || !target_operator_id) return;
+    const session = activeVoiceSessions.get(session_id);
+    if (!session) return;
+
+    session.type = 'group'; // Escala para grupo automaticamente
+    const participantsArray = Array.from(session.participants.values());
+
+    io.to(String(target_operator_id)).emit('voice_incoming_call', {
+      session_id,
+      title: session.title || 'Chamada em Grupo',
+      type: 'group',
+      caller_id: String(session.initiatorId),
+      caller_name: inviter_name || session.initiatorName,
+      is_escalated: true,
+      participantsCount: participantsArray.length
+    });
+
+    io.to(session.roomId).emit('voice_session_updated', {
+      session_id,
+      title: session.title,
+      type: 'group',
+      participants: participantsArray
+    });
+  });
+
+  // 5. Sinalização WebRTC (SDP Offer, Answer e ICE Candidate)
+  socket.on('voice_signal', ({ toSocketId, session_id, signal, fromOperatorId, fromOperatorName }) => {
+    if (!toSocketId || !signal) return;
+    io.to(toSocketId).emit('voice_signal', {
+      fromSocketId: socket.id,
+      session_id,
+      signal,
+      fromOperatorId,
+      fromOperatorName
+    });
+  });
+
+  // 6. Transmitir Atividade de Voz (Quem está falando)
+  socket.on('voice_speaking_state', ({ session_id, isSpeaking }) => {
+    if (!session_id) return;
+    const session = activeVoiceSessions.get(session_id);
+    if (session) {
+      const p = session.participants.get(socket.id);
+      if (p) p.isSpeaking = !!isSpeaking;
+      socket.to(session.roomId).emit('voice_speaking_state', {
+        session_id,
+        socketId: socket.id,
+        operatorId: p ? p.operatorId : null,
+        isSpeaking: !!isSpeaking
+      });
+    }
+  });
+
+  // 7. Transmitir Estado de Microfone Mutado
+  socket.on('voice_mute_state', ({ session_id, isMuted }) => {
+    if (!session_id) return;
+    const session = activeVoiceSessions.get(session_id);
+    if (session) {
+      const p = session.participants.get(socket.id);
+      if (p) p.isMuted = !!isMuted;
+      io.to(session.roomId).emit('voice_mute_state', {
+        session_id,
+        socketId: socket.id,
+        operatorId: p ? p.operatorId : null,
+        isMuted: !!isMuted
+      });
+    }
+  });
+
+  // 8. Sair da Chamada de Voz
+  socket.on('voice_leave_call', ({ session_id }) => {
+    handleLeaveVoiceSession(socket, session_id);
+  });
+
+  // 9. Desconexão de socket
   socket.on('disconnect', () => {
     const atendenteId = activeSockets.get(socket.id);
     activeSockets.delete(socket.id);
     console.log(`🔌 Conexão WebSocket encerrada: Socket ID ${socket.id} (Atendente: ${atendenteId || 'Não registrado'})`);
-    
-    // Notifica atualização de status dos operadores
-    io.emit('internal_operator_status_changed', { atendente_id: atendenteId, status: 'offline' });
+
+    // Limpa o operador de quaisquer sessões de voz ativas
+    activeVoiceSessions.forEach((session, sId) => {
+      if (session.participants.has(socket.id)) {
+        handleLeaveVoiceSession(socket, sId);
+      }
+    });
+
+    if (atendenteId) {
+      const stillConnected = Array.from(activeSockets.values()).includes(String(atendenteId));
+      if (!stillConnected) {
+        db.get(`SELECT manual_status FROM tabela_atendentes WHERE id = ?`, [atendenteId], (err, row) => {
+          const manual = row ? row.manual_status : 'auto';
+          if (manual && manual !== 'auto' && manual !== 'online') {
+            io.emit('internal_operator_status_changed', { atendente_id: String(atendenteId), status: manual, manual_status: manual });
+          } else {
+            io.emit('internal_operator_status_changed', { atendente_id: String(atendenteId), status: 'offline', manual_status: manual || 'auto' });
+          }
+        });
+      }
+    }
   });
 });
 
@@ -3214,8 +3558,53 @@ function sendActiveChats(atendenteId) {
       }
       // Envia apenas para os sockets na sala daquele atendente
       io.to(atendenteId).emit('active_chats_list', rows || []);
+
+      // Atualiza o status dinâmico do atendente em tempo real
+      refreshOperatorDynamicStatus(atendenteId, (rows || []).length);
     }
   );
+}
+
+// Atualiza e transmite o status dinâmico do operador para toda a equipe
+function refreshOperatorDynamicStatus(atendenteId, activeCountOverride) {
+  if (!atendenteId) return;
+  const opIdStr = String(atendenteId);
+  db.get(`SELECT manual_status FROM tabela_atendentes WHERE id = ?`, [opIdStr], (err, opRow) => {
+    const manual = opRow ? opRow.manual_status : 'auto';
+
+    const countPromise = (typeof activeCountOverride === 'number')
+      ? Promise.resolve(activeCountOverride)
+      : new Promise((resolve) => {
+          db.get(
+            `SELECT COUNT(*) as total FROM tabela_atendimentos 
+             WHERE status = 'em_atendimento' 
+               AND (atendente_id = ? OR cliente_jid IN (SELECT cliente_jid FROM tabela_atendimento_participantes WHERE atendente_id = ?))`,
+            [opIdStr, opIdStr],
+            (cntErr, r) => resolve(r ? r.total : 0)
+          );
+        });
+
+    countPromise.then(activeChatsCount => {
+      const isOnline = Array.from(activeSockets.values()).map(String).includes(opIdStr);
+      let effectiveStatus = 'offline';
+      if (manual && manual !== 'auto') {
+        effectiveStatus = manual;
+      } else {
+        if (isOnline) {
+          effectiveStatus = activeChatsCount > 0 ? 'atendendo' : 'online';
+        } else {
+          effectiveStatus = 'offline';
+        }
+      }
+
+      io.emit('internal_operator_status_changed', {
+        atendente_id: opIdStr,
+        status: effectiveStatus,
+        manual_status: manual || 'auto',
+        active_chats: activeChatsCount
+      });
+    });
+  });
 }
 
 // Inicializar cliente do WhatsApp
