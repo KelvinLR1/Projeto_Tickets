@@ -7306,12 +7306,14 @@ function switchInternalDirectoryTab(tab) {
   if (panelChannels) {
     if (tab === 'channels') {
       panelChannels.classList.remove('hidden');
+      panelChannels.classList.add('flex');
       panelChannels.classList.remove('internal-tab-pane-anim');
       void panelChannels.offsetWidth; // Trigger reflow
       panelChannels.classList.add('internal-tab-pane-anim');
       renderInternalChannelsList();
     } else {
       panelChannels.classList.add('hidden');
+      panelChannels.classList.remove('flex');
       panelChannels.classList.remove('internal-tab-pane-anim');
     }
   }
@@ -7767,49 +7769,575 @@ function submitCreateGroup() {
 }
 
 // Renderiza a lista de Canais da Equipe
-function renderInternalChannelsList() {
-  const container = document.getElementById('internal-channels-panel');
-  if (!container) return;
+let internalChannelsActiveSubTab = 'chat'; // 'chat' | 'voice'
+let activeVoiceRoomsSummary = [];
 
-  container.innerHTML = '';
+// Alterna entre as sub-abas de Canais/Setores (Grupos de Setores / Texto vs Salas de Call estilo Discord)
+function switchInternalChannelsSubTab(subtab) {
+  internalChannelsActiveSubTab = subtab;
 
-  const channels = internalRoomsList.filter(r => r.tipo === 'canal');
-  if (channels.length === 0) {
-    container.innerHTML = '<p class="text-xs text-[var(--color-text-muted)] text-center py-8 internal-tab-pane-anim">Nenhum canal cadastrado.</p>';
+  const btnChat = document.getElementById('subtab-btn-channels-chat');
+  const btnVoice = document.getElementById('subtab-btn-channels-voice');
+  const pill = document.getElementById('internal-channels-subtab-pill');
+  const listChat = document.getElementById('internal-channels-chat-list');
+  const listVoice = document.getElementById('internal-channels-voice-list');
+
+  const activeClass = 'flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-active';
+  const inactiveClass = 'flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive';
+
+  if (btnChat) btnChat.className = subtab === 'chat' ? activeClass : inactiveClass;
+  if (btnVoice) btnVoice.className = subtab === 'voice' ? activeClass : inactiveClass;
+
+  if (pill) {
+    if (subtab === 'chat') {
+      pill.style.transform = 'translateX(0)';
+    } else {
+      pill.style.transform = 'translateX(calc(100% + 4px))';
+    }
+  }
+
+  if (listChat) {
+    if (subtab === 'chat') {
+      listChat.classList.remove('hidden');
+      listChat.classList.remove('internal-tab-pane-anim');
+      void listChat.offsetWidth;
+      listChat.classList.add('internal-tab-pane-anim');
+    } else {
+      listChat.classList.add('hidden');
+      listChat.classList.remove('internal-tab-pane-anim');
+    }
+  }
+
+  if (listVoice) {
+    if (subtab === 'voice') {
+      listVoice.classList.remove('hidden');
+      listVoice.classList.remove('internal-tab-pane-anim');
+      void listVoice.offsetWidth;
+      listVoice.classList.add('internal-tab-pane-anim');
+    } else {
+      listVoice.classList.add('hidden');
+      listVoice.classList.remove('internal-tab-pane-anim');
+    }
+  }
+
+  renderInternalChannelsList();
+}
+
+function filterInternalChannelsList() {
+  const input = document.getElementById('internal-channels-search-input');
+  const query = input ? input.value.trim().toLowerCase() : '';
+  renderInternalChannelsList(query);
+}
+
+// Entrar ou alternar de sala de voz (Estilo Discord)
+async function joinSectorVoiceRoom(roomId, roomTitle) {
+  // Se já estiver nessa mesma sala, foca no chat / barra
+  if (currentVoiceSession && currentVoiceSession.id === roomId) {
+    updateVoiceActiveBarUI();
     return;
   }
 
-  channels.forEach((canal, index) => {
-    const unreadCount = internalRoomUnreads[canal.id] || 0;
-    const isUnread = unreadCount > 0;
+  // Se estiver em outra sala, encerra a anterior para entrar na nova sala
+  if (currentVoiceSession) {
+    leaveCurrentVoiceCall();
+  }
 
-    const card = document.createElement('div');
-    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 cursor-pointer select-none ${isUnread ? 'internal-card-unread' : ''}`;
-    card.style.animationDelay = `${Math.min(index, 12) * 0.04}s`;
-    card.onclick = () => openInternalChannel(canal.id, canal.nome, canal.descricao);
+  try {
+    await initVoiceLocalAudio();
+  } catch (e) {
+    console.error('Erro ao acessar microfone:', e);
+    showInputBarNotification('Permissão de microfone necessária para entrar na sala de voz.');
+    return;
+  }
 
-    card.innerHTML = `
-      <div class="flex items-center gap-3.5 min-w-0">
-        <div class="w-11 h-11 rounded-2xl flex items-center justify-center font-mono font-black text-lg shrink-0 internal-icon-box">
-          #
+  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente';
+  const currentOpAvatar = currentOperator ? currentOperator.avatar : null;
+
+  currentVoiceSession = {
+    id: roomId,
+    title: roomTitle,
+    type: 'channel',
+    isMuted: false,
+    isSpeaking: false,
+    participants: [{
+      socketId: socket.id,
+      operatorId: currentOpId,
+      operatorName: currentOpName,
+      avatar: currentOpAvatar,
+      isMuted: false,
+      isSpeaking: false
+    }],
+    startedAt: Date.now()
+  };
+
+  socket.emit('voice_start_call', {
+    session_id: roomId,
+    target_id: roomId,
+    target_type: 'channel',
+    title: roomTitle,
+    caller_id: currentOpId,
+    caller_name: currentOpName,
+    caller_avatar: currentOpAvatar
+  });
+
+  startVoiceCallTimer();
+  updateVoiceActiveBarUI();
+  broadcastVoiceStateToParent();
+  renderInternalChannelsList();
+}
+
+// Renderiza a lista de Canais de Texto e Salas de Call (Discord style)
+function renderInternalChannelsList(filterQuery = '') {
+  const chatContainer = document.getElementById('internal-channels-chat-list');
+  const voiceContainer = document.getElementById('internal-channels-voice-list');
+
+  const query = (typeof filterQuery === 'string' ? filterQuery : '').trim().toLowerCase();
+
+  // 1. RENDERIZAR CANAIS DE TEXTO DOS SETORES
+  if (chatContainer) {
+    chatContainer.innerHTML = '';
+    const rawChannels = internalRoomsList.filter(r => r.tipo === 'canal');
+    const channels = query
+      ? rawChannels.filter(c => (c.nome || '').toLowerCase().includes(query) || (c.descricao || '').toLowerCase().includes(query))
+      : rawChannels;
+
+    let totalChatUnreads = 0;
+    rawChannels.forEach(c => {
+      totalChatUnreads += (internalRoomUnreads[c.id] || 0);
+    });
+
+    const badgeChatUnread = document.getElementById('badge-channels-chat-unread');
+    if (badgeChatUnread) {
+      if (totalChatUnreads > 0) {
+        badgeChatUnread.textContent = totalChatUnreads;
+        badgeChatUnread.classList.remove('hidden');
+      } else {
+        badgeChatUnread.classList.add('hidden');
+      }
+    }
+
+    if (channels.length === 0) {
+      chatContainer.innerHTML = `
+        <div class="py-10 text-center space-y-2 internal-tab-pane-anim">
+          <p class="text-xs text-[var(--color-text-muted)] font-semibold">${query ? 'Nenhum grupo de setor encontrado para a busca.' : 'Nenhum canal de texto cadastrado.'}</p>
+        </div>
+      `;
+    } else {
+      channels.forEach((canal, index) => {
+        const unreadCount = internalRoomUnreads[canal.id] || 0;
+        const isUnread = unreadCount > 0;
+
+        const card = document.createElement('div');
+        card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 cursor-pointer select-none group transition-all ${isUnread ? 'internal-card-unread' : ''}`;
+        card.style.animationDelay = `${Math.min(index, 12) * 0.03}s`;
+        card.onclick = () => openInternalChannel(canal.id, canal.nome, canal.descricao);
+
+        card.innerHTML = `
+          <div class="flex items-center gap-3.5 min-w-0">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center font-mono font-black text-base shrink-0 internal-icon-box group-hover:scale-105 transition-transform" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">
+              #
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <h4 class="text-xs font-extrabold text-foreground truncate group-hover:text-[var(--color-primary-theme,#ef4444)] transition-colors">${escapeHtml(canal.nome)}</h4>
+              </div>
+              <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${escapeHtml(canal.descricao || 'Grupo de conversa e avisos da equipe')}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            ${unreadCount > 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black internal-unread-badge animate-bounce">${unreadCount}</span>` : ''}
+            <div class="w-7 h-7 rounded-xl flex items-center justify-center text-[var(--color-text-muted)] group-hover:text-foreground group-hover:bg-white/5 transition-all">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+        `;
+
+        chatContainer.appendChild(card);
+      });
+    }
+  }
+
+  // 2. RENDERIZAR SALAS DE CALL DE VOZ (ESTILO DISCORD / ULTRA PREMIUM STAGE)
+  if (voiceContainer) {
+    voiceContainer.innerHTML = '';
+
+    // Catálogo de Salas de Voz Permanentes com identidades visuais ricas
+    const defaultVoiceRooms = [
+      {
+        id: 'voice_channel-geral',
+        name: 'Geral — Sala de Voz',
+        sector: 'Geral',
+        desc: 'Bate-papo de voz aberto para toda a equipe',
+        themeColor: '#ef4444',
+        bgGradient: 'from-rose-500/20 to-red-600/10',
+        borderColor: 'rgba(239, 68, 68, 0.3)',
+        iconType: 'users'
+      },
+      {
+        id: 'voice_channel-suporte',
+        name: 'Suporte Técnico — Call',
+        sector: 'Suporte Técnico',
+        desc: 'Canal de voz para resolução de chamados e auxílio técnico',
+        themeColor: '#38bdf8',
+        bgGradient: 'from-sky-500/20 to-blue-600/10',
+        borderColor: 'rgba(56, 189, 248, 0.3)',
+        iconType: 'headphones'
+      },
+      {
+        id: 'voice_channel-financeiro',
+        name: 'Financeiro — Sala de Voz',
+        sector: 'Financeiro',
+        desc: 'Alinhamentos de cobranças, conciliações e pagamentos',
+        themeColor: '#34d399',
+        bgGradient: 'from-emerald-500/20 to-teal-600/10',
+        borderColor: 'rgba(52, 211, 153, 0.3)',
+        iconType: 'dollar'
+      },
+      {
+        id: 'voice_channel-comercial',
+        name: 'Comercial & Vendas — Call',
+        sector: 'Comercial & Vendas',
+        desc: 'Reuniões de vendas, propostas e negociações de clientes',
+        themeColor: '#fb923c',
+        bgGradient: 'from-amber-500/20 to-orange-600/10',
+        borderColor: 'rgba(251, 146, 60, 0.3)',
+        iconType: 'flame'
+      },
+      {
+        id: 'voice_channel-diretoria',
+        name: 'Diretoria & Gestão — Call',
+        sector: 'Diretoria & Gestão',
+        desc: 'Canal executivo confidencial e alinhamentos estratégicos',
+        themeColor: '#a855f7',
+        bgGradient: 'from-purple-500/20 to-indigo-600/10',
+        borderColor: 'rgba(168, 85, 247, 0.3)',
+        iconType: 'shield'
+      },
+      {
+        id: 'voice_channel-reuniao-1',
+        name: 'Sala de Reunião 1',
+        sector: 'Reuniões',
+        desc: 'Sala dedicada para conferências e apresentações em grupo',
+        themeColor: '#6366f1',
+        bgGradient: 'from-indigo-500/20 to-blue-700/10',
+        borderColor: 'rgba(99, 102, 241, 0.3)',
+        iconType: 'video'
+      },
+      {
+        id: 'voice_channel-reuniao-2',
+        name: 'Sala de Reunião 2',
+        sector: 'Reuniões',
+        desc: 'Sala para reuniões rápidas e bate-papos internos',
+        themeColor: '#ec4899',
+        bgGradient: 'from-pink-500/20 to-rose-600/10',
+        borderColor: 'rgba(236, 72, 153, 0.3)',
+        iconType: 'coffee'
+      },
+      {
+        id: 'voice_channel-plantao',
+        name: 'Plantão & Suporte Rápido',
+        sector: 'Atendimento',
+        desc: 'Plantão de voz para tirar dúvidas imediatas de atendimento',
+        themeColor: '#facc15',
+        bgGradient: 'from-yellow-500/20 to-amber-600/10',
+        borderColor: 'rgba(250, 204, 21, 0.3)',
+        iconType: 'zap'
+      }
+    ];
+
+    // Inclui salas para quaisquer outros setores dinâmicos
+    const sectorChannels = internalRoomsList.filter(r => r.tipo === 'canal');
+    sectorChannels.forEach(sc => {
+      const vid = `voice_${sc.id}`;
+      if (!defaultVoiceRooms.some(r => r.id === vid || r.id === `voice_channel-${sc.nome.toLowerCase().replace(/[^a-z0-9]/g, '')}`)) {
+        defaultVoiceRooms.push({
+          id: vid,
+          name: `${sc.nome} — Voz`,
+          sector: sc.nome,
+          desc: `Sala de voz para o setor ${sc.nome}`,
+          themeColor: '#38bdf8',
+          bgGradient: 'from-cyan-500/20 to-blue-600/10',
+          borderColor: 'rgba(56, 189, 248, 0.3)',
+          iconType: 'volume'
+        });
+      }
+    });
+
+    const voiceRooms = query
+      ? defaultVoiceRooms.filter(r => r.name.toLowerCase().includes(query) || r.sector.toLowerCase().includes(query) || r.desc.toLowerCase().includes(query))
+      : defaultVoiceRooms;
+
+    let totalPeopleInVoice = 0;
+
+    // Calcula estatísticas globais
+    voiceRooms.forEach(room => {
+      const serverSession = (activeVoiceRoomsSummary || []).find(s => s.id === room.id);
+      const isLocalCurrent = currentVoiceSession && currentVoiceSession.id === room.id;
+      let pCount = serverSession && serverSession.participants ? serverSession.participants.length : 0;
+      if (isLocalCurrent) {
+        const myId = currentOperator ? String(currentOperator.id) : null;
+        if (myId && (!serverSession || !serverSession.participants || !serverSession.participants.some(p => String(p.operatorId) === myId))) {
+          pCount++;
+        }
+      }
+      totalPeopleInVoice += pCount;
+    });
+
+    // 1. BANNER OVERVIEW E STATUS GERAL (Topo da Lista)
+    const overviewBanner = document.createElement('div');
+    overviewBanner.className = 'p-3.5 rounded-2xl border mb-3 flex items-center justify-between gap-3 select-none relative overflow-hidden';
+    overviewBanner.style.background = 'linear-gradient(135deg, color-mix(in srgb, var(--color-card, #172033) 90%, black), color-mix(in srgb, var(--color-background, #0b0f19) 95%, black))';
+    overviewBanner.style.borderColor = 'var(--border-color, rgba(255,255,255,0.08))';
+
+    overviewBanner.innerHTML = `
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent); color: var(--color-primary-theme, #ef4444); border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
         </div>
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(canal.nome)}</h4>
+            <h4 class="text-xs font-black text-foreground uppercase tracking-wider">Canais de Voz da Equipe</h4>
+            <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-white/5 text-slate-300 border border-white/10 shrink-0">WebRTC HD</span>
           </div>
-          <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">${escapeHtml(canal.descricao || 'Canal de comunicação da equipe')}</p>
+          <p class="text-[10px] text-[var(--color-text-muted)] truncate mt-0.5">Bate-papo de voz instantâneo com redução de ruído ativa</p>
         </div>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
-        ${unreadCount > 0 ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold internal-unread-badge">${unreadCount}</span>` : ''}
-        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-[var(--color-text-muted)] group-hover:text-foreground">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
+      <div class="shrink-0 flex items-center gap-2">
+        <span class="px-2.5 py-1 rounded-full text-[10px] font-black ${totalPeopleInVoice > 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20 animate-pulse' : 'bg-white/5 text-slate-400 border border-white/10'} flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full ${totalPeopleInVoice > 0 ? 'bg-emerald-400' : 'bg-slate-500'}"></span>
+          ${totalPeopleInVoice > 0 ? `${totalPeopleInVoice} online em call` : 'Ninguém em call'}
+        </span>
       </div>
     `;
+    voiceContainer.appendChild(overviewBanner);
 
-    container.appendChild(card);
-  });
+    // 2. RENDERIZA CADA SALA DE VOZ (CARDS ULTRA PREMIUM)
+    voiceRooms.forEach((room, index) => {
+      const serverSession = (activeVoiceRoomsSummary || []).find(s => s.id === room.id);
+      const isLocalCurrent = currentVoiceSession && currentVoiceSession.id === room.id;
+
+      let participants = serverSession && serverSession.participants ? [...serverSession.participants] : [];
+      if (isLocalCurrent) {
+        const myId = currentOperator ? String(currentOperator.id) : null;
+        if (myId && !participants.some(p => String(p.operatorId) === myId)) {
+          participants.unshift({
+            operatorId: myId,
+            operatorName: currentOperator.name || currentOperator.nome || 'Você',
+            avatar: currentOperator.avatar || null,
+            isMuted: currentVoiceSession.isMuted,
+            isSpeaking: currentVoiceSession.isSpeaking
+          });
+        }
+      }
+
+      const pCount = participants.length;
+      const isLive = pCount > 0;
+
+      // Ícone SVG personalizado por setor
+      let roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+      if (room.iconType === 'headphones') {
+        roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>`;
+      } else if (room.iconType === 'dollar') {
+        roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
+      } else if (room.iconType === 'flame') {
+        roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>`;
+      } else if (room.iconType === 'shield') {
+        roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
+      } else if (room.iconType === 'video') {
+        roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
+      } else if (room.iconType === 'coffee') {
+        roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>`;
+      } else if (room.iconType === 'zap') {
+        roomIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`;
+      }
+
+      const card = document.createElement('div');
+      card.className = `voice-room-card p-4.5 flex flex-col gap-3.5 internal-card-enter select-none ${isLocalCurrent ? 'is-connected' : (isLive ? 'is-active' : '')}`;
+      card.style.animationDelay = `${Math.min(index, 12) * 0.03}s`;
+
+      card.innerHTML = `
+        <!-- Cabeçalho da Sala de Voz -->
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3.5 min-w-0">
+            <!-- Caixa de Ícone Temática -->
+            <div 
+              class="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all shadow-md relative"
+              style="
+                background: ${isLocalCurrent ? 'rgba(16, 185, 129, 0.25)' : (isLive ? `color-mix(in srgb, ${room.themeColor} 25%, transparent)` : 'color-mix(in srgb, var(--color-card, #172033) 80%, black)')};
+                color: ${isLocalCurrent ? '#10b981' : (isLive ? room.themeColor : '#94a3b8')};
+                border: 1.5px solid ${isLocalCurrent ? '#10b981' : (isLive ? room.borderColor : 'rgba(255, 255, 255, 0.08)')};
+                box-shadow: ${isLocalCurrent ? '0 0 16px rgba(16, 185, 129, 0.4)' : (isLive ? `0 0 14px color-mix(in srgb, ${room.themeColor} 30%, transparent)` : 'none')};
+              "
+            >
+              ${roomIconSvg}
+              ${isLive ? '<span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#0b0f19] animate-pulse"></span>' : ''}
+            </div>
+
+            <!-- Títulos e Metadados -->
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <h4 class="text-xs font-black text-foreground truncate">${escapeHtml(room.name)}</h4>
+                <span 
+                  class="text-[9px] font-black uppercase px-2 py-0.5 rounded-md border shrink-0"
+                  style="
+                    background: color-mix(in srgb, ${room.themeColor} 12%, transparent);
+                    color: ${room.themeColor};
+                    border-color: color-mix(in srgb, ${room.themeColor} 25%, transparent);
+                  "
+                >
+                  ${escapeHtml(room.sector)}
+                </span>
+              </div>
+              <p class="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5 font-medium">${escapeHtml(room.desc)}</p>
+            </div>
+          </div>
+
+          <!-- Status Lateral Direito -->
+          <div class="shrink-0 flex items-center">
+            ${isLocalCurrent ? `
+              <span class="px-3 py-1 rounded-full text-[10px] font-black bg-emerald-500 text-white flex items-center gap-1.5 shadow-md shadow-emerald-500/50">
+                <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+                Você está aqui
+              </span>
+            ` : (isLive ? `
+              <div class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                <div class="voice-equalizer">
+                  <div class="voice-equalizer-bar"></div>
+                  <div class="voice-equalizer-bar"></div>
+                  <div class="voice-equalizer-bar"></div>
+                  <div class="voice-equalizer-bar"></div>
+                  <div class="voice-equalizer-bar"></div>
+                </div>
+                <span class="text-[10px] font-black text-emerald-400">${pCount} em chamada</span>
+              </div>
+            ` : `
+              <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-white/5 text-slate-400 border border-white/5">Sala Livre</span>
+            `)}
+          </div>
+        </div>
+
+        <!-- Palco de Voz: Participantes Conectados em Tempo Real -->
+        ${isLive ? `
+          <div class="voice-stage-box flex flex-col gap-2">
+            <div class="flex items-center justify-between text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+              <span class="flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Participantes na Sala (${pCount})
+              </span>
+              <span class="text-[9px] font-mono text-emerald-400/80">Áudio Ativo</span>
+            </div>
+
+            <!-- Grade / Lista de Chips dos Participantes -->
+            <div class="flex flex-wrap items-center gap-1.5 pt-0.5">
+              ${participants.map(p => {
+                const isMe = currentOperator && String(p.operatorId) === String(currentOperator.id);
+                const isSpeaking = isMe ? (currentVoiceSession ? currentVoiceSession.isSpeaking : false) : p.isSpeaking;
+                const isMuted = isMe ? (currentVoiceSession ? currentVoiceSession.isMuted : false) : p.isMuted;
+                const initial = p.operatorName ? p.operatorName.charAt(0).toUpperCase() : 'U';
+
+                return `
+                  <div 
+                    class="voice-participant-chip ${isSpeaking ? 'is-speaking' : ''}"
+                    title="${escapeHtml(p.operatorName || 'Colega')} ${isMuted ? '(Mutado)' : (isSpeaking ? '(Falando...)' : '(Ouvindo)')}"
+                  >
+                    <!-- Avatar Circular -->
+                    <div class="relative w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] text-white shrink-0 overflow-hidden shadow-sm" style="background: ${isMe ? 'var(--color-primary-theme, #ef4444)' : '#3b82f6'};">
+                      ${p.avatar ? `<img src="${p.avatar}" class="w-full h-full object-cover">` : `<span>${initial}</span>`}
+                      ${isMuted ? '<span class="absolute inset-0 bg-black/60 flex items-center justify-center text-[7px]">🔇</span>' : ''}
+                    </div>
+
+                    <!-- Nome do Colega -->
+                    <span class="text-[11px] font-bold text-foreground truncate max-w-[120px]">
+                      ${escapeHtml(p.operatorName ? (isMe ? 'Você' : p.operatorName.split(' ')[0]) : 'Colega')}
+                    </span>
+
+                    <!-- Indicador de Status -->
+                    ${isSpeaking ? `
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
+                    ` : (isMuted ? `
+                      <span class="text-[8px] font-black text-rose-400 shrink-0">MUDO</span>
+                    ` : '')}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Barra de Ações Rápidas da Sala -->
+        <div class="pt-0.5">
+          ${isLocalCurrent ? `
+            <div class="flex items-center gap-2">
+              <!-- Botão Mutar / Desmutar Microfone -->
+              <button 
+                type="button" 
+                onclick="toggleVoiceMute()" 
+                class="flex-1 h-9 rounded-xl border transition-all font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer select-none shadow-sm ${currentVoiceSession?.isMuted ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30' : 'bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border-white/10'}"
+              >
+                ${currentVoiceSession?.isMuted ? `
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-rose-400"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  <span>Desmutar Mic</span>
+                ` : `
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  <span>Mutar Microfone</span>
+                `}
+              </button>
+
+              <!-- Botão Convidar Colegas -->
+              <button 
+                type="button" 
+                onclick="openVoiceAddParticipantModal()" 
+                class="h-9 px-3 rounded-xl transition-all font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer select-none text-white hover:opacity-90"
+                style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent); border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent);"
+                title="Convidar colega para esta sala"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                <span class="hidden sm:inline">Convidar</span>
+              </button>
+
+              <!-- Botão Desconectar / Sair da Sala -->
+              <button 
+                type="button" 
+                onclick="leaveCurrentVoiceCall()" 
+                class="h-9 px-3.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs shadow-md shadow-rose-600/30 transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer select-none"
+                title="Desconectar desta sala"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+                <span>Sair da Sala</span>
+              </button>
+            </div>
+          ` : `
+            <!-- Botão Principal: Entrar na Sala de Voz -->
+            <button 
+              type="button" 
+              onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.name)}')" 
+              class="w-full h-9 rounded-xl font-black text-xs text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg select-none active:scale-[0.98] group/btn" 
+              style="
+                background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 90%, black), color-mix(in srgb, var(--color-primary-theme, #ef4444) 70%, black))'}; 
+                box-shadow: ${isLive ? '0 6px 20px -2px rgba(16, 185, 129, 0.4)' : '0 6px 20px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'};
+              "
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="group-hover/btn:scale-110 transition-transform"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              <span>${isLive ? `Entrar no Bate-papo (${pCount} na sala)` : 'Iniciar Chamada nesta Sala'}</span>
+            </button>
+          `}
+        </div>
+      `;
+
+      voiceContainer.appendChild(card);
+    });
+
+    const badgeVoiceActive = document.getElementById('badge-channels-voice-active');
+    if (badgeVoiceActive) {
+      if (totalPeopleInVoice > 0) {
+        badgeVoiceActive.textContent = totalPeopleInVoice;
+        badgeVoiceActive.classList.remove('hidden');
+      } else {
+        badgeVoiceActive.classList.add('hidden');
+      }
+    }
+  }
 }
 
 // Renderiza a lista de Colegas para Conversas 1x1 (DMs) com sub-abas (Abertas / Atividade Recente vs Outros Colegas A-Z)
@@ -9312,7 +9840,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Recebe dados das salas e operadores
-socket.on('internal_rooms_data', ({ salas, atendentes, recent_messages, closed_dms }) => {
+socket.on('internal_rooms_data', ({ salas, atendentes, recent_messages, closed_dms, active_voice_rooms }) => {
   internalRoomsList = salas || [];
   internalOperatorsList = atendentes || [];
   if (recent_messages) {
@@ -9320,6 +9848,9 @@ socket.on('internal_rooms_data', ({ salas, atendentes, recent_messages, closed_d
   }
   if (closed_dms) {
     internalClosedDMsMap = { ...internalClosedDMsMap, ...closed_dms };
+  }
+  if (active_voice_rooms) {
+    activeVoiceRoomsSummary = active_voice_rooms || [];
   }
 
   if (currentOperator && currentOperator.id) {
@@ -9333,6 +9864,12 @@ socket.on('internal_rooms_data', ({ salas, atendentes, recent_messages, closed_d
   renderInternalChannelsList();
   renderInternalGroupsList();
   renderInternalDMsList();
+});
+
+// Atualização em tempo real das salas de voz estilo Discord
+socket.on('voice_rooms_status', ({ rooms }) => {
+  activeVoiceRoomsSummary = rooms || [];
+  renderInternalChannelsList();
 });
 
 // Atualização de status de fechamento de conversa particular
@@ -9535,7 +10072,7 @@ function broadcastVoiceStateToParent() {
           is_escalated: incomingVoiceCallData.is_escalated
         } : null
       };
-      window.parent.postMessage({ type: 'TICKETFLOW_VOICE_STATE', state }, '*');
+      window.parent.postMessage({ type: 'TICKETFLOW_VOICE_STATE', ...state, state }, '*');
     } catch (e) {
       console.warn('Erro ao transmitir estado de voz para janela pai:', e);
     }
@@ -10173,6 +10710,7 @@ function leaveCurrentVoiceCall() {
   currentVoiceSession = null;
   updateVoiceActiveBarUI();
   broadcastVoiceStateToParent();
+  renderInternalChannelsList();
 }
 
 // ==============================================================================
@@ -10364,7 +10902,7 @@ function broadcastVoiceStateToParent() {
           is_escalated: incomingVoiceCallData.is_escalated
         } : null
       };
-      window.parent.postMessage({ type: 'TICKETFLOW_VOICE_STATE', state }, '*');
+      window.parent.postMessage({ type: 'TICKETFLOW_VOICE_STATE', ...state, state }, '*');
     } catch (e) {
       console.warn('Erro ao transmitir estado de voz para janela pai:', e);
     }
@@ -10387,6 +10925,8 @@ window.addEventListener('message', (event) => {
     } else if (action === 'open_invite_modal') {
       openVoiceAddParticipantModal();
     }
+  } else if (event.data.type === 'TICKETFLOW_REQUEST_VOICE_STATE') {
+    broadcastVoiceStateToParent();
   }
 });
 

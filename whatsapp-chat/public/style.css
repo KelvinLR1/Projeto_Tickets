@@ -2602,7 +2602,8 @@ body.internal-only-view #internal-chat-drawer {
   padding: 3px !important;
 }
 
-.internal-dms-subtab-pill {
+.internal-dms-subtab-pill,
+.internal-channels-subtab-pill {
   position: absolute !important;
   top: 3px !important;
   bottom: 3px !important;
@@ -3221,4 +3222,113 @@ body.internal-only-view #internal-chat-drawer {
 
 #voice-active-bar:hover {
   transform: translate(-50%, -2px);
+}
+
+/* ==============================================================================
+   🎙️ SALAS DE CALL ULTRA PREMIUM (ESTILO DISCORD / STAGE HUDDLE)
+   ============================================================================== */
+.voice-room-card {
+  position: relative !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 85%, black) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08)) !important;
+  border-radius: 20px !important;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  overflow: hidden !important;
+}
+
+.voice-room-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, rgba(255, 255, 255, 0.15)) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 12px 30px -8px rgba(0, 0, 0, 0.6), 0 0 20px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent) !important;
+}
+
+.voice-room-card.is-active {
+  border-color: color-mix(in srgb, #10b981 50%, var(--border-color, rgba(255, 255, 255, 0.1))) !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7), 0 0 20px -3px rgba(16, 185, 129, 0.25) !important;
+}
+
+.voice-room-card.is-connected {
+  border-color: #10b981 !important;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--color-card, #172033) 90%, black), color-mix(in srgb, #064e3b 30%, black)) !important;
+  box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.8), 0 0 28px -2px rgba(16, 185, 129, 0.45) !important;
+}
+
+/* Palco de Voz (Stage Box) */
+.voice-stage-box {
+  background: color-mix(in srgb, var(--color-background, #0b0f19) 80%, black) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 14px !important;
+  padding: 10px 12px !important;
+}
+
+/* Chip de Participante no Palco */
+.voice-participant-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 4px 9px 4px 5px !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--color-card, #172033) 70%, transparent) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  transition: all 0.2s ease !important;
+}
+
+.voice-participant-chip.is-speaking {
+  border-color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.15) !important;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.35) !important;
+}
+
+/* Equalizador Animado de Ondas de Áudio */
+.voice-equalizer {
+  display: inline-flex !important;
+  align-items: flex-end !important;
+  gap: 2px !important;
+  height: 14px !important;
+  padding: 0 2px !important;
+}
+
+.voice-equalizer-bar {
+  width: 2.5px !important;
+  background-color: #10b981 !important;
+  border-radius: 2px !important;
+  animation: voice-equalizer-bounce 0.8s infinite ease-in-out alternate !important;
+}
+
+.voice-equalizer-bar:nth-child(1) { height: 40%; animation-delay: 0.1s; }
+.voice-equalizer-bar:nth-child(2) { height: 85%; animation-delay: 0.3s; }
+.voice-equalizer-bar:nth-child(3) { height: 60%; animation-delay: 0.05s; }
+.voice-equalizer-bar:nth-child(4) { height: 100%; animation-delay: 0.25s; }
+.voice-equalizer-bar:nth-child(5) { height: 50%; animation-delay: 0.4s; }
+
+@keyframes voice-equalizer-bounce {
+  0% { height: 20%; opacity: 0.6; }
+  50% { height: 95%; opacity: 1; }
+  100% { height: 35%; opacity: 0.8; }
+}
+
+/* Efeito de Ondas Sonoras no Ícone */
+.voice-pulse-beacon {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.voice-pulse-beacon::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: -4px !important;
+  border-radius: 50% !important;
+  background: rgba(16, 185, 129, 0.3) !important;
+  animation: voice-ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite !important;
+}
+
+@keyframes voice-ping-slow {
+  75%, 100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
 }

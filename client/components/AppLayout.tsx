@@ -166,7 +166,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             ) : isMonitorPage ? (
                 <main className="min-h-screen">
                     {children}
-                    <GlobalInternalChat />
                 </main>
             ) : (
                 <div className="flex min-h-screen">
@@ -186,9 +185,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     >
                         {children}
                     </main>
-                    <GlobalInternalChat />
                 </div>
             )}
+
+            {!isLoginPage && user && <GlobalInternalChat />}
         </div>
     );
 }

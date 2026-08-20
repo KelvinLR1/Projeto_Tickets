@@ -1696,8 +1696,42 @@
       </div>
 
       <!-- 1.2 Conteúdo da Aba Canais / Setores -->
-      <div id="internal-channels-panel" class="hidden flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
-        <!-- Renderizado via app.js -->
+      <div id="internal-channels-panel" class="hidden flex-1 flex-col overflow-hidden">
+        <!-- Sub-menu de Abas (1. Grupos de Setores / Texto | 2. Salas de Call estilo Discord) -->
+        <div class="p-3.5 border-b shrink-0 flex flex-col gap-2.5" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+          <!-- Sub-abas Cápsula Deslizante -->
+          <div class="flex items-center p-1 rounded-xl internal-subtab-container gap-1 relative">
+            <div id="internal-channels-subtab-pill" class="internal-channels-subtab-pill"></div>
+
+            <button id="subtab-btn-channels-chat" onclick="switchInternalChannelsSubTab('chat')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-active" title="Canais e grupos de conversa por setor">
+              <span class="font-mono font-black text-xs">#</span>
+              <span>Grupos de Setores</span>
+              <span id="badge-channels-chat-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white leading-none">0</span>
+            </button>
+
+            <button id="subtab-btn-channels-voice" onclick="switchInternalChannelsSubTab('voice')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive" title="Salas de voz para entrar em call como no Discord">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              <span>Salas de Call</span>
+              <span id="badge-channels-voice-active" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500 text-white leading-none animate-pulse">0</span>
+            </button>
+          </div>
+
+          <!-- Campo de Busca de Setores ou Salas -->
+          <div class="relative">
+            <input type="text" id="internal-channels-search-input" oninput="filterInternalChannelsList()" placeholder="Buscar setor ou sala de call..." class="w-full h-9 pl-9 pr-3 text-xs internal-search-input">
+            <svg class="absolute left-3 top-2.5 text-[var(--color-primary-theme)]" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+        </div>
+
+        <!-- Lista 1: Canais de Texto dos Setores -->
+        <div id="internal-channels-chat-list" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+          <!-- Renderizado via app.js -->
+        </div>
+
+        <!-- Lista 2: Salas de Call de Voz estilo Discord -->
+        <div id="internal-channels-voice-list" class="hidden flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+          <!-- Renderizado via app.js -->
+        </div>
       </div>
 
       <!-- 1.3 Conteúdo da Aba Grupos Criados pelos Usuários (3ª Seção) -->

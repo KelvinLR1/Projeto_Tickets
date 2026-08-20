@@ -1307,6 +1307,25 @@ const activeSockets = new Map(); // socket.id -> atendenteId
 // Memória para Sessões de Voz em Tempo Real (WebRTC Mesh Signaling)
 const activeVoiceSessions = new Map();
 
+function getActiveVoiceSessionsSummary() {
+  const list = [];
+  activeVoiceSessions.forEach((session, sId) => {
+    list.push({
+      id: sId,
+      title: session.title,
+      type: session.type,
+      roomId: session.roomId,
+      participantsCount: session.participants ? session.participants.size : 0,
+      participants: session.participants ? Array.from(session.participants.values()) : []
+    });
+  });
+  return list;
+}
+
+function broadcastVoiceRoomsStatus() {
+  io.emit('voice_rooms_status', { rooms: getActiveVoiceSessionsSummary() });
+}
+
 function handleLeaveVoiceSession(socket, sessionId) {
   if (!sessionId) return;
   const session = activeVoiceSessions.get(sessionId);
@@ -1334,6 +1353,7 @@ function handleLeaveVoiceSession(socket, sessionId) {
       participants: participantsArray
     });
   }
+  broadcastVoiceRoomsStatus();
 }
 
 io.on('connection', (socket) => {
@@ -2303,7 +2323,8 @@ io.on('connection', (socket) => {
                       salas: salas || [],
                       atendentes: atendentesList,
                       recent_messages: recentMap,
-                      closed_dms: closedMap
+                      closed_dms: closedMap,
+                      active_voice_rooms: getActiveVoiceSessionsSummary()
                     });
                   }
                 );
@@ -2579,9 +2600,12 @@ io.on('connection', (socket) => {
        ON CONFLICT(atendente_id, sala_id) DO UPDATE SET fechada_em = excluded.fechada_em`,
       [String(atendente_id), sala_id, now],
       () => {
-        socket.emit('internal_dm_status_updated', {
-          sala_id,
-          fechada_em: now
+        socket.emit('internal_rooms_data', {
+          salas: salas || [],
+          atendentes: atendentesList,
+          recent_messages: recentMap,
+          closed_dms: closedMap,
+          active_voice_rooms: getActiveVoiceSessionsSummary()
         });
       }
     );
@@ -2595,8 +2619,10 @@ io.on('connection', (socket) => {
   socket.on('voice_start_call', ({ session_id, target_id, target_type, title, caller_id, caller_name, caller_avatar }) => {
     if (!session_id || !caller_id) return;
 
+    let isNewSession = false;
     let session = activeVoiceSessions.get(session_id);
     if (!session) {
+      isNewSession = true;
       session = {
         id: session_id,
         title: title || 'Chamada de Voz',
@@ -2611,16 +2637,26 @@ io.on('connection', (socket) => {
     }
 
     socket.join(session.roomId);
-    session.participants.set(socket.id, {
+    const newParticipant = {
       socketId: socket.id,
       operatorId: String(caller_id),
       operatorName: caller_name || 'Colega',
       avatar: caller_avatar || null,
       isMuted: false,
       isSpeaking: false
-    });
+    };
+    session.participants.set(socket.id, newParticipant);
 
     const participantsArray = Array.from(session.participants.values());
+
+    // Se já havia pessoas na sala, notifica sobre o novo participante
+    if (!isNewSession && participantsArray.length > 1) {
+      io.to(session.roomId).emit('voice_user_joined', {
+        session_id,
+        newParticipant,
+        participants: participantsArray
+      });
+    }
 
     // Se for chamada direta 1x1
     if (target_type === 'direct' && target_id) {
@@ -2660,6 +2696,8 @@ io.on('connection', (socket) => {
       type: session.type,
       participants: participantsArray
     });
+
+    broadcastVoiceRoomsStatus();
   });
 
   // 2. Aceitar Chamada / Entrar na Sessão de Voz
@@ -2697,6 +2735,8 @@ io.on('connection', (socket) => {
       type: session.type,
       participants: participantsArray
     });
+
+    broadcastVoiceRoomsStatus();
   });
 
   // 3. Recusar Chamada

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/components/ThemeProvider';
 import { usePathname, useRouter } from 'next/navigation';
-import { MessageSquare, X, Users, Mic, MicOff, PhoneCall, PhoneOff, ExternalLink } from 'lucide-react';
+import { MessageSquare, X, Users, Mic, MicOff, PhoneCall, PhoneOff, UserPlus, Radio } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function GlobalInternalChat() {
@@ -55,10 +55,11 @@ export default function GlobalInternalChat() {
                 } else if (event.data.type === 'TICKETFLOW_INTERNAL_UNREAD_UPDATE') {
                     setUnreadCount(Number(event.data.unreadCount) || 0);
                 } else if (event.data.type === 'TICKETFLOW_VOICE_STATE') {
+                    const raw = event.data.state || event.data;
                     setVoiceState({
-                        inCall: !!event.data.inCall,
-                        session: event.data.session || null,
-                        incomingCall: event.data.incomingCall || null
+                        inCall: !!raw.inCall,
+                        session: raw.session || null,
+                        incomingCall: raw.incomingCall || null
                     });
                 }
             }
@@ -86,6 +87,14 @@ export default function GlobalInternalChat() {
             iframeRef.current.contentWindow.postMessage({
                 type: 'TICKETFLOW_VOICE_ACTION',
                 action
+            }, '*');
+        }
+    };
+
+    const requestVoiceState = () => {
+        if (iframeRef.current && iframeRef.current.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({
+                type: 'TICKETFLOW_REQUEST_VOICE_STATE'
             }, '*');
         }
     };
@@ -125,20 +134,36 @@ export default function GlobalInternalChat() {
                 style={{
                     background: 'linear-gradient(135deg, color-mix(in srgb, var(--color-card, #172033) 85%, black), color-mix(in srgb, var(--color-background, #0b0f19) 95%, black))',
                     backdropFilter: 'blur(20px)',
-                    borderColor: unreadCount > 0 ? '#ef4444' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
-                    boxShadow: unreadCount > 0 ? '0 0 16px rgba(239, 68, 68, 0.6)' : '0 6px 24px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
+                    borderColor: voiceState.inCall
+                        ? '#10b981'
+                        : unreadCount > 0
+                            ? '#ef4444'
+                            : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
+                    boxShadow: voiceState.inCall
+                        ? '0 0 20px rgba(16, 185, 129, 0.6)'
+                        : unreadCount > 0
+                            ? '0 0 16px rgba(239, 68, 68, 0.6)'
+                            : '0 6px 24px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
                 }}
-                title={unreadCount > 0 ? `Chat Interno: ${unreadCount} mensagem(ns) não lida(s)` : "Chat Interno da Equipe (Alt + C)"}
+                title={
+                    voiceState.inCall
+                        ? `Chamada Ativa no Chat Interno (${formatVoiceTimer(voiceState.session?.seconds || 0)})`
+                        : unreadCount > 0
+                            ? `Chat Interno: ${unreadCount} mensagem(ns) não lida(s)`
+                            : "Chat Interno da Equipe (Alt + C)"
+                }
             >
-                {/* Borda Vermelha Neon Pulsante/Piscando Ativamente */}
-                {unreadCount > 0 && (
+                {/* Borda Neon Pulsante para Chamada Ativa ou Não Lidas */}
+                {(voiceState.inCall || unreadCount > 0) && (
                     <span 
                         className="absolute inset-0 rounded-l-xl pointer-events-none animate-pulse"
                         style={{
-                            borderTop: '2.5px solid #ef4444',
-                            borderBottom: '2.5px solid #ef4444',
-                            borderLeft: '2.5px solid #ef4444',
-                            boxShadow: '0 0 22px 3px #ef4444, 0 0 45px 8px rgba(239, 68, 68, 0.75), inset 0 0 14px rgba(239, 68, 68, 0.5)'
+                            borderTop: `2.5px solid ${voiceState.inCall ? '#10b981' : '#ef4444'}`,
+                            borderBottom: `2.5px solid ${voiceState.inCall ? '#10b981' : '#ef4444'}`,
+                            borderLeft: `2.5px solid ${voiceState.inCall ? '#10b981' : '#ef4444'}`,
+                            boxShadow: voiceState.inCall
+                                ? '0 0 22px 3px #10b981, 0 0 45px 8px rgba(16, 185, 129, 0.75), inset 0 0 14px rgba(16, 185, 129, 0.5)'
+                                : '0 0 22px 3px #ef4444, 0 0 45px 8px rgba(239, 68, 68, 0.75), inset 0 0 14px rgba(239, 68, 68, 0.5)'
                         }}
                     />
                 )}
@@ -146,20 +171,31 @@ export default function GlobalInternalChat() {
                     <div 
                         className="w-6 h-6 rounded-lg flex items-center justify-center group-hover:scale-110 transition-all duration-300 relative"
                         style={{
-                            background: unreadCount > 0 
-                                ? 'rgba(244, 63, 94, 0.25)' 
-                                : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent)',
-                            color: unreadCount > 0 ? '#fb7185' : 'var(--color-primary-theme, #ef4444)',
-                            border: unreadCount > 0 
-                                ? '1px solid rgba(244, 63, 94, 0.6)' 
-                                : '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
-                            boxShadow: unreadCount > 0 
-                                ? '0 0 14px rgba(244, 63, 94, 0.6)' 
-                                : '0 0 10px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
+                            background: voiceState.inCall
+                                ? 'rgba(16, 185, 129, 0.25)'
+                                : unreadCount > 0 
+                                    ? 'rgba(244, 63, 94, 0.25)' 
+                                    : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent)',
+                            color: voiceState.inCall ? '#10b981' : unreadCount > 0 ? '#fb7185' : 'var(--color-primary-theme, #ef4444)',
+                            border: voiceState.inCall
+                                ? '1px solid rgba(16, 185, 129, 0.6)'
+                                : unreadCount > 0 
+                                    ? '1px solid rgba(244, 63, 94, 0.6)' 
+                                    : '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
+                            boxShadow: voiceState.inCall
+                                ? '0 0 14px rgba(16, 185, 129, 0.6)'
+                                : unreadCount > 0 
+                                    ? '0 0 14px rgba(244, 63, 94, 0.6)' 
+                                    : '0 0 10px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
                         }}
                     >
-                        <Users className="w-3.5 h-3.5" />
-                        {unreadCount > 0 && (
+                        {voiceState.inCall ? (
+                            <PhoneCall className="w-3.5 h-3.5 animate-pulse text-emerald-400" />
+                        ) : (
+                            <Users className="w-3.5 h-3.5" />
+                        )}
+
+                        {unreadCount > 0 && !voiceState.inCall && (
                             <span className="absolute -top-2 -right-2 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-lg shadow-rose-500/80 border-2 border-[var(--color-card,#0f172a)] animate-bounce">
                                 {unreadCount > 99 ? '99+' : unreadCount}
                             </span>
@@ -168,27 +204,27 @@ export default function GlobalInternalChat() {
                 </div>
                 <span 
                     className="text-[10px] font-black tracking-widest uppercase select-none [writing-mode:vertical-lr] rotate-180 transition-colors group-hover:text-[var(--color-primary-theme,#ef4444)]"
-                    style={{ color: 'var(--color-foreground, #ffffff)' }}
+                    style={{ color: voiceState.inCall ? '#10b981' : 'var(--color-foreground, #ffffff)' }}
                 >
-                    Equipe
+                    {voiceState.inCall ? 'Em Call' : 'Equipe'}
                 </span>
             </button>
 
-            {/* BARRA FLUTUANTE GLOBAL DE CHAMADA ATIVA (Visível em qualquer tela do portal quando a gaveta estiver fechada) */}
+            {/* BARRA FLUTUANTE GLOBAL DE CHAMADA ATIVA (Visível em TODAS as telas do portal quando a gaveta estiver fechada) */}
             {voiceState.inCall && !isOpen && (
                 <div 
-                    className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-2xl text-foreground select-none animate-bounce-in"
+                    className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9990] flex items-center gap-3.5 px-4 py-2.5 rounded-2xl border shadow-2xl text-foreground select-none animate-bounce-in max-w-[95vw] sm:max-w-none overflow-x-auto"
                     style={{
-                        background: 'color-mix(in srgb, var(--color-card, #172033) 92%, black)',
+                        background: 'color-mix(in srgb, var(--color-card, #172033) 94%, black)',
                         backdropFilter: 'blur(24px)',
                         WebkitBackdropFilter: 'blur(24px)',
-                        borderColor: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, var(--border-color, rgba(255,255,255,0.15)))',
-                        boxShadow: '0 16px 40px -6px rgba(0,0,0,0.8), 0 0 20px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
+                        borderColor: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, var(--border-color, rgba(255,255,255,0.15)))',
+                        boxShadow: '0 16px 40px -6px rgba(0,0,0,0.85), 0 0 24px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
                     }}
                 >
-                    {/* Indicador Pulsante e Status */}
-                    <div className="flex items-center gap-2">
-                        <span className="relative flex h-3 w-3">
+                    {/* Indicador Pulsante e Informações da Chamada */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="relative flex h-3 w-3 shrink-0">
                             <span 
                                 className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
                                 style={{ backgroundColor: 'var(--color-primary-theme, #ef4444)' }}
@@ -198,59 +234,107 @@ export default function GlobalInternalChat() {
                                 style={{ backgroundColor: 'var(--color-primary-theme, #ef4444)' }}
                             />
                         </span>
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                                <h4 className="text-xs font-extrabold text-foreground truncate max-w-[140px] md:max-w-[190px]">
-                                    {voiceState.session?.title || 'Chamada de Voz'}
-                                </h4>
-                                <span 
-                                    className="text-[11px] font-mono font-black px-2 py-0.5 rounded-md"
-                                    style={{
-                                        background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent)',
-                                        color: 'var(--color-primary-theme, #ef4444)',
-                                        border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
-                                    }}
-                                >
-                                    {formatVoiceTimer(voiceState.session?.seconds || 0)}
-                                </span>
-                            </div>
+                        <div className="min-w-0 flex items-center gap-2">
+                            <h4 className="text-xs font-extrabold text-foreground truncate max-w-[130px] sm:max-w-[200px]">
+                                {voiceState.session?.title || 'Chamada de Voz'}
+                            </h4>
+                            <span 
+                                className="text-[11px] font-mono font-black px-2 py-0.5 rounded-md shrink-0"
+                                style={{
+                                    background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent)',
+                                    color: 'var(--color-primary-theme, #ef4444)',
+                                    border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
+                                }}
+                            >
+                                {formatVoiceTimer(voiceState.session?.seconds || 0)}
+                            </span>
                         </div>
                     </div>
 
-                    <div className="h-6 w-px bg-white/10 mx-0.5" />
+                    {/* Lista de Avatares dos Participantes */}
+                    {voiceState.session?.participants && voiceState.session.participants.length > 0 && (
+                        <div className="flex items-center -space-x-2 overflow-hidden px-1 shrink-0">
+                            {voiceState.session.participants.map((p: any, idx: number) => {
+                                const initial = p.operatorName ? p.operatorName.charAt(0).toUpperCase() : 'U';
+                                const isSpeaking = p.isSpeaking;
+                                return (
+                                    <div 
+                                        key={idx}
+                                        className={clsx(
+                                            "relative w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 border-2 border-[#0f172a] transition-all duration-200 overflow-hidden",
+                                            isSpeaking && "ring-2 ring-emerald-400 scale-110 z-10",
+                                            p.isMuted && "opacity-50"
+                                        )}
+                                        style={{ backgroundColor: 'var(--color-primary-theme, #ef4444)' }}
+                                        title={`${p.operatorName || 'Participante'} ${p.isMuted ? '(Mutado)' : (isSpeaking ? '(Falando...)' : '')}`}
+                                    >
+                                        {p.avatar ? (
+                                            <img src={p.avatar} alt={p.operatorName} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="text-white text-[10px] font-black">{initial}</span>
+                                        )}
+                                        {p.isMuted && (
+                                            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-[#0f172a]" />
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    <div className="h-6 w-px bg-white/10 shrink-0 mx-0.5" />
 
                     {/* Botões de Ação na Barra Flutuante Global */}
-                    <div className="flex items-center gap-1.5">
-                        {/* Botão Mutar */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Botão Mutar / Desmutar */}
                         <button
                             type="button"
                             onClick={() => sendVoiceAction('toggle_mute')}
                             className={clsx(
                                 "h-8 px-2.5 rounded-xl border transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none",
                                 voiceState.session?.isMuted
-                                    ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                                    ? "bg-rose-500/20 text-rose-300 border-rose-500/30 hover:bg-rose-500/30"
                                     : "bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border-white/10"
                             )}
                             title="Mutar / Desmutar Microfone"
                         >
                             {voiceState.session?.isMuted ? <MicOff className="w-3.5 h-3.5 text-rose-400" /> : <Mic className="w-3.5 h-3.5" />}
-                            <span className="hidden sm:inline">{voiceState.session?.isMuted ? 'Desmutar' : 'Mutar'}</span>
+                            <span className="hidden md:inline">{voiceState.session?.isMuted ? 'Desmutar' : 'Mutar'}</span>
                         </button>
 
-                        {/* Botão Abrir Chat / Detalhes da Chamada */}
+                        {/* Botão Convidar Colega */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsOpen(true);
+                                sendVoiceAction('open_invite_modal');
+                            }}
+                            className="h-8 px-2.5 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none"
+                            style={{
+                                background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent)',
+                                border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)',
+                                color: 'var(--color-foreground, #fff)'
+                            }}
+                            title="Convidar colega para esta chamada"
+                        >
+                            <UserPlus className="w-3.5 h-3.5" style={{ color: 'var(--color-primary-theme, #ef4444)' }} />
+                            <span className="hidden md:inline">Convidar</span>
+                        </button>
+
+                        {/* Botão Abrir Gaveta do Chat */}
                         <button
                             type="button"
                             onClick={() => setIsOpen(true)}
                             className="h-8 px-2.5 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none"
                             style={{
-                                background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent)',
-                                border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)',
+                                background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 22%, transparent)',
+                                border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, transparent)',
                                 color: 'var(--color-foreground, #fff)'
                             }}
                             title="Abrir detalhes da conversa e participantes"
                         >
                             <PhoneCall className="w-3.5 h-3.5" style={{ color: 'var(--color-primary-theme, #ef4444)' }} />
-                            <span className="hidden sm:inline">Abrir Chamada</span>
+                            <span className="hidden sm:inline">Abrir Chat</span>
                         </button>
 
                         {/* Botão Sair / Desconectar */}
@@ -267,9 +351,9 @@ export default function GlobalInternalChat() {
                 </div>
             )}
 
-            {/* MODAL GLOBAL DE CHAMADA RECEBIDA (Centralizado e proeminente em qualquer tela) */}
+            {/* MODAL GLOBAL DE CHAMADA RECEBIDA (Centralizado e proeminente em QUALQUER tela) */}
             {voiceState.incomingCall && !isOpen && (
-                <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 select-none">
+                <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 select-none animate-in fade-in duration-300">
                     <div 
                         className="w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl border animate-bounce-in"
                         style={{
@@ -289,7 +373,7 @@ export default function GlobalInternalChat() {
                                 style={{ background: 'var(--color-primary-theme, #ef4444)' }}
                             >
                                 {voiceState.incomingCall.caller_avatar ? (
-                                    <img src={voiceState.incomingCall.caller_avatar} className="w-full h-full object-cover rounded-full" />
+                                    <img src={voiceState.incomingCall.caller_avatar} alt="Caller" className="w-full h-full object-cover rounded-full" />
                                 ) : (
                                     voiceState.incomingCall.caller_name ? voiceState.incomingCall.caller_name.charAt(0).toUpperCase() : 'U'
                                 )}
@@ -373,10 +457,10 @@ export default function GlobalInternalChat() {
                         className="w-full h-full border-none bg-slate-950"
                         allow="microphone; clipboard-read; clipboard-write"
                         title="Chat Interno TicketFlow"
+                        onLoad={requestVoiceState}
                     />
                 </div>
             </aside>
         </>
     );
 }
-
