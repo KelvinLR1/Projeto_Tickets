@@ -1631,126 +1631,196 @@
       </div>
     </div>
 
-    <!-- 1. VISÃO DE DIRETÓRIO (PARTICULARES, GRUPOS & CANAIS) -->
+    <!-- 1. VISÃO DE DIRETÓRIO (PESSOAL & GERAL) -->
     <div id="internal-directory-view" class="flex-1 flex flex-col overflow-hidden">
-      <!-- Abas de Alternância em Cápsula Segmentada (1. Particulares, 2. Grupos, 3. Canais/Setores) -->
+      <!-- Abas de Alternância Principais (1. Pessoal, 2. Geral) -->
       <div class="p-3.5 border-b shrink-0" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
         <div class="flex items-center p-1 rounded-2xl internal-tab-container gap-1 relative">
-          <!-- Indicador Deslizante Animado da Aba Ativa -->
-          <div id="internal-tab-pill-indicator" class="internal-tab-pill-indicator"></div>
+          <!-- Indicador Deslizante Animado da Aba Principal Ativa -->
+          <div id="internal-main-tab-pill" class="internal-main-tab-pill"></div>
 
-          <!-- 1º: Particulares (1 x 1) -->
-          <button id="tab-btn-internal-dms" onclick="switchInternalDirectoryTab('dms')" class="flex-1 py-2.5 rounded-xl text-[11px] md:text-xs cursor-pointer flex items-center justify-center gap-1.5 internal-tab-btn internal-tab-active" title="Conversas particulares 1 x 1">
+          <!-- 1º: Pessoal -->
+          <button id="tab-btn-internal-pessoal" onclick="switchInternalMainTab('pessoal')" class="flex-1 py-2.5 rounded-xl text-[11px] md:text-xs cursor-pointer flex items-center justify-center gap-1.5 internal-tab-btn internal-tab-active" title="Seu espaço pessoal: conversas diretas, grupos e salas de call">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span class="truncate">Particulares</span>
-            <span id="badge-internal-dms-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-rose-500 text-white leading-none">0</span>
+            <span class="truncate font-bold">Pessoal</span>
+            <span id="badge-internal-pessoal-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-rose-500 text-white leading-none">0</span>
           </button>
 
-          <!-- 2º: Grupos (no meio) -->
-          <button id="tab-btn-internal-groups" onclick="switchInternalDirectoryTab('groups')" class="flex-1 py-2.5 rounded-xl text-[11px] md:text-xs cursor-pointer flex items-center justify-center gap-1.5 internal-tab-btn internal-tab-inactive" title="Grupos criados pelos usuários">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            <span class="truncate">Grupos</span>
-            <span id="badge-internal-groups-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-rose-500 text-white leading-none">0</span>
-          </button>
-
-          <!-- 3º: Canais / Setores (à direita) -->
-          <button id="tab-btn-internal-channels" onclick="switchInternalDirectoryTab('channels')" class="flex-1 py-2.5 rounded-xl text-[11px] md:text-xs cursor-pointer flex items-center justify-center gap-1.5 internal-tab-btn internal-tab-inactive" title="Canais gerais e setores">
-            <span class="font-mono font-black text-sm">#</span>
-            <span class="truncate">Canais / Setores</span>
+          <!-- 2º: Geral -->
+          <button id="tab-btn-internal-geral" onclick="switchInternalMainTab('geral')" class="flex-1 py-2.5 rounded-xl text-[11px] md:text-xs cursor-pointer flex items-center justify-center gap-1.5 internal-tab-btn internal-tab-inactive" title="Espaço geral da empresa: grupos de setores e salas de call públicas">
+            <span class="font-mono font-black text-xs">#</span>
+            <span class="truncate font-bold">Geral</span>
+            <span id="badge-internal-geral-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-rose-500 text-white leading-none">0</span>
           </button>
         </div>
       </div>
 
-      <!-- 1.1 Conteúdo da Aba Conversas Particulares (1x1 DMs) -->
-      <div id="internal-dms-panel" class="flex-1 flex flex-col overflow-hidden">
-        <!-- Sub-menu de Abas (1. Conversas Abertas / Recentes | 2. Outros Colegas A-Z) -->
-        <div class="p-3.5 border-b shrink-0 flex flex-col gap-2.5" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
-          <!-- Sub-abas Cápsula Deslizante -->
+      <!-- ========================================================================= -->
+      <!-- PAINEL 1: PESSOAL (Sub-abas: 1. Conversas | 2. Grupos | 3. Salas de Call) -->
+      <!-- ========================================================================= -->
+      <div id="internal-panel-pessoal" class="flex-1 flex flex-col overflow-hidden">
+        <!-- Sub-menu de Abas do Pessoal (3 sub-abas) -->
+        <div class="p-3 border-b shrink-0 flex flex-col gap-2.5" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
           <div class="flex items-center p-1 rounded-xl internal-subtab-container gap-1 relative">
-            <div id="internal-dms-subtab-pill" class="internal-dms-subtab-pill"></div>
+            <div id="pessoal-subtab-pill" class="pessoal-subtab-pill"></div>
 
-            <button id="subtab-btn-dms-active" onclick="switchInternalDmsSubTab('active')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-active" title="Conversas que já possuem mensagens">
+            <!-- Sub-aba 1: Conversas (1x1) -->
+            <button id="subtab-btn-pessoal-dms" onclick="switchPessoalSubTab('dms')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-active" title="Conversas 1x1 diretas com colegas">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              <span>Conversas Abertas</span>
-              <span id="badge-dms-active-count" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white leading-none">0</span>
+              <span class="truncate">Conversas</span>
+              <span id="badge-pessoal-dms-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white leading-none">0</span>
             </button>
 
-            <button id="subtab-btn-dms-all" onclick="switchInternalDmsSubTab('all')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive" title="Todos os colegas cadastrados em ordem alfabética">
+            <!-- Sub-aba 2: Grupos -->
+            <button id="subtab-btn-pessoal-groups" onclick="switchPessoalSubTab('groups')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive" title="Grupos que você participa">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>Outros Colegas (A-Z)</span>
-              <span id="badge-dms-all-count" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-white/10 text-slate-300 leading-none">0</span>
+              <span class="truncate">Grupos</span>
+              <span id="badge-pessoal-groups-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white leading-none">0</span>
+            </button>
+
+            <!-- Sub-aba 3: Salas de Call -->
+            <button id="subtab-btn-pessoal-voice" onclick="switchPessoalSubTab('voice')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive" title="Salas de call privadas criadas por você ou onde você foi convidado">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              <span class="truncate">Salas de Call</span>
+              <span id="badge-pessoal-voice-count" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-purple-500 text-white leading-none">0</span>
             </button>
           </div>
 
-          <!-- Campo de Busca de Colegas -->
-          <div class="relative">
-            <input type="text" id="internal-dms-search-input" oninput="filterInternalDMsList()" placeholder="Buscar colega por nome ou setor..." class="w-full h-9 pl-9 pr-3 text-xs internal-search-input">
-            <svg class="absolute left-3 top-2.5 text-[var(--color-primary-theme)]" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <!-- Barra de Busca de Pessoal -->
+          <div class="relative flex items-center">
+            <input type="text" id="internal-pessoal-search-input" oninput="filterPessoalList()" placeholder="Buscar conversa, colega ou grupo..." class="w-full h-8.5 pl-8.5 pr-3 text-xs internal-search-input">
+            <svg class="absolute left-2.5 top-2.5 text-[var(--color-primary-theme)] pointer-events-none" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
         </div>
 
-        <!-- Lista de Colegas para 1x1 -->
-        <div id="internal-dms-list" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
-          <!-- Renderizado via app.js -->
+        <!-- Conteúdo 1: Conversas 1x1 (com botão Nova Conversa no topo) -->
+        <div id="pessoal-list-dms" class="flex-1 flex flex-col overflow-hidden">
+          <div class="p-3 border-b shrink-0 flex items-center justify-between gap-2" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+            <div class="min-w-0">
+              <h4 class="text-xs font-extrabold text-foreground truncate">Conversas Abertas</h4>
+              <p class="text-[10px] text-[var(--color-text-muted)] truncate">Suas conversas diretas 1x1 ativas</p>
+            </div>
+            <button onclick="openNewDMModal()" class="px-3 py-1.5 text-xs internal-btn-action flex items-center gap-1.5 cursor-pointer shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Nova Conversa</span>
+            </button>
+          </div>
+          <div id="pessoal-dms-container" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+            <!-- Renderizado via app.js -->
+          </div>
+        </div>
+
+        <!-- Conteúdo 2: Grupos Pessoais (com botão Novo Grupo no topo) -->
+        <div id="pessoal-list-groups" class="hidden flex-1 flex-col overflow-hidden">
+          <div class="p-3 border-b shrink-0 flex items-center justify-between gap-2" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+            <div class="min-w-0">
+              <h4 class="text-xs font-extrabold text-foreground truncate">Grupos da Equipe</h4>
+              <p class="text-[10px] text-[var(--color-text-muted)] truncate">Grupos que você criou ou participa</p>
+            </div>
+            <button onclick="openCreateGroupModal()" class="px-3 py-1.5 text-xs internal-btn-action flex items-center gap-1.5 cursor-pointer shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Novo Grupo</span>
+            </button>
+          </div>
+          <div id="pessoal-groups-container" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+            <!-- Renderizado via app.js -->
+          </div>
+        </div>
+
+        <!-- Conteúdo 3: Salas de Call Privadas (com botão Nova Call no topo) -->
+        <div id="pessoal-list-voice" class="hidden flex-1 flex-col overflow-hidden">
+          <div class="p-3 border-b shrink-0 flex items-center justify-between gap-2" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+            <div class="min-w-0">
+              <h4 class="text-xs font-extrabold text-foreground truncate">Suas Salas de Call</h4>
+              <p class="text-[10px] text-[var(--color-text-muted)] truncate">Criadas por você ou com convite direto</p>
+            </div>
+            <button onclick="openCreatePrivateCallModal()" class="px-3 py-1.5 text-xs font-bold text-white rounded-xl flex items-center gap-1.5 cursor-pointer shrink-0 shadow-md shadow-purple-600/30 active:scale-95 transition-all" style="background: linear-gradient(135deg, #9333ea, #7c3aed);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Nova Call</span>
+            </button>
+          </div>
+          <div id="pessoal-voice-container" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+            <!-- Renderizado via app.js -->
+          </div>
         </div>
       </div>
 
-      <!-- 1.2 Conteúdo da Aba Canais / Setores -->
-      <div id="internal-channels-panel" class="hidden flex-1 flex-col overflow-hidden">
-        <!-- Sub-menu de Abas (1. Grupos de Setores / Texto | 2. Salas de Call estilo Discord) -->
-        <div class="p-3.5 border-b shrink-0 flex flex-col gap-2.5" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
-          <!-- Sub-abas Cápsula Deslizante -->
+      <!-- ========================================================================= -->
+      <!-- PAINEL 2: GERAL (Sub-abas: 1. Grupos de Setores | 2. Salas de Call)       -->
+      <!-- ========================================================================= -->
+      <div id="internal-panel-geral" class="hidden flex-1 flex-col overflow-hidden">
+        <!-- Sub-menu de Abas do Geral (2 sub-abas) -->
+        <div class="p-3 border-b shrink-0 flex flex-col gap-2.5" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
           <div class="flex items-center p-1 rounded-xl internal-subtab-container gap-1 relative">
-            <div id="internal-channels-subtab-pill" class="internal-channels-subtab-pill"></div>
+            <div id="geral-subtab-pill" class="geral-subtab-pill"></div>
 
-            <button id="subtab-btn-channels-chat" onclick="switchInternalChannelsSubTab('chat')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-active" title="Canais e grupos de conversa por setor">
+            <!-- Sub-aba 1: Grupos (Canais dos Setores) -->
+            <button id="subtab-btn-geral-channels" onclick="switchGeralSubTab('channels')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-active" title="Canais e grupos oficiais dos setores">
               <span class="font-mono font-black text-xs">#</span>
-              <span>Grupos de Setores</span>
-              <span id="badge-channels-chat-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white leading-none">0</span>
+              <span class="truncate">Grupos dos Setores</span>
+              <span id="badge-geral-channels-unread" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white leading-none">0</span>
             </button>
 
-            <button id="subtab-btn-channels-voice" onclick="switchInternalChannelsSubTab('voice')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive" title="Salas de voz para entrar em call como no Discord">
+            <!-- Sub-aba 2: Salas de Call Públicas -->
+            <button id="subtab-btn-geral-voice" onclick="switchGeralSubTab('voice')" type="button" class="flex-1 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer relative z-10 internal-subtab-btn internal-subtab-inactive" title="Salas públicas de call abertas para toda a equipe">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-              <span>Salas de Call</span>
-              <span id="badge-channels-voice-active" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500 text-white leading-none animate-pulse">0</span>
+              <span class="truncate">Salas de Call</span>
+              <span id="badge-geral-voice-active" class="hidden px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500 text-white leading-none animate-pulse">0</span>
             </button>
           </div>
 
-          <!-- Campo de Busca de Setores ou Salas -->
-          <div class="relative">
-            <input type="text" id="internal-channels-search-input" oninput="filterInternalChannelsList()" placeholder="Buscar setor ou sala de call..." class="w-full h-9 pl-9 pr-3 text-xs internal-search-input">
-            <svg class="absolute left-3 top-2.5 text-[var(--color-primary-theme)]" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <!-- Barra de Busca de Geral -->
+          <div class="relative flex items-center">
+            <input type="text" id="internal-geral-search-input" oninput="filterGeralList()" placeholder="Buscar canal ou sala de call..." class="w-full h-8.5 pl-8.5 pr-3 text-xs internal-search-input">
+            <svg class="absolute left-2.5 top-2.5 text-[var(--color-primary-theme)] pointer-events-none" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
         </div>
 
-        <!-- Lista 1: Canais de Texto dos Setores -->
-        <div id="internal-channels-chat-list" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+        <!-- Conteúdo 1: Canais de Texto dos Setores -->
+        <div id="geral-list-channels" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
           <!-- Renderizado via app.js -->
         </div>
 
-        <!-- Lista 2: Salas de Call de Voz estilo Discord -->
-        <div id="internal-channels-voice-list" class="hidden flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+        <!-- Conteúdo 2: Salas de Call Públicas de cada Setor -->
+        <div id="geral-list-voice" class="hidden flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
           <!-- Renderizado via app.js -->
         </div>
       </div>
+    </div>
 
-      <!-- 1.3 Conteúdo da Aba Grupos Criados pelos Usuários (3ª Seção) -->
-      <div id="internal-groups-panel" class="hidden flex-1 flex-col overflow-hidden">
-        <!-- Barra de Ação de Grupos: Botão Criar Grupo -->
-        <div class="p-3.5 border-b shrink-0 flex items-center justify-between gap-2" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
-          <div class="min-w-0">
-            <h4 class="text-xs font-extrabold text-foreground truncate">Grupos da Equipe</h4>
-            <p class="text-[10px] text-[var(--color-text-muted)] truncate">Criados para projetos, plantões ou equipes</p>
+    <!-- Modal de Iniciar Nova Conversa Particular (DM) -->
+    <div id="internal-new-dm-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="w-full max-w-lg internal-card p-5 flex flex-col gap-4 shadow-2xl border" style="background: var(--color-background, #0b0f19); border-color: var(--border-color, rgba(255,255,255,0.15));">
+        <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl flex items-center justify-center internal-icon-box">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold text-foreground">Iniciar Nova Conversa</h3>
+              <p class="text-[10px] text-[var(--color-text-muted)]">Escolha um colega da equipe para conversar diretamente</p>
+            </div>
           </div>
-          <button onclick="openCreateGroupModal()" class="px-3 py-1.5 text-xs internal-btn-action flex items-center gap-1.5 cursor-pointer shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span>Novo Grupo</span>
+          <button onclick="closeNewDMModal()" class="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/10 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
 
-        <!-- Lista de Grupos -->
-        <div id="internal-groups-list" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
-          <!-- Renderizado via app.js -->
+        <div class="flex flex-col gap-3">
+          <!-- Campo de Busca no Modal -->
+          <div class="relative flex items-center">
+            <input type="text" id="input-new-dm-search" oninput="filterNewDMColleaguesList()" placeholder="Buscar por nome ou setor do colega..." class="w-full h-9 pl-9 pr-3 text-xs internal-search-input">
+            <svg class="absolute left-3 top-2.5 text-[var(--color-primary-theme)] pointer-events-none" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+
+          <!-- Lista de Colegas da Equipe -->
+          <div id="new-dm-colleagues-list" class="max-h-72 overflow-y-auto space-y-2 p-1 custom-scrollbar">
+            <!-- Renderizado via app.js -->
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end pt-2 border-t" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+          <button onclick="closeNewDMModal()" class="px-4 py-2 text-xs rounded-xl text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5 font-bold cursor-pointer">Fechar</button>
         </div>
       </div>
     </div>
@@ -1836,6 +1906,89 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal / Painel de Criação de Sala de Call Privada -->
+    <div id="internal-create-private-call-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="w-full max-w-2xl internal-card p-5 flex flex-col gap-4 shadow-2xl border" style="background: var(--color-background, #0b0f19); border-color: var(--border-color, rgba(255,255,255,0.15));">
+        <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl flex items-center justify-center internal-icon-box" style="background: color-mix(in srgb, #a855f7 18%, transparent); color: #c084fc; border: 1px solid color-mix(in srgb, #a855f7 35%, transparent);">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold text-foreground">Nova Sala de Call Privada</h3>
+              <p class="text-[10px] text-[var(--color-text-muted)]">Crie uma sala de call exclusiva e convide colegas específicos</p>
+            </div>
+          </div>
+          <button onclick="closeCreatePrivateCallModal()" class="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/10 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-bold text-foreground mb-1">Título / Assunto da Call *</label>
+              <input type="text" id="input-private-call-name" placeholder="Ex: Alinhamento Projeto X, Reunião de Urgência..." class="w-full h-9 px-3 text-xs internal-search-input">
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-foreground mb-1">Pauta / Descrição (opcional)</label>
+              <input type="text" id="input-private-call-desc" placeholder="Objetivo ou tópicos da call..." class="w-full h-9 px-3 text-xs internal-search-input">
+            </div>
+          </div>
+
+          <!-- Listagens Lado a Lado: 1. Escolher Colegas (Esquerda) | 2. Colegas Convidados (Direita) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- COLUNA DA ESQUERDA: DISPONÍVEIS PARA CONVIDAR -->
+            <div class="flex flex-col gap-2 p-3 rounded-2xl border" style="background: color-mix(in srgb, var(--color-card, #172033) 30%, transparent); border-color: var(--border-color, rgba(255,255,255,0.08));">
+              <div class="flex items-center justify-between">
+                <label class="text-[11px] font-bold text-foreground flex items-center gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  <span>Colegas Disponíveis</span>
+                </label>
+                <span id="private-call-available-members-count" class="text-[10px] text-slate-400 font-bold">0 disponíveis</span>
+              </div>
+
+              <!-- Campo de Busca de Colegas -->
+              <div class="relative">
+                <input type="text" id="input-private-call-search-members" oninput="filterPrivateCallMembersChecklist()" placeholder="Buscar por nome ou setor..." class="w-full h-8 pl-8 pr-3 text-xs internal-search-input">
+                <svg class="absolute left-2.5 top-2 text-slate-400" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+
+              <!-- Lista de Disponíveis -->
+              <div id="private-call-members-checklist" class="h-48 overflow-y-auto space-y-1 p-1 custom-scrollbar">
+                <!-- Renderizado via app.js -->
+              </div>
+            </div>
+
+            <!-- COLUNA DA DIREITA: CONVIDADOS PARA A CALL -->
+            <div class="flex flex-col gap-2 p-3 rounded-2xl border" style="background: color-mix(in srgb, var(--color-card, #172033) 30%, transparent); border-color: var(--border-color, rgba(255,255,255,0.08));">
+              <div class="flex items-center justify-between">
+                <label class="text-[11px] font-bold text-foreground flex items-center gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>
+                  <span>Colegas Convidados</span>
+                </label>
+                <span id="private-call-selected-members-count" class="text-[10px] text-purple-400 font-black">0 convidados</span>
+              </div>
+
+              <!-- Lista de Membros Adicionados -->
+              <div id="private-call-selected-list" class="h-48 overflow-y-auto space-y-1 p-1 custom-scrollbar">
+                <!-- Renderizado via app.js -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t" style="border-color: var(--border-color, rgba(255,255,255,0.08));">
+          <button onclick="closeCreatePrivateCallModal()" class="px-4 py-2 text-xs rounded-xl text-[var(--color-text-muted)] hover:text-foreground hover:bg-white/5 font-bold cursor-pointer">Cancelar</button>
+          <button onclick="submitCreatePrivateCall()" class="px-4 py-2 text-xs rounded-xl text-white font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-600/30 active:scale-95 transition-all" style="background: linear-gradient(135deg, #9333ea, #7c3aed);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <span>Criar Sala de Call</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
 
     <!-- 2. VISÃO DE CONVERSA ATIVA (CANAL, GRUPO OU 1x1 DM) -->
     <div id="internal-chat-view" class="hidden flex-1 flex flex-col h-full min-h-0 overflow-hidden relative">

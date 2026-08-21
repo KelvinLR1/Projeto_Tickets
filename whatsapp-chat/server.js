@@ -2367,35 +2367,36 @@ io.on('connection', (socket) => {
     );
   });
 
-  // 2.5 Criar novo Grupo Personalizado da Equipe
-  socket.on('internal_create_group', ({ nome, descricao, membros, atendente_id, atendente_nome }) => {
+  // 2.5 Criar novo Grupo Personalizado ou Sala Privada da Equipe
+  socket.on('internal_create_group', ({ nome, descricao, membros, tipo, atendente_id, atendente_nome }) => {
     if (!nome || !nome.trim()) return;
-    const groupId = 'group_' + Date.now();
+    const roomType = tipo === 'sala_privada' ? 'sala_privada' : 'grupo';
+    const groupId = (roomType === 'sala_privada' ? 'voice_priv_' : 'group_') + Date.now();
     const groupName = nome.trim();
-    const groupDesc = descricao ? descricao.trim() : 'Grupo personalizado da equipe';
+    const groupDesc = descricao ? descricao.trim() : (roomType === 'sala_privada' ? 'Sala de call exclusiva' : 'Grupo personalizado da equipe');
     const groupMembers = Array.isArray(membros) ? membros.map(String) : [];
     if (atendente_id && !groupMembers.includes(String(atendente_id))) {
       groupMembers.push(String(atendente_id));
     }
 
     db.run(
-      `INSERT INTO tabela_chat_interno_salas (id, tipo, nome, icone, descricao, membros, criado_por_id, criado_por_nome) VALUES (?, 'grupo', ?, 'users', ?, ?, ?, ?)`,
-      [groupId, groupName, groupDesc, JSON.stringify(groupMembers), atendente_id, atendente_nome],
+      `INSERT INTO tabela_chat_interno_salas (id, tipo, nome, icone, descricao, membros, criado_por_id, criado_por_nome) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [groupId, roomType, groupName, roomType === 'sala_privada' ? 'phone' : 'users', groupDesc, JSON.stringify(groupMembers), atendente_id, atendente_nome],
       function(err) {
-        if (err) return console.error('Erro ao criar grupo interno:', err.message);
+        if (err) return console.error('Erro ao criar grupo/sala interna:', err.message);
 
         // Insere mensagem de boas-vindas do sistema
         db.run(
           `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, texto) VALUES (?, 'sistema', 'Sistema TicketFlow', ?)`,
-          [groupId, `🎉 Grupo "${groupName}" criado por ${atendente_nome || 'um usuário'}.`]
+          [groupId, `🎉 ${roomType === 'sala_privada' ? 'Sala de call' : 'Grupo'} "${groupName}" criado por ${atendente_nome || 'um usuário'}.`]
         );
 
         // Notifica todos os clientes
         io.emit('internal_group_created', {
           id: groupId,
-          tipo: 'grupo',
+          tipo: roomType,
           nome: groupName,
-          icone: 'users',
+          icone: roomType === 'sala_privada' ? 'phone' : 'users',
           descricao: groupDesc,
           membros: JSON.stringify(groupMembers),
           criado_por_id: atendente_id,
@@ -2590,7 +2591,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 6f. ENCERRAR CONVERSA PARTICULAR (Move para 'Outros Colegas', mantendo todo o histórico 100% intacto)
+  // 6f. ENCERRAR CONVERSA PARTICULAR
   socket.on('internal_close_dm', ({ atendente_id, sala_id }) => {
     if (!atendente_id || !sala_id) return;
     const now = new Date().toISOString();
@@ -2600,12 +2601,9 @@ io.on('connection', (socket) => {
        ON CONFLICT(atendente_id, sala_id) DO UPDATE SET fechada_em = excluded.fechada_em`,
       [String(atendente_id), sala_id, now],
       () => {
-        socket.emit('internal_rooms_data', {
-          salas: salas || [],
-          atendentes: atendentesList,
-          recent_messages: recentMap,
-          closed_dms: closedMap,
-          active_voice_rooms: getActiveVoiceSessionsSummary()
+        socket.emit('internal_dm_status_updated', {
+          sala_id,
+          fechada_em: now
         });
       }
     );
