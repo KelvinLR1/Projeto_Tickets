@@ -7831,11 +7831,12 @@ function renderPessoalGroups(filterQuery = '') {
 // ==============================================================================
 // 3. RENDERIZAÇÃO: PESSOAL -> SALAS DE CALL PRIVADAS
 // ==============================================================================
+let connectingVoiceRoomId = null;
+
 function renderPessoalVoice(filterQuery = '') {
   const container = document.getElementById('pessoal-voice-container');
   if (!container) return;
 
-  container.innerHTML = '';
   const currentOpId = currentOperator ? String(currentOperator.id) : null;
 
   const rawPrivateRooms = internalRoomsList.filter(r => {
@@ -7860,7 +7861,7 @@ function renderPessoalVoice(filterQuery = '') {
     container.innerHTML = `
       <div class="text-center py-10 px-4 internal-tab-pane-anim">
         <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center internal-icon-box opacity-70" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
         </div>
         <p class="text-xs font-bold text-foreground">${q ? 'Nenhuma sala de call privada encontrada' : 'Nenhuma call privada ativa'}</p>
         <p class="text-[11px] text-[var(--color-text-muted)] mt-1">Crie uma sala de call exclusiva para convidar colegas específicos.</p>
@@ -7869,10 +7870,18 @@ function renderPessoalVoice(filterQuery = '') {
         </button>
       </div>
     `;
+    updateAllInternalBadges();
     return;
   }
 
+  if (container.querySelector('.internal-tab-pane-anim')) {
+    container.innerHTML = '';
+  }
+
+  const renderedRoomIds = new Set();
+
   rooms.forEach((room, index) => {
+    renderedRoomIds.add(String(room.id));
     const serverSession = (activeVoiceRoomsSummary || []).find(s => s.id === room.id);
     const isLocalCurrent = currentVoiceSession && currentVoiceSession.id === room.id;
     let participants = serverSession && serverSession.participants ? [...serverSession.participants] : [];
@@ -7899,46 +7908,119 @@ function renderPessoalVoice(filterQuery = '') {
       } catch (e) {}
     }
 
-    const card = document.createElement('div');
-    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
-    card.style.animationDelay = `${Math.min(index, 12) * 0.03}s`;
+    const subtitleHTML = isLive
+      ? `<span class="text-emerald-400 font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ${pCount} em chamada</span>`
+      : escapeHtml(room.descricao || memberCount || 'Sala de call exclusiva');
 
-    card.innerHTML = `
-      <div class="flex items-center gap-3 min-w-0 flex-1">
-        <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0" style="background: rgba(168, 85, 247, 0.18); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35);">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 mb-0.5">
-            <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.nome)}</h4>
-            <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border" style="background: rgba(168, 85, 247, 0.12); color: #c084fc; border-color: rgba(168, 85, 247, 0.3);">Privada</span>
-          </div>
-          <p class="text-[11px] text-[var(--color-text-muted)] truncate font-medium">${isLive ? `<span class="text-emerald-400 font-bold">${pCount} em chamada</span>` : escapeHtml(room.descricao || memberCount || 'Sala de call exclusiva')}</p>
-        </div>
+    const actionsHTML = isLocalCurrent ? `
+      <div class="flex flex-row items-center gap-1.5 shrink-0 whitespace-nowrap voice-actions-connected-group">
+        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white flex flex-row items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0 voice-badge-connected-anim">
+          <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0"></span>
+          Conectado
+        </span>
+        <button type="button" onclick="toggleVoiceMute()" class="px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentVoiceSession?.isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-colors duration-200 voice-btn-mute-anim">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+            ${currentVoiceSession?.isMuted 
+              ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+              : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+            }
+          </svg>
+          <span class="whitespace-nowrap shrink-0">${currentVoiceSession?.isMuted ? 'Desmutar' : 'Mutar'}</span>
+        </button>
+        <button type="button" onclick="leaveCurrentVoiceCall()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-transform active:scale-95 voice-btn-leave-anim">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+          <span class="whitespace-nowrap shrink-0">Sair</span>
+        </button>
       </div>
+    ` : (connectingVoiceRoomId === room.id ? `
+      <button type="button" disabled class="px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 opacity-90 cursor-wait shadow-xs whitespace-nowrap shrink-0 select-none animate-pulse" style="background: linear-gradient(135deg, #10b981, #059669);">
+        <svg class="animate-spin shrink-0" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+        <span class="whitespace-nowrap shrink-0">Conectando...</span>
+      </button>
+    ` : `
+      <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.nome)}', 'sala_privada')" class="voice-btn-enter-anim px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95 whitespace-nowrap shrink-0 select-none" style="background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #9333ea, #7c3aed)'};">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        <span class="whitespace-nowrap shrink-0">${isLive ? `Entrar (${pCount})` : 'Entrar'}</span>
+      </button>
+    `);
 
-      <div class="flex items-center gap-2 shrink-0">
-        ${isLocalCurrent ? `
-          <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white flex items-center gap-1 shadow-sm">
-            <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-            Conectado
-          </span>
-          <button type="button" onclick="toggleVoiceMute()" class="px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentVoiceSession?.isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer">
-            ${currentVoiceSession?.isMuted ? 'Desmutar' : 'Mutar'}
-          </button>
-          <button type="button" onclick="leaveCurrentVoiceCall()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs">
-            Sair
-          </button>
-        ` : `
-          <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.nome)}', 'sala_privada')" class="px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition-all" style="background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #9333ea, #7c3aed)'};">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-            <span>${isLive ? `Entrar (${pCount})` : 'Entrar'}</span>
-          </button>
-        `}
+    const iconHTML = isLocalCurrent ? `
+      <div class="voice-equalizer">
+        <span class="voice-equalizer-bar"></span>
+        <span class="voice-equalizer-bar"></span>
+        <span class="voice-equalizer-bar"></span>
+        <span class="voice-equalizer-bar"></span>
       </div>
+    ` : `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
     `;
 
-    container.appendChild(card);
+    let card = container.querySelector(`[data-voice-room-id="${room.id}"]`);
+    if (card) {
+      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      
+      const iconEl = card.querySelector('.voice-icon-box');
+      if (iconEl) {
+        iconEl.className = `w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}`;
+        iconEl.style.background = isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : 'rgba(168, 85, 247, 0.18)';
+        iconEl.style.color = isLocalCurrent ? '#10b981' : '#c084fc';
+        iconEl.style.borderColor = isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(168, 85, 247, 0.35)';
+        const iconKey = isLocalCurrent ? 'connected' : 'idle';
+        if (iconEl.dataset.iconKey !== iconKey) {
+          iconEl.innerHTML = `<div class="voice-icon-pop-anim">${iconHTML}</div>`;
+          iconEl.dataset.iconKey = iconKey;
+        }
+      }
+
+      const subtitleEl = card.querySelector('.voice-room-subtitle');
+      if (subtitleEl && subtitleEl.innerHTML !== subtitleHTML) {
+        subtitleEl.innerHTML = subtitleHTML;
+      }
+      const actionsEl = card.querySelector('.voice-room-actions');
+      const actionKey = isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`;
+      if (actionsEl && actionsEl.dataset.actionKey !== actionKey) {
+        actionsEl.dataset.actionKey = actionKey;
+        actionsEl.style.opacity = '0';
+        actionsEl.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          actionsEl.innerHTML = actionsHTML;
+          actionsEl.style.opacity = '1';
+          actionsEl.style.transform = 'scale(1)';
+        }, 100);
+      }
+    } else {
+      card = document.createElement('div');
+      card.setAttribute('data-voice-room-id', String(room.id));
+      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+
+      card.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0 flex-1">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}" style="background: ${isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : 'rgba(168, 85, 247, 0.18)'}; color: ${isLocalCurrent ? '#10b981' : '#c084fc'}; border: 1px solid ${isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(168, 85, 247, 0.35)'};" data-icon-key="${isLocalCurrent ? 'connected' : 'idle'}">
+            <div class="voice-icon-pop-anim">${iconHTML}</div>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 mb-0.5">
+              <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.nome)}</h4>
+              <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border" style="background: rgba(168, 85, 247, 0.12); color: #c084fc; border-color: rgba(168, 85, 247, 0.3);">Privada</span>
+            </div>
+            <p class="voice-room-subtitle text-[11px] text-[var(--color-text-muted)] truncate font-medium">${subtitleHTML}</p>
+          </div>
+        </div>
+
+        <div class="voice-room-actions flex flex-row items-center gap-2 shrink-0 whitespace-nowrap" data-action-key="${isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`}">
+          ${actionsHTML}
+        </div>
+      `;
+
+      container.appendChild(card);
+    }
+  });
+
+  Array.from(container.children).forEach(child => {
+    const roomId = child.getAttribute('data-voice-room-id');
+    if (roomId && !renderedRoomIds.has(roomId)) {
+      child.remove();
+    }
   });
 
   updateAllInternalBadges();
@@ -8011,8 +8093,6 @@ function renderGeralVoice(filterQuery = '') {
   const container = document.getElementById('geral-list-voice');
   if (!container) return;
 
-  container.innerHTML = '';
-
   const defaultVoiceRooms = [
     { id: 'voice_channel-geral', name: 'Geral — Sala de Voz', sector: 'Geral', desc: 'Bate-papo de voz aberto para toda a equipe', themeColor: '#ef4444', iconType: 'users' },
     { id: 'voice_channel-suporte', name: 'Suporte Técnico — Call', sector: 'Suporte Técnico', desc: 'Resolução de chamados e auxílio técnico', themeColor: '#38bdf8', iconType: 'headphones' },
@@ -8043,7 +8123,24 @@ function renderGeralVoice(filterQuery = '') {
     ? defaultVoiceRooms.filter(r => r.name.toLowerCase().includes(q) || r.sector.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q))
     : defaultVoiceRooms;
 
+  if (voiceRooms.length === 0) {
+    container.innerHTML = `
+      <div class="py-10 text-center space-y-2 internal-tab-pane-anim">
+        <p class="text-xs text-[var(--color-text-muted)] font-semibold">${q ? 'Nenhuma sala encontrada.' : 'Nenhuma sala cadastrada.'}</p>
+      </div>
+    `;
+    updateAllInternalBadges();
+    return;
+  }
+
+  if (container.querySelector('.internal-tab-pane-anim')) {
+    container.innerHTML = '';
+  }
+
+  const renderedRoomIds = new Set();
+
   voiceRooms.forEach((room, index) => {
+    renderedRoomIds.add(String(room.id));
     const serverSession = (activeVoiceRoomsSummary || []).find(s => s.id === room.id);
     const isLocalCurrent = currentVoiceSession && currentVoiceSession.id === room.id;
 
@@ -8064,48 +8161,121 @@ function renderGeralVoice(filterQuery = '') {
     const pCount = participants.length;
     const isLive = pCount > 0;
 
-    const card = document.createElement('div');
-    card.className = `p-3.5 internal-card internal-card-enter flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
-    card.style.animationDelay = `${Math.min(index, 12) * 0.03}s`;
+    const subtitleHTML = isLive
+      ? `<span class="text-emerald-400 font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ${pCount} em chamada</span>`
+      : escapeHtml(room.desc);
 
-    card.innerHTML = `
-      <div class="flex items-center gap-3 min-w-0 flex-1">
-        <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0" style="background: color-mix(in srgb, ${room.themeColor} 18%, transparent); color: ${room.themeColor}; border: 1px solid color-mix(in srgb, ${room.themeColor} 30%, transparent);">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 mb-0.5">
-            <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.name)}</h4>
-            <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase internal-sector-tag shrink-0" style="color: ${room.themeColor}; border-color: color-mix(in srgb, ${room.themeColor} 25%, transparent);">
-              ${escapeHtml(room.sector)}
-            </span>
-          </div>
-          <p class="text-[11px] text-[var(--color-text-muted)] truncate font-medium">${isLive ? `<span class="text-emerald-400 font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ${pCount} em chamada</span>` : escapeHtml(room.desc)}</p>
-        </div>
+    const actionsHTML = isLocalCurrent ? `
+      <div class="flex flex-row items-center gap-1.5 shrink-0 whitespace-nowrap voice-actions-connected-group">
+        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white flex flex-row items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0 voice-badge-connected-anim">
+          <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0"></span>
+          Conectado
+        </span>
+        <button type="button" onclick="toggleVoiceMute()" class="px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentVoiceSession?.isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-colors duration-200 voice-btn-mute-anim">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+            ${currentVoiceSession?.isMuted 
+              ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+              : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+            }
+          </svg>
+          <span class="whitespace-nowrap shrink-0">${currentVoiceSession?.isMuted ? 'Desmutar' : 'Mutar'}</span>
+        </button>
+        <button type="button" onclick="leaveCurrentVoiceCall()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-transform active:scale-95 voice-btn-leave-anim">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+          <span class="whitespace-nowrap shrink-0">Sair</span>
+        </button>
       </div>
+    ` : (connectingVoiceRoomId === room.id ? `
+      <button type="button" disabled class="px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 opacity-90 cursor-wait shadow-xs whitespace-nowrap shrink-0 select-none animate-pulse" style="background: linear-gradient(135deg, #10b981, #059669);">
+        <svg class="animate-spin shrink-0" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+        <span class="whitespace-nowrap shrink-0">Conectando...</span>
+      </button>
+    ` : `
+      <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.name)}', 'channel')" class="voice-btn-enter-anim px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95 whitespace-nowrap shrink-0 select-none" style="background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 80%, black))'};">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        <span class="whitespace-nowrap shrink-0">${isLive ? `Entrar (${pCount})` : 'Entrar'}</span>
+      </button>
+    `);
 
-      <div class="flex items-center gap-2 shrink-0">
-        ${isLocalCurrent ? `
-          <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white flex items-center gap-1 shadow-sm">
-            <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-            Conectado
-          </span>
-          <button type="button" onclick="toggleVoiceMute()" class="px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentVoiceSession?.isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer">
-            ${currentVoiceSession?.isMuted ? 'Desmutar' : 'Mutar'}
-          </button>
-          <button type="button" onclick="leaveCurrentVoiceCall()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs">
-            Sair
-          </button>
-        ` : `
-          <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.name)}', 'channel')" class="px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white internal-send-btn flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-            <span>${isLive ? `Entrar (${pCount})` : 'Entrar'}</span>
-          </button>
-        `}
+    const iconHTML = isLocalCurrent ? `
+      <div class="voice-equalizer">
+        <span class="voice-equalizer-bar"></span>
+        <span class="voice-equalizer-bar"></span>
+        <span class="voice-equalizer-bar"></span>
+        <span class="voice-equalizer-bar"></span>
       </div>
+    ` : `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
     `;
 
-    container.appendChild(card);
+    let card = container.querySelector(`[data-voice-room-id="${room.id}"]`);
+    if (card) {
+      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      
+      const iconEl = card.querySelector('.voice-icon-box');
+      if (iconEl) {
+        iconEl.className = `w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}`;
+        iconEl.style.background = isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : `color-mix(in srgb, ${room.themeColor} 18%, transparent)`;
+        iconEl.style.color = isLocalCurrent ? '#10b981' : room.themeColor;
+        iconEl.style.borderColor = isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : `color-mix(in srgb, ${room.themeColor} 30%, transparent)`;
+        const iconKey = isLocalCurrent ? 'connected' : 'idle';
+        if (iconEl.dataset.iconKey !== iconKey) {
+          iconEl.innerHTML = `<div class="voice-icon-pop-anim">${iconHTML}</div>`;
+          iconEl.dataset.iconKey = iconKey;
+        }
+      }
+
+      const subtitleEl = card.querySelector('.voice-room-subtitle');
+      if (subtitleEl && subtitleEl.innerHTML !== subtitleHTML) {
+        subtitleEl.innerHTML = subtitleHTML;
+      }
+      const actionsEl = card.querySelector('.voice-room-actions');
+      const actionKey = isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`;
+      if (actionsEl && actionsEl.dataset.actionKey !== actionKey) {
+        actionsEl.dataset.actionKey = actionKey;
+        actionsEl.style.opacity = '0';
+        actionsEl.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          actionsEl.innerHTML = actionsHTML;
+          actionsEl.style.opacity = '1';
+          actionsEl.style.transform = 'scale(1)';
+        }, 100);
+      }
+    } else {
+      card = document.createElement('div');
+      card.setAttribute('data-voice-room-id', String(room.id));
+      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+
+      card.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0 flex-1">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}" style="background: ${isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : `color-mix(in srgb, ${room.themeColor} 18%, transparent)`}; color: ${isLocalCurrent ? '#10b981' : room.themeColor}; border: 1px solid ${isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : `color-mix(in srgb, ${room.themeColor} 30%, transparent)`};" data-icon-key="${isLocalCurrent ? 'connected' : 'idle'}">
+            <div class="voice-icon-pop-anim">${iconHTML}</div>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 mb-0.5">
+              <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.name)}</h4>
+              <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase internal-sector-tag shrink-0" style="color: ${room.themeColor}; border-color: color-mix(in srgb, ${room.themeColor} 25%, transparent);">
+                ${escapeHtml(room.sector)}
+              </span>
+            </div>
+            <p class="voice-room-subtitle text-[11px] text-[var(--color-text-muted)] truncate font-medium">${subtitleHTML}</p>
+          </div>
+        </div>
+
+        <div class="voice-room-actions flex flex-row items-center gap-2 shrink-0 whitespace-nowrap" data-action-key="${isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`}">
+          ${actionsHTML}
+        </div>
+      `;
+
+      container.appendChild(card);
+    }
+  });
+
+  Array.from(container.children).forEach(child => {
+    const roomId = child.getAttribute('data-voice-room-id');
+    if (roomId && !renderedRoomIds.has(roomId)) {
+      child.remove();
+    }
   });
 
   updateAllInternalBadges();
@@ -9903,84 +10073,6 @@ socket.on('voice_rooms_status', ({ rooms }) => {
   refreshInternalUI();
 });
 
-// Atualização de sessão de voz ativa
-socket.on('voice_session_updated', ({ session_id, title, type, participants }) => {
-  if (currentVoiceSession && currentVoiceSession.id === session_id) {
-    currentVoiceSession.participants = participants || [];
-    updateVoiceBannerAvatars();
-  }
-});
-
-// Novo usuário entrou na chamada de voz
-socket.on('voice_user_joined', async ({ session_id, newParticipant, participants }) => {
-  if (currentVoiceSession && currentVoiceSession.id === session_id) {
-    currentVoiceSession.participants = participants || [];
-    updateVoiceBannerAvatars();
-    refreshInternalUI();
-
-    // Inicia WebRTC Peer Connection como iniciador para o novo participante
-    if (newParticipant && newParticipant.socketId !== socket.id) {
-      await setupVoicePeerConnection(newParticipant.socketId, true);
-    }
-  }
-});
-
-// Chamada de voz encerrada
-socket.on('voice_call_ended', ({ session_id, reason }) => {
-  if (currentVoiceSession && currentVoiceSession.id === session_id) {
-    leaveCurrentVoiceCall();
-  }
-});
-
-// Atualização de estado de fala (quem está falando)
-socket.on('voice_speaking_state', ({ session_id, socketId, operatorId, isSpeaking }) => {
-  if (currentVoiceSession && currentVoiceSession.id === session_id) {
-    const p = (currentVoiceSession.participants || []).find(part => part.socketId === socketId || String(part.operatorId) === String(operatorId));
-    if (p) p.isSpeaking = isSpeaking;
-    updateVoiceBannerAvatars();
-  }
-});
-
-// Atualização de mudo de outro participante
-socket.on('voice_mute_state', ({ session_id, socketId, operatorId, isMuted }) => {
-  if (currentVoiceSession && currentVoiceSession.id === session_id) {
-    const p = (currentVoiceSession.participants || []).find(part => part.socketId === socketId || String(part.operatorId) === String(operatorId));
-    if (p) p.isMuted = isMuted;
-    updateVoiceBannerAvatars();
-  }
-});
-
-// Sinalização WebRTC (SDP & ICE)
-socket.on('voice_signal', async ({ fromSocketId, session_id, signal }) => {
-  if (!currentVoiceSession || currentVoiceSession.id !== session_id) return;
-
-  let pc = voicePeerConnections.get(fromSocketId);
-  if (!pc) {
-    pc = await setupVoicePeerConnection(fromSocketId, false);
-  }
-
-  try {
-    if (signal.sdp) {
-      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-      if (signal.sdp.type === 'offer') {
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit('voice_signal', {
-          toSocketId: fromSocketId,
-          session_id: currentVoiceSession.id,
-          signal: { sdp: pc.localDescription },
-          fromOperatorId: currentOperator ? currentOperator.id : 'anon',
-          fromOperatorName: currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente'
-        });
-      }
-    } else if (signal.candidate) {
-      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-    }
-  } catch (err) {
-    console.warn('Erro ao processar sinalização WebRTC:', err);
-  }
-});
-
 // Atualização de status de fechamento de conversa particular
 socket.on('internal_dm_status_updated', ({ sala_id, fechada_em }) => {
   internalClosedDMsMap[sala_id] = fechada_em;
@@ -10335,7 +10427,16 @@ async function joinSectorVoiceRoom(roomId, roomName, targetType) {
     leaveCurrentVoiceCall();
   }
 
-  await initVoiceLocalAudio();
+  connectingVoiceRoomId = roomId;
+  refreshInternalUI();
+
+  try {
+    await initVoiceLocalAudio();
+  } catch (e) {
+    console.warn('Erro ao inicializar áudio:', e);
+  } finally {
+    connectingVoiceRoomId = null;
+  }
 
   const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
   const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente';
