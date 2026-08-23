@@ -860,6 +860,7 @@ db.serialize(() => {
   `);
   db.run("ALTER TABLE tabela_chat_interno_salas ADD COLUMN criado_por_id TEXT", () => {});
   db.run("ALTER TABLE tabela_chat_interno_salas ADD COLUMN criado_por_nome TEXT", () => {});
+  db.run("ALTER TABLE tabela_chat_interno_salas ADD COLUMN configuracoes TEXT", () => {});
   setTimeout(seedInternalChatChannels, 200);
 
   // 8. Tabela de Mensagens do Chat Interno da Equipe
@@ -2404,6 +2405,233 @@ io.on('connection', (socket) => {
         });
       }
     );
+  });
+
+  // 2.6 Adicionar Membros ao Grupo
+  socket.on('internal_add_group_members', ({ sala_id, novos_membros, adicionado_por_nome, adicionado_por_id }) => {
+    if (!sala_id || !Array.isArray(novos_membros) || novos_membros.length === 0) return;
+    db.get(`SELECT * FROM tabela_chat_interno_salas WHERE id = ?`, [sala_id], (err, row) => {
+      if (err || !row) return;
+      let currentMembers = [];
+      try {
+        currentMembers = typeof row.membros === 'string' ? JSON.parse(row.membros) : (row.membros || []);
+      } catch (e) {}
+
+      const memberSet = new Set(currentMembers.map(String));
+      novos_membros.forEach(m => memberSet.add(String(m)));
+      const updatedMembers = Array.from(memberSet);
+
+      db.run(`UPDATE tabela_chat_interno_salas SET membros = ? WHERE id = ?`, [JSON.stringify(updatedMembers), sala_id], (updateErr) => {
+        if (updateErr) return console.error('Erro ao adicionar membros:', updateErr.message);
+
+        // Insere mensagem de sistema
+        const count = novos_membros.length;
+        const msgText = `➕ ${adicionado_por_nome || 'Um administrador'} adicionou ${count} ${count === 1 ? 'novo participante' : 'novos participantes'} ao grupo.`;
+        db.run(
+          `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, texto) VALUES (?, 'sistema', 'Sistema TicketFlow', ?)`,
+          [sala_id, msgText],
+          function (msgErr) {
+            if (!msgErr) {
+              io.emit('internal_new_message', {
+                id: this.lastID,
+                sala_id,
+                remetente_id: 'sistema',
+                remetente_nome: 'Sistema TicketFlow',
+                remetente_avatar: null,
+                texto: msgText,
+                midia_url: null,
+                midia_tipo: null,
+                card_meta: null,
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+        );
+
+        io.emit('internal_group_updated', {
+          id: sala_id,
+          nome: row.nome,
+          descricao: row.descricao,
+          membros: JSON.stringify(updatedMembers),
+          configuracoes: row.configuracoes
+        });
+      });
+    });
+  });
+
+  // 2.7 Remover Membro do Grupo
+  socket.on('internal_remove_group_member', ({ sala_id, membro_id, membro_nome, removido_por_nome }) => {
+    if (!sala_id || !membro_id) return;
+    db.get(`SELECT * FROM tabela_chat_interno_salas WHERE id = ?`, [sala_id], (err, row) => {
+      if (err || !row) return;
+      let currentMembers = [];
+      try {
+        currentMembers = typeof row.membros === 'string' ? JSON.parse(row.membros) : (row.membros || []);
+      } catch (e) {}
+
+      const updatedMembers = currentMembers.filter(m => String(m) !== String(membro_id));
+
+      // Atualiza também configuracoes se o membro era admin ou estava mutado
+      let configs = {};
+      try {
+        configs = typeof row.configuracoes === 'string' ? JSON.parse(row.configuracoes) : (row.configuracoes || {});
+      } catch (e) {}
+      if (Array.isArray(configs.admins)) {
+        configs.admins = configs.admins.filter(a => String(a) !== String(membro_id));
+      }
+      if (Array.isArray(configs.muted_members)) {
+        configs.muted_members = configs.muted_members.filter(m => String(m) !== String(membro_id));
+      }
+
+      db.run(
+        `UPDATE tabela_chat_interno_salas SET membros = ?, configuracoes = ? WHERE id = ?`,
+        [JSON.stringify(updatedMembers), JSON.stringify(configs), sala_id],
+        (updateErr) => {
+          if (updateErr) return console.error('Erro ao remover membro:', updateErr.message);
+
+          const msgText = `🚫 ${membro_nome || 'Um participante'} foi removido do grupo por ${removido_por_nome || 'um administrador'}.`;
+          db.run(
+            `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, texto) VALUES (?, 'sistema', 'Sistema TicketFlow', ?)`,
+            [sala_id, msgText],
+            function (msgErr) {
+              if (!msgErr) {
+                io.emit('internal_new_message', {
+                  id: this.lastID,
+                  sala_id,
+                  remetente_id: 'sistema',
+                  remetente_nome: 'Sistema TicketFlow',
+                  remetente_avatar: null,
+                  texto: msgText,
+                  midia_url: null,
+                  midia_tipo: null,
+                  card_meta: null,
+                  created_at: new Date().toISOString()
+                });
+              }
+            }
+          );
+
+          io.emit('internal_group_updated', {
+            id: sala_id,
+            nome: row.nome,
+            descricao: row.descricao,
+            membros: JSON.stringify(updatedMembers),
+            configuracoes: JSON.stringify(configs)
+          });
+        }
+      );
+    });
+  });
+
+  // 2.8 Atualizar Informações e Configurações do Grupo (Nome, Descrição, Permissões)
+  socket.on('internal_update_group_info', ({ sala_id, nome, descricao, configuracoes, alterado_por_nome }) => {
+    if (!sala_id) return;
+    db.get(`SELECT * FROM tabela_chat_interno_salas WHERE id = ?`, [sala_id], (err, row) => {
+      if (err || !row) return;
+      const newName = (nome && nome.trim()) ? nome.trim() : row.nome;
+      const newDesc = descricao !== undefined ? descricao.trim() : row.descricao;
+      const newConfigsStr = configuracoes ? (typeof configuracoes === 'string' ? configuracoes : JSON.stringify(configuracoes)) : row.configuracoes;
+
+      const nameChanged = newName !== row.nome;
+
+      db.run(
+        `UPDATE tabela_chat_interno_salas SET nome = ?, descricao = ?, configuracoes = ? WHERE id = ?`,
+        [newName, newDesc, newConfigsStr, sala_id],
+        (updateErr) => {
+          if (updateErr) return console.error('Erro ao atualizar dados do grupo:', updateErr.message);
+
+          if (nameChanged) {
+            const msgText = `✏️ ${alterado_por_nome || 'Um administrador'} alterou o nome do grupo para "${newName}".`;
+            db.run(
+              `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, texto) VALUES (?, 'sistema', 'Sistema TicketFlow', ?)`,
+              [sala_id, msgText],
+              function (msgErr) {
+                if (!msgErr) {
+                  io.emit('internal_new_message', {
+                    id: this.lastID,
+                    sala_id,
+                    remetente_id: 'sistema',
+                    remetente_nome: 'Sistema TicketFlow',
+                    remetente_avatar: null,
+                    texto: msgText,
+                    midia_url: null,
+                    midia_tipo: null,
+                    card_meta: null,
+                    created_at: new Date().toISOString()
+                  });
+                }
+              }
+            );
+          }
+
+          io.emit('internal_group_updated', {
+            id: sala_id,
+            nome: newName,
+            descricao: newDesc,
+            membros: row.membros,
+            configuracoes: newConfigsStr
+          });
+        }
+      );
+    });
+  });
+
+  // 2.9 Sair do Grupo
+  socket.on('internal_leave_group', ({ sala_id, atendente_id, atendente_nome }) => {
+    if (!sala_id || !atendente_id) return;
+    db.get(`SELECT * FROM tabela_chat_interno_salas WHERE id = ?`, [sala_id], (err, row) => {
+      if (err || !row) return;
+      let currentMembers = [];
+      try {
+        currentMembers = typeof row.membros === 'string' ? JSON.parse(row.membros) : (row.membros || []);
+      } catch (e) {}
+
+      const updatedMembers = currentMembers.filter(m => String(m) !== String(atendente_id));
+
+      db.run(`UPDATE tabela_chat_interno_salas SET membros = ? WHERE id = ?`, [JSON.stringify(updatedMembers), sala_id], (updateErr) => {
+        if (updateErr) return;
+
+        const msgText = `👋 ${atendente_nome || 'Um participante'} saiu do grupo.`;
+        db.run(
+          `INSERT INTO tabela_chat_interno_mensagens (sala_id, remetente_id, remetente_nome, texto) VALUES (?, 'sistema', 'Sistema TicketFlow', ?)`,
+          [sala_id, msgText],
+          function (msgErr) {
+            if (!msgErr) {
+              io.emit('internal_new_message', {
+                id: this.lastID,
+                sala_id,
+                remetente_id: 'sistema',
+                remetente_nome: 'Sistema TicketFlow',
+                remetente_avatar: null,
+                texto: msgText,
+                midia_url: null,
+                midia_tipo: null,
+                card_meta: null,
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+        );
+
+        io.emit('internal_group_updated', {
+          id: sala_id,
+          nome: row.nome,
+          descricao: row.descricao,
+          membros: JSON.stringify(updatedMembers),
+          configuracoes: row.configuracoes
+        });
+      });
+    });
+  });
+
+  // 2.10 Excluir Grupo
+  socket.on('internal_delete_group', ({ sala_id, atendente_nome }) => {
+    if (!sala_id) return;
+    db.run(`DELETE FROM tabela_chat_interno_salas WHERE id = ?`, [sala_id], (err) => {
+      if (err) return console.error('Erro ao excluir grupo:', err.message);
+      db.run(`DELETE FROM tabela_chat_interno_mensagens WHERE sala_id = ?`, [sala_id], () => {});
+      io.emit('internal_group_deleted', { sala_id });
+    });
   });
 
   // 3. Enviar mensagem no Chat Interno (Texto, Áudio, Anexo ou Card)

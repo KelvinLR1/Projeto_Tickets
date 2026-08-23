@@ -16,6 +16,23 @@ export default function GlobalInternalChat() {
 
     const [isOpen, setIsOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [isVoiceDockOpen, setIsVoiceDockOpen] = useState(false);
+    const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleDockMouseEnter = () => {
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+        if (voiceState.inCall) {
+            setIsVoiceDockOpen(true);
+        }
+    };
+
+    const handleDockMouseLeave = () => {
+        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = setTimeout(() => {
+            setIsVoiceDockOpen(false);
+        }, 200);
+    };
+
     const [voiceState, setVoiceState] = useState<{
         inCall: boolean;
         session: any;
@@ -31,9 +48,13 @@ export default function GlobalInternalChat() {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.altKey && (e.key === 'c' || e.key === 'C')) {
                 e.preventDefault();
-                setIsOpen(prev => !prev);
+                setIsOpen(prev => {
+                    setIsVoiceDockOpen(false);
+                    return !prev;
+                });
             } else if (e.key === 'Escape' && isOpen) {
                 setIsOpen(false);
+                setIsVoiceDockOpen(false);
             }
         };
 
@@ -41,23 +62,35 @@ export default function GlobalInternalChat() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen]);
 
+    // Garantir que o painel de hover inicie 100% recolhido e fechado ao alternar a gaveta do chat ou sair de chamada
+    useEffect(() => {
+        setIsVoiceDockOpen(false);
+    }, [isOpen, voiceState.inCall]);
+
     // Ouvir mensagens do iframe (ex: Abrir/Fechar drawer, não lidas, estado de voz)
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
             if (event.data) {
                 if (event.data.type === 'TICKETFLOW_CLOSE_INTERNAL_CHAT') {
                     setIsOpen(false);
+                    setIsVoiceDockOpen(false);
                 } else if (event.data.type === 'TICKETFLOW_OPEN_INTERNAL_CHAT') {
                     setIsOpen(true);
+                    setIsVoiceDockOpen(false);
                 } else if (event.data.type === 'TICKETFLOW_OPEN_WHATSAPP_CHAT') {
                     setIsOpen(false);
+                    setIsVoiceDockOpen(false);
                     router.push('/whatsapp');
                 } else if (event.data.type === 'TICKETFLOW_INTERNAL_UNREAD_UPDATE') {
                     setUnreadCount(Number(event.data.unreadCount) || 0);
                 } else if (event.data.type === 'TICKETFLOW_VOICE_STATE') {
                     const raw = event.data.state || event.data;
+                    const inCall = !!raw.inCall;
+                    if (!inCall) {
+                        setIsVoiceDockOpen(false);
+                    }
                     setVoiceState({
-                        inCall: !!raw.inCall,
+                        inCall,
                         session: raw.session || null,
                         incomingCall: raw.incomingCall || null
                     });
@@ -120,234 +153,251 @@ export default function GlobalInternalChat() {
 
     return (
         <>
-            {/* Gatilho Flutuante Lateral Direito (Dock Button - 100% Sincronizado com o Tema) */}
-            <button
-                id="btn-global-team-chat-trigger"
-                onClick={() => {
-                    setIsOpen(true);
-                    setUnreadCount(0);
-                }}
-                className={clsx(
-                    "fixed right-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-2.5 py-3 px-1.5 rounded-l-xl border-y border-l transition-all duration-300 shadow-xl cursor-pointer group hover:pl-2.5 overflow-visible",
-                    isOpen ? "translate-x-full pointer-events-none opacity-0" : "translate-x-0 opacity-100"
-                )}
-                style={{
-                    background: 'linear-gradient(135deg, color-mix(in srgb, var(--color-card, #172033) 85%, black), color-mix(in srgb, var(--color-background, #0b0f19) 95%, black))',
-                    backdropFilter: 'blur(20px)',
-                    borderColor: voiceState.inCall
-                        ? '#10b981'
-                        : unreadCount > 0
-                            ? '#ef4444'
-                            : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
-                    boxShadow: voiceState.inCall
-                        ? '0 0 20px rgba(16, 185, 129, 0.6)'
-                        : unreadCount > 0
-                            ? '0 0 16px rgba(239, 68, 68, 0.6)'
-                            : '0 6px 24px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
-                }}
-                title={
-                    voiceState.inCall
-                        ? `Chamada Ativa no Chat Interno (${formatVoiceTimer(voiceState.session?.seconds || 0)})`
-                        : unreadCount > 0
-                            ? `Chat Interno: ${unreadCount} mensagem(ns) não lida(s)`
-                            : "Chat Interno da Equipe (Alt + C)"
-                }
-            >
-                {/* Borda Neon Pulsante para Chamada Ativa ou Não Lidas */}
-                {(voiceState.inCall || unreadCount > 0) && (
-                    <span 
-                        className="absolute inset-0 rounded-l-xl pointer-events-none animate-pulse"
-                        style={{
-                            borderTop: `2.5px solid ${voiceState.inCall ? '#10b981' : '#ef4444'}`,
-                            borderBottom: `2.5px solid ${voiceState.inCall ? '#10b981' : '#ef4444'}`,
-                            borderLeft: `2.5px solid ${voiceState.inCall ? '#10b981' : '#ef4444'}`,
-                            boxShadow: voiceState.inCall
-                                ? '0 0 22px 3px #10b981, 0 0 45px 8px rgba(16, 185, 129, 0.75), inset 0 0 14px rgba(16, 185, 129, 0.5)'
-                                : '0 0 22px 3px #ef4444, 0 0 45px 8px rgba(239, 68, 68, 0.75), inset 0 0 14px rgba(239, 68, 68, 0.5)'
-                        }}
-                    />
-                )}
-                <div className="relative flex items-center justify-center">
-                    <div 
-                        className="w-6 h-6 rounded-lg flex items-center justify-center group-hover:scale-110 transition-all duration-300 relative"
-                        style={{
-                            background: voiceState.inCall
-                                ? 'rgba(16, 185, 129, 0.25)'
-                                : unreadCount > 0 
-                                    ? 'rgba(244, 63, 94, 0.25)' 
-                                    : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent)',
-                            color: voiceState.inCall ? '#10b981' : unreadCount > 0 ? '#fb7185' : 'var(--color-primary-theme, #ef4444)',
-                            border: voiceState.inCall
-                                ? '1px solid rgba(16, 185, 129, 0.6)'
-                                : unreadCount > 0 
-                                    ? '1px solid rgba(244, 63, 94, 0.6)' 
-                                    : '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
-                            boxShadow: voiceState.inCall
-                                ? '0 0 14px rgba(16, 185, 129, 0.6)'
-                                : unreadCount > 0 
-                                    ? '0 0 14px rgba(244, 63, 94, 0.6)' 
-                                    : '0 0 10px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
-                        }}
-                    >
-                        {voiceState.inCall ? (
-                            <PhoneCall className="w-3.5 h-3.5 animate-pulse text-emerald-400" />
-                        ) : (
-                            <Users className="w-3.5 h-3.5" />
-                        )}
-
-                        {unreadCount > 0 && !voiceState.inCall && (
-                            <span className="absolute -top-2 -right-2 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-lg shadow-rose-500/80 border-2 border-[var(--color-card,#0f172a)] animate-bounce">
-                                {unreadCount > 99 ? '99+' : unreadCount}
-                            </span>
-                        )}
-                    </div>
-                </div>
-                <span 
-                    className="text-[10px] font-black tracking-widest uppercase select-none [writing-mode:vertical-lr] rotate-180 transition-colors group-hover:text-[var(--color-primary-theme,#ef4444)]"
-                    style={{ color: voiceState.inCall ? '#10b981' : 'var(--color-foreground, #ffffff)' }}
-                >
-                    {voiceState.inCall ? 'Em Call' : 'Equipe'}
-                </span>
-            </button>
-
-            {/* BARRA FLUTUANTE GLOBAL DE CHAMADA ATIVA (Visível em TODAS as telas do portal quando a gaveta estiver fechada) */}
-            {voiceState.inCall && !isOpen && (
+            {/* DOCK LATERAL DIREITO DO CHAT / CHAMADA ATIVA */}
+            {!isOpen && (
                 <div 
-                    className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9990] flex items-center gap-3.5 px-4 py-2.5 rounded-2xl border shadow-2xl text-foreground select-none animate-bounce-in max-w-[95vw] sm:max-w-none overflow-x-auto"
-                    style={{
-                        background: 'color-mix(in srgb, var(--color-card, #172033) 94%, black)',
-                        backdropFilter: 'blur(24px)',
-                        WebkitBackdropFilter: 'blur(24px)',
-                        borderColor: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, var(--border-color, rgba(255,255,255,0.15)))',
-                        boxShadow: '0 16px 40px -6px rgba(0,0,0,0.85), 0 0 24px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
-                    }}
+                    className="fixed right-0 top-1/2 -translate-y-1/2 z-[9990] flex items-center group/dock"
+                    onMouseEnter={handleDockMouseEnter}
+                    onMouseLeave={handleDockMouseLeave}
                 >
-                    {/* Indicador Pulsante e Informações da Chamada */}
-                    <div className="flex items-center gap-2.5 shrink-0">
-                        <span className="relative flex h-3 w-3 shrink-0">
-                            <span 
-                                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                                style={{ backgroundColor: 'var(--color-primary-theme, #ef4444)' }}
-                            />
-                            <span 
-                                className="relative inline-flex rounded-full h-3 w-3"
-                                style={{ backgroundColor: 'var(--color-primary-theme, #ef4444)' }}
-                            />
-                        </span>
-                        <div className="min-w-0 flex items-center gap-2">
-                            <h4 className="text-xs font-extrabold text-foreground truncate max-w-[130px] sm:max-w-[200px]">
-                                {voiceState.session?.title || 'Chamada de Voz'}
-                            </h4>
-                            <span 
-                                className="text-[11px] font-mono font-black px-2 py-0.5 rounded-md shrink-0"
-                                style={{
-                                    background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent)',
-                                    color: 'var(--color-primary-theme, #ef4444)',
-                                    border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
-                                }}
-                            >
-                                {formatVoiceTimer(voiceState.session?.seconds || 0)}
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Lista de Avatares dos Participantes */}
-                    {voiceState.session?.participants && voiceState.session.participants.length > 0 && (
-                        <div className="flex items-center -space-x-2 overflow-hidden px-1 shrink-0">
-                            {voiceState.session.participants.map((p: any, idx: number) => {
-                                const initial = p.operatorName ? p.operatorName.charAt(0).toUpperCase() : 'U';
-                                const isSpeaking = p.isSpeaking;
-                                return (
+                    {/* PAINEL FLUTUANTE DE VOZ (Visual Ultra-Premium / Glassmorphism) */}
+                    {voiceState.inCall && (
+                        <div 
+                            className={clsx(
+                                "absolute right-full mr-3 flex flex-col gap-3 p-4 rounded-3xl border shadow-2xl text-foreground select-none w-72 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                                isVoiceDockOpen 
+                                    ? "translate-x-0 opacity-100 pointer-events-auto scale-100" 
+                                    : "translate-x-4 opacity-0 pointer-events-none scale-95"
+                            )}
+                            style={{
+                                background: 'linear-gradient(145deg, color-mix(in srgb, var(--color-card, #172033) 94%, black), color-mix(in srgb, var(--color-background, #0b0f19) 98%, black))',
+                                backdropFilter: 'blur(28px) saturate(190%)',
+                                WebkitBackdropFilter: 'blur(28px) saturate(190%)',
+                                borderColor: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, var(--border-color, rgba(255,255,255,0.12)))',
+                                boxShadow: '0 24px 50px -12px rgba(0, 0, 0, 0.9), 0 0 25px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                            }}
+                        >
+                            {/* Header do Card: Ícone de Transmissão/Voz + Nome da Sala + Timer Monospace */}
+                            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/[0.08]">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    {/* Ícone de Chamada Ativa (Sincronizado com o Tema) */}
                                     <div 
-                                        key={idx}
-                                        className={clsx(
-                                            "relative w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 border-2 border-[#0f172a] transition-all duration-200 overflow-hidden",
-                                            isSpeaking && "ring-2 ring-emerald-400 scale-110 z-10",
-                                            p.isMuted && "opacity-50"
-                                        )}
-                                        style={{ backgroundColor: 'var(--color-primary-theme, #ef4444)' }}
-                                        title={`${p.operatorName || 'Participante'} ${p.isMuted ? '(Mutado)' : (isSpeaking ? '(Falando...)' : '')}`}
+                                        className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 shadow-sm"
+                                        style={{
+                                            background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent)',
+                                            border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'
+                                        }}
                                     >
-                                        {p.avatar ? (
-                                            <img src={p.avatar} alt={p.operatorName} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <span className="text-white text-[10px] font-black">{initial}</span>
-                                        )}
-                                        {p.isMuted && (
-                                            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-[#0f172a]" />
-                                        )}
+                                        <Radio 
+                                            className="w-3.5 h-3.5 animate-pulse" 
+                                            style={{ color: 'var(--color-primary-theme, #ef4444)' }} 
+                                        />
                                     </div>
-                                );
-                            })}
+                                    <h4 className="text-xs font-black text-slate-100 truncate tracking-tight" title={voiceState.session?.title || 'Sala de Voz'}>
+                                        {voiceState.session?.title || 'Sala de Voz'}
+                                    </h4>
+                                </div>
+                                <span 
+                                    className="text-[10px] font-mono font-black px-2.5 py-0.5 rounded-full shrink-0 shadow-sm"
+                                    style={{
+                                        background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent)',
+                                        color: 'var(--color-primary-theme, #ef4444)',
+                                        border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)',
+                                        boxShadow: '0 0 10px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent)'
+                                    }}
+                                >
+                                    {formatVoiceTimer(voiceState.session?.seconds || 0)}
+                                </span>
+                            </div>
+
+                            {/* Participantes Conectados */}
+                            {voiceState.session?.participants && voiceState.session.participants.length > 0 && (
+                                <div className="flex items-center justify-between px-0.5 py-0.5">
+                                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">
+                                        Participantes ({voiceState.session.participants.length})
+                                    </span>
+                                    <div className="flex items-center -space-x-2 overflow-hidden">
+                                        {voiceState.session.participants.map((p: any, idx: number) => {
+                                            const initial = p.operatorName ? p.operatorName.charAt(0).toUpperCase() : 'U';
+                                            const isSpeaking = p.isSpeaking;
+                                            return (
+                                                <div 
+                                                    key={idx}
+                                                    className={clsx(
+                                                        "relative w-7 h-7 rounded-full flex items-center justify-center font-black text-[11px] shrink-0 border-2 border-[#090d16] transition-transform duration-200 overflow-hidden shadow-sm",
+                                                        isSpeaking && "scale-110 z-10 animate-pulse",
+                                                        p.isMuted && "opacity-60"
+                                                    )}
+                                                    style={{ 
+                                                        background: 'linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 65%, black))',
+                                                        boxShadow: isSpeaking ? '0 0 0 2px var(--color-primary-theme, #ef4444)' : undefined
+                                                    }}
+                                                    title={`${p.operatorName || 'Participante'} ${p.isMuted ? '(Mutado)' : (isSpeaking ? '(Falando...)' : '')}`}
+                                                >
+                                                    {p.avatar ? (
+                                                        <img src={p.avatar} alt={p.operatorName} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span className="text-white drop-shadow">{initial}</span>
+                                                    )}
+                                                    {p.isMuted && (
+                                                        <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-[#090d16]" />
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Controles de Ação — Grid 2x2 Clean & Tátil */}
+                            <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                {/* Botão Mutar / Desmutar */}
+                                <button
+                                    type="button"
+                                    onClick={() => sendVoiceAction('toggle_mute')}
+                                    className={clsx(
+                                        "h-8 px-2.5 rounded-xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-bold cursor-pointer select-none shadow-sm hover:-translate-y-0.5 active:translate-y-0",
+                                        voiceState.session?.isMuted
+                                            ? "bg-rose-500/15 text-rose-300 border-rose-500/35 hover:bg-rose-500/25 shadow-rose-500/10"
+                                            : "bg-white/[0.06] hover:bg-white/[0.12] text-slate-200 hover:text-white border-white/[0.1] hover:border-white/[0.2]"
+                                    )}
+                                    title="Mutar / Desmutar Microfone"
+                                >
+                                    {voiceState.session?.isMuted ? (
+                                        <MicOff className="w-3.5 h-3.5 text-rose-400" />
+                                    ) : (
+                                        <Mic className="w-3.5 h-3.5" style={{ color: 'var(--color-primary-theme, #ef4444)' }} />
+                                    )}
+                                    <span>{voiceState.session?.isMuted ? 'Desmutar' : 'Mutar'}</span>
+                                </button>
+
+                                {/* Botão Convidar */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsOpen(true);
+                                        sendVoiceAction('open_invite_modal');
+                                    }}
+                                    className="h-8 px-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-bold cursor-pointer select-none bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] hover:border-white/[0.2] text-slate-200 hover:text-white shadow-sm hover:-translate-y-0.5 active:translate-y-0"
+                                    title="Convidar colega para esta chamada"
+                                >
+                                    <UserPlus className="w-3.5 h-3.5 text-sky-400" />
+                                    <span>Convidar</span>
+                                </button>
+
+                                {/* Botão Abrir Chat */}
+                                <button
+                                    type="button"
+                                    onClick={() => setIsOpen(true)}
+                                    className="h-8 px-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-bold cursor-pointer select-none bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] hover:border-white/[0.2] text-slate-200 hover:text-white shadow-sm hover:-translate-y-0.5 active:translate-y-0"
+                                    title="Abrir detalhes da conversa e participantes"
+                                >
+                                    <PhoneCall className="w-3.5 h-3.5" style={{ color: 'var(--color-primary-theme, #ef4444)' }} />
+                                    <span>Abrir Chat</span>
+                                </button>
+
+                                {/* Botão Sair */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsVoiceDockOpen(false);
+                                        sendVoiceAction('leave_call');
+                                    }}
+                                    className="h-8 px-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white shadow-md shadow-rose-500/25 transition-all duration-200 active:scale-95 flex items-center justify-center gap-1.5 text-xs font-black cursor-pointer select-none hover:-translate-y-0.5 active:translate-y-0"
+                                    title="Desconectar da chamada"
+                                >
+                                    <PhoneOff className="w-3.5 h-3.5" />
+                                    <span>Sair</span>
+                                </button>
+                            </div>
                         </div>
                     )}
 
-                    <div className="h-6 w-px bg-white/10 shrink-0 mx-0.5" />
+                    {/* ABA LATERAL DIREITA (Opção 3: Mini-Aba com expansão suave em hover) */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setIsVoiceDockOpen(false);
+                            setIsOpen(prev => !prev);
+                        }}
+                        className={clsx(
+                            "flex flex-col items-center gap-2 py-3.5 px-2.5 rounded-l-2xl border-l border-t border-b shadow-2xl cursor-pointer relative transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none",
+                            "before:absolute before:-left-6 before:-top-6 before:-bottom-6 before:right-0 before:content-['']",
+                            voiceState.inCall || unreadCount > 0
+                                ? "translate-x-0 opacity-100 shadow-2xl"
+                                : "translate-x-[calc(100%-9px)] opacity-70 group-hover/dock:translate-x-0 hover:translate-x-0 hover:opacity-100 focus-visible:translate-x-0 focus-visible:opacity-100"
+                        )}
+                        style={{
+                            background: voiceState.inCall 
+                                ? 'linear-gradient(180deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 22%, #0b0f19), color-mix(in srgb, var(--color-primary-theme, #ef4444) 10%, #030712))'
+                                : 'color-mix(in srgb, var(--color-card, #172033) 92%, black)',
+                            borderColor: voiceState.inCall 
+                                ? 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 60%, var(--border-color, rgba(255,255,255,0.15)))' 
+                                : 'var(--border-color, rgba(255,255,255,0.15))',
+                            backdropFilter: 'blur(16px)',
+                            WebkitBackdropFilter: 'blur(16px)'
+                        }}
+                        title={
+                            voiceState.inCall 
+                                ? `Chamada Ativa (${formatVoiceTimer(voiceState.session?.seconds || 0)}) - Passe o mouse para controles`
+                                : unreadCount > 0
+                                    ? `Chat Interno: ${unreadCount} mensagem(ns) não lida(s)`
+                                    : "Chat Interno da Equipe (Alt + C)"
+                        }
+                    >
+                        {/* Borda Neon Pulsante para Chamada Ativa ou Não Lidas */}
+                        {(voiceState.inCall || unreadCount > 0) && (
+                            <span 
+                                className="absolute inset-0 rounded-l-xl pointer-events-none animate-pulse"
+                                style={{
+                                    borderTop: '2.5px solid var(--color-primary-theme, #ef4444)',
+                                    borderBottom: '2.5px solid var(--color-primary-theme, #ef4444)',
+                                    borderLeft: '2.5px solid var(--color-primary-theme, #ef4444)',
+                                    boxShadow: '0 0 22px 3px var(--color-primary-theme, #ef4444), 0 0 45px 8px color-mix(in srgb, var(--color-primary-theme, #ef4444) 75%, transparent), inset 0 0 14px color-mix(in srgb, var(--color-primary-theme, #ef4444) 50%, transparent)'
+                                }}
+                            />
+                        )}
+                        <div className="relative flex items-center justify-center">
+                            <div 
+                                className={clsx(
+                                    "w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-300 relative",
+                                    isVoiceDockOpen && "scale-110"
+                                )}
+                                style={{
+                                    background: voiceState.inCall
+                                        ? 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 22%, transparent)'
+                                        : unreadCount > 0 
+                                            ? 'rgba(244, 63, 94, 0.25)' 
+                                            : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent)',
+                                    color: 'var(--color-primary-theme, #ef4444)',
+                                    border: voiceState.inCall
+                                        ? '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 55%, transparent)'
+                                        : unreadCount > 0 
+                                            ? '1px solid rgba(244, 63, 94, 0.6)' 
+                                            : '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent)',
+                                    boxShadow: '0 0 14px color-mix(in srgb, var(--color-primary-theme, #ef4444) 50%, transparent)'
+                                }}
+                            >
+                                {voiceState.inCall ? (
+                                    <Radio className="w-3.5 h-3.5 animate-pulse" style={{ color: 'var(--color-primary-theme, #ef4444)' }} />
+                                ) : (
+                                    <Users className="w-3.5 h-3.5" />
+                                )}
 
-                    {/* Botões de Ação na Barra Flutuante Global */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        {/* Botão Mutar / Desmutar */}
-                        <button
-                            type="button"
-                            onClick={() => sendVoiceAction('toggle_mute')}
-                            className={clsx(
-                                "h-8 px-2.5 rounded-xl border transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none",
-                                voiceState.session?.isMuted
-                                    ? "bg-rose-500/20 text-rose-300 border-rose-500/30 hover:bg-rose-500/30"
-                                    : "bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border-white/10"
-                            )}
-                            title="Mutar / Desmutar Microfone"
+                                {unreadCount > 0 && !voiceState.inCall && (
+                                    <span className="absolute -top-2 -right-2 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-lg shadow-rose-500/80 border-2 border-[var(--color-card,#0f172a)] animate-bounce">
+                                        {unreadCount > 99 ? '99+' : unreadCount}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                        <span 
+                            className="text-[10px] font-black tracking-widest uppercase select-none [writing-mode:vertical-lr] rotate-180 transition-colors"
+                            style={{ color: 'var(--color-primary-theme, #ef4444)' }}
                         >
-                            {voiceState.session?.isMuted ? <MicOff className="w-3.5 h-3.5 text-rose-400" /> : <Mic className="w-3.5 h-3.5" />}
-                            <span className="hidden md:inline">{voiceState.session?.isMuted ? 'Desmutar' : 'Mutar'}</span>
-                        </button>
-
-                        {/* Botão Convidar Colega */}
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsOpen(true);
-                                sendVoiceAction('open_invite_modal');
-                            }}
-                            className="h-8 px-2.5 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none"
-                            style={{
-                                background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent)',
-                                border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)',
-                                color: 'var(--color-foreground, #fff)'
-                            }}
-                            title="Convidar colega para esta chamada"
-                        >
-                            <UserPlus className="w-3.5 h-3.5" style={{ color: 'var(--color-primary-theme, #ef4444)' }} />
-                            <span className="hidden md:inline">Convidar</span>
-                        </button>
-
-                        {/* Botão Abrir Gaveta do Chat */}
-                        <button
-                            type="button"
-                            onClick={() => setIsOpen(true)}
-                            className="h-8 px-2.5 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none"
-                            style={{
-                                background: 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 22%, transparent)',
-                                border: '1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, transparent)',
-                                color: 'var(--color-foreground, #fff)'
-                            }}
-                            title="Abrir detalhes da conversa e participantes"
-                        >
-                            <PhoneCall className="w-3.5 h-3.5" style={{ color: 'var(--color-primary-theme, #ef4444)' }} />
-                            <span className="hidden sm:inline">Abrir Chat</span>
-                        </button>
-
-                        {/* Botão Sair / Desconectar */}
-                        <button
-                            type="button"
-                            onClick={() => sendVoiceAction('leave_call')}
-                            className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-600/30 transition-all active:scale-95 flex items-center gap-1.5 text-xs font-extrabold cursor-pointer select-none"
-                            title="Desconectar da chamada"
-                        >
-                            <PhoneOff className="w-3.5 h-3.5" />
-                            <span>Sair</span>
-                        </button>
-                    </div>
+                            {voiceState.inCall ? 'Em Call' : 'Equipe'}
+                        </span>
+                    </button>
                 </div>
             )}
 

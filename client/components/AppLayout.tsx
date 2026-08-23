@@ -9,6 +9,7 @@ import React, { useState, useEffect } from "react";
 import clsx from 'clsx';
 
 import GlobalInternalChat from "@/components/GlobalInternalChat";
+import SystemTooltip from "@/components/SystemTooltip";
 
 /**
  * Componente de Layout Principal da aplicação.
@@ -189,6 +190,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
 
             {!isLoginPage && user && <GlobalInternalChat />}
+            <SystemTooltip />
         </div>
     );
 }

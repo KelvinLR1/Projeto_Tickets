@@ -7279,7 +7279,7 @@ function switchInternalMainTab(mainTab) {
 }
 
 // Alterna entre as Sub-Abas do Painel Pessoal (1. Conversas | 2. Grupos | 3. Salas de Call)
-function switchPessoalSubTab(subTab) {
+function switchPessoalSubTab(subTab, forceClean = true) {
   internalPessoalSubTab = subTab;
 
   const btnDms = document.getElementById('subtab-btn-pessoal-dms');
@@ -7332,7 +7332,7 @@ function switchPessoalSubTab(subTab) {
     if (subTab === 'voice') {
       listVoice.classList.remove('hidden');
       listVoice.classList.add('flex');
-      renderPessoalVoice();
+      renderPessoalVoice('', forceClean);
     } else {
       listVoice.classList.add('hidden');
       listVoice.classList.remove('flex');
@@ -7341,7 +7341,7 @@ function switchPessoalSubTab(subTab) {
 }
 
 // Alterna entre as Sub-Abas do Painel Geral (1. Grupos de Setores | 2. Salas de Call)
-function switchGeralSubTab(subTab) {
+function switchGeralSubTab(subTab, forceClean = true) {
   internalGeralSubTab = subTab;
 
   const btnChannels = document.getElementById('subtab-btn-geral-channels');
@@ -7373,7 +7373,7 @@ function switchGeralSubTab(subTab) {
   if (listVoice) {
     if (subTab === 'voice') {
       listVoice.classList.remove('hidden');
-      renderGeralVoice();
+      renderGeralVoice('', forceClean);
     } else {
       listVoice.classList.add('hidden');
     }
@@ -7423,6 +7423,12 @@ function showInternalDirectoryView() {
   if (closeDmBtn) {
     closeDmBtn.classList.add('hidden');
     closeDmBtn.classList.remove('flex');
+  }
+
+  const voiceCallBtn = document.getElementById('btn-internal-voice-call');
+  if (voiceCallBtn) {
+    voiceCallBtn.classList.add('hidden');
+    voiceCallBtn.classList.remove('flex');
   }
 
   if (iconContainer) {
@@ -7803,7 +7809,7 @@ function renderPessoalGroups(filterQuery = '') {
 
     card.innerHTML = `
       <div class="flex items-center gap-3 min-w-0">
-        <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">
+        <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         </div>
         <div class="min-w-0">
@@ -7833,7 +7839,7 @@ function renderPessoalGroups(filterQuery = '') {
 // ==============================================================================
 let connectingVoiceRoomId = null;
 
-function renderPessoalVoice(filterQuery = '') {
+function renderPessoalVoice(filterQuery = '', forceClean = false) {
   const container = document.getElementById('pessoal-voice-container');
   if (!container) return;
 
@@ -7860,12 +7866,12 @@ function renderPessoalVoice(filterQuery = '') {
   if (rooms.length === 0) {
     container.innerHTML = `
       <div class="text-center py-10 px-4 internal-tab-pane-anim">
-        <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center internal-icon-box opacity-70" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">
+        <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center internal-icon-box opacity-70" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
         </div>
         <p class="text-xs font-bold text-foreground">${q ? 'Nenhuma sala de call privada encontrada' : 'Nenhuma call privada ativa'}</p>
         <p class="text-[11px] text-[var(--color-text-muted)] mt-1">Crie uma sala de call exclusiva para convidar colegas específicos.</p>
-        <button onclick="openCreatePrivateCallModal()" class="mt-4 px-4 py-2 text-xs font-bold text-white rounded-xl cursor-pointer inline-flex items-center gap-1.5 shadow-md shadow-purple-600/30 active:scale-95 transition-all" style="background: linear-gradient(135deg, #9333ea, #7c3aed);">
+        <button onclick="openCreatePrivateCallModal()" class="mt-4 px-4 py-2 text-xs font-bold text-white rounded-xl cursor-pointer inline-flex items-center gap-1.5 shadow-md active:scale-95 transition-all" style="background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 80%, black)); box-shadow: 0 4px 14px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent);">
           <span>+ Criar Sala de Call</span>
         </button>
       </div>
@@ -7874,7 +7880,7 @@ function renderPessoalVoice(filterQuery = '') {
     return;
   }
 
-  if (container.querySelector('.internal-tab-pane-anim')) {
+  if (forceClean || container.querySelector('.internal-tab-pane-anim')) {
     container.innerHTML = '';
   }
 
@@ -7882,8 +7888,8 @@ function renderPessoalVoice(filterQuery = '') {
 
   rooms.forEach((room, index) => {
     renderedRoomIds.add(String(room.id));
-    const serverSession = (activeVoiceRoomsSummary || []).find(s => s.id === room.id);
-    const isLocalCurrent = currentVoiceSession && currentVoiceSession.id === room.id;
+    const serverSession = (activeVoiceRoomsSummary || []).find(s => String(s.id) === String(room.id));
+    const isLocalCurrent = currentVoiceSession && String(currentVoiceSession.id) === String(room.id);
     let participants = serverSession && serverSession.participants ? [...serverSession.participants] : [];
     if (isLocalCurrent) {
       if (currentOpId && !participants.some(p => String(p.operatorId) === currentOpId)) {
@@ -7912,34 +7918,33 @@ function renderPessoalVoice(filterQuery = '') {
       ? `<span class="text-emerald-400 font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ${pCount} em chamada</span>`
       : escapeHtml(room.descricao || memberCount || 'Sala de call exclusiva');
 
+    const isMuted = !!currentVoiceSession?.isMuted;
     const actionsHTML = isLocalCurrent ? `
       <div class="flex flex-row items-center gap-1.5 shrink-0 whitespace-nowrap voice-actions-connected-group">
-        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white flex flex-row items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0 voice-badge-connected-anim">
-          <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0"></span>
-          Conectado
+        <span class="h-7 px-2 rounded-lg text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex flex-row items-center justify-center gap-1 shadow-xs whitespace-nowrap shrink-0 select-none" data-tooltip="Conectado à sala de voz">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+          <span class="hidden sm:inline">Conectado</span>
         </span>
-        <button type="button" onclick="toggleVoiceMute()" class="px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentVoiceSession?.isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-colors duration-200 voice-btn-mute-anim">
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
-            ${currentVoiceSession?.isMuted 
+        <button type="button" onclick="toggleVoiceMute()" class="voice-btn-mute-toggle w-7 h-7 rounded-xl text-[11px] font-extrabold ${isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex items-center justify-center shrink-0 transition-colors duration-200 select-none" data-tooltip="${isMuted ? 'Desmutar Microfone' : 'Mutar Microfone'}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+            ${isMuted 
               ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
               : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
             }
           </svg>
-          <span class="whitespace-nowrap shrink-0">${currentVoiceSession?.isMuted ? 'Desmutar' : 'Mutar'}</span>
         </button>
-        <button type="button" onclick="leaveCurrentVoiceCall()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-transform active:scale-95 voice-btn-leave-anim">
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
-          <span class="whitespace-nowrap shrink-0">Sair</span>
+        <button type="button" onclick="leaveCurrentVoiceCall()" class="w-7 h-7 rounded-xl text-[11px] font-extrabold bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white cursor-pointer shadow-sm shadow-rose-500/25 flex items-center justify-center shrink-0 transition-transform active:scale-95 select-none" data-tooltip="Sair da sala de voz">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
         </button>
       </div>
     ` : (connectingVoiceRoomId === room.id ? `
-      <button type="button" disabled class="px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 opacity-90 cursor-wait shadow-xs whitespace-nowrap shrink-0 select-none animate-pulse" style="background: linear-gradient(135deg, #10b981, #059669);">
+      <button type="button" disabled class="voice-btn-connecting-anim h-7 px-3.5 rounded-xl font-extrabold text-[11px] text-white flex flex-row items-center justify-center gap-1.5 opacity-90 cursor-wait shadow-xs whitespace-nowrap shrink-0 select-none animate-pulse" style="background: linear-gradient(135deg, #10b981, #059669);">
         <svg class="animate-spin shrink-0" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
         <span class="whitespace-nowrap shrink-0">Conectando...</span>
       </button>
     ` : `
-      <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.nome)}', 'sala_privada')" class="voice-btn-enter-anim px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95 whitespace-nowrap shrink-0 select-none" style="background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #9333ea, #7c3aed)'};">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.nome)}', 'sala_privada')" class="voice-btn-enter-anim h-7 px-3.5 rounded-xl font-extrabold text-[11px] text-white flex flex-row items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95 whitespace-nowrap shrink-0 select-none" style="background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 80%, black))'};">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
         <span class="whitespace-nowrap shrink-0">${isLive ? `Entrar (${pCount})` : 'Entrar'}</span>
       </button>
     `);
@@ -7955,16 +7960,46 @@ function renderPessoalVoice(filterQuery = '') {
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
     `;
 
+    const participantsChipsHTML = participants.map(p => {
+      const name = p.operatorName || 'Participante';
+      const initial = name.charAt(0).toUpperCase();
+      const isSpeaking = p.isSpeaking;
+      const isMutedP = p.isMuted;
+      return `
+        <div class="voice-participant-chip" data-op-id="${escapeHtml(String(p.operatorId || ''))}" title="${escapeHtml(name)} ${isMutedP ? '(Mutado)' : (isSpeaking ? '(Falando...)' : '')}">
+          <div class="w-6 h-6 rounded-full flex items-center justify-center font-black text-[10px] shrink-0 border-2 border-[#0f172a] shadow-sm transition-all duration-200 overflow-hidden ${isSpeaking ? 'scale-110 z-10 animate-pulse' : ''} ${isMutedP ? 'opacity-60' : ''}" style="background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 65%, black)); ${isSpeaking ? 'box-shadow: 0 0 0 2px var(--color-primary-theme, #ef4444);' : ''}">
+            ${p.avatar ? `<img src="${escapeHtml(p.avatar)}" alt="${escapeHtml(name)}" class="w-full h-full object-cover">` : `<span class="text-white drop-shadow">${initial}</span>`}
+          </div>
+          ${isMutedP ? `<span class="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 border border-[#0f172a]"></span>` : ''}
+          <div class="voice-tooltip">
+            ${escapeHtml(name)} ${isMutedP ? '🔇' : (isSpeaking ? '🎙️' : '')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const participantsTrayHTML = isLocalCurrent && participants.length > 0 ? `
+      <div class="voice-card-participants voice-tray-entering flex items-center justify-between border-t border-white/[0.08] pt-2.5 mt-2.5 w-full">
+        <span class="voice-card-count-text text-[10px] font-extrabold text-[var(--color-text-muted)] uppercase tracking-wider flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          Na chamada (${participants.length})
+        </span>
+        <div class="voice-card-chips-container flex items-center -space-x-1.5 overflow-visible">
+          ${participantsChipsHTML}
+        </div>
+      </div>
+    ` : '';
+
     let card = container.querySelector(`[data-voice-room-id="${room.id}"]`);
     if (card) {
-      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      card.className = `p-3.5 internal-card flex flex-col justify-between select-none transition-all duration-300 ${isLocalCurrent ? 'internal-card-active' : ''}`;
       
       const iconEl = card.querySelector('.voice-icon-box');
       if (iconEl) {
         iconEl.className = `w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}`;
-        iconEl.style.background = isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : 'rgba(168, 85, 247, 0.18)';
-        iconEl.style.color = isLocalCurrent ? '#10b981' : '#c084fc';
-        iconEl.style.borderColor = isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(168, 85, 247, 0.35)';
+        iconEl.style.background = isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent)';
+        iconEl.style.color = isLocalCurrent ? '#10b981' : 'var(--color-primary-theme, #ef4444)';
+        iconEl.style.borderColor = isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)';
         const iconKey = isLocalCurrent ? 'connected' : 'idle';
         if (iconEl.dataset.iconKey !== iconKey) {
           iconEl.innerHTML = `<div class="voice-icon-pop-anim">${iconHTML}</div>`;
@@ -7977,39 +8012,74 @@ function renderPessoalVoice(filterQuery = '') {
         subtitleEl.innerHTML = subtitleHTML;
       }
       const actionsEl = card.querySelector('.voice-room-actions');
-      const actionKey = isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`;
+      const actionKey = isLocalCurrent ? 'connected' : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`;
       if (actionsEl && actionsEl.dataset.actionKey !== actionKey) {
         actionsEl.dataset.actionKey = actionKey;
-        actionsEl.style.opacity = '0';
-        actionsEl.style.transform = 'scale(0.95)';
-        setTimeout(() => {
-          actionsEl.innerHTML = actionsHTML;
-          actionsEl.style.opacity = '1';
-          actionsEl.style.transform = 'scale(1)';
-        }, 100);
+        actionsEl.innerHTML = actionsHTML;
+      } else if (actionsEl && isLocalCurrent) {
+        const muteBtn = actionsEl.querySelector('.voice-btn-mute-toggle');
+        if (muteBtn) {
+          muteBtn.className = `voice-btn-mute-toggle w-7 h-7 rounded-xl text-[11px] font-extrabold ${isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex items-center justify-center shrink-0 transition-colors duration-200 select-none`;
+          muteBtn.setAttribute('data-tooltip', isMuted ? 'Desmutar Microfone' : 'Mutar Microfone');
+          muteBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+              ${isMuted 
+                ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+                : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+              }
+            </svg>
+          `;
+        }
+      }
+
+      let trayEl = card.querySelector('.voice-card-participants');
+      if (isLocalCurrent && participants.length > 0) {
+        if (trayEl && trayEl.classList.contains('voice-tray-collapsing')) {
+          trayEl.remove();
+          trayEl = null;
+        }
+        if (!trayEl) {
+          card.insertAdjacentHTML('beforeend', participantsTrayHTML);
+        } else {
+          // Atualiza apenas os chips internamente sem resetar a bandeja
+          const countEl = trayEl.querySelector('.voice-card-count-text');
+          if (countEl) countEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Na chamada (${participants.length})`;
+          const chipsContainer = trayEl.querySelector('.voice-card-chips-container');
+          if (chipsContainer) {
+            chipsContainer.innerHTML = participantsChipsHTML;
+          }
+        }
+      } else if (trayEl) {
+        if (!trayEl.classList.contains('voice-tray-collapsing')) {
+          trayEl.remove();
+        }
       }
     } else {
       card = document.createElement('div');
       card.setAttribute('data-voice-room-id', String(room.id));
-      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      card.className = `p-3.5 internal-card internal-card-enter flex flex-col justify-between select-none transition-all duration-300 ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      card.style.animationDelay = `${Math.min(index, 12) * 0.03}s`;
 
       card.innerHTML = `
-        <div class="flex items-center gap-3 min-w-0 flex-1">
-          <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}" style="background: ${isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : 'rgba(168, 85, 247, 0.18)'}; color: ${isLocalCurrent ? '#10b981' : '#c084fc'}; border: 1px solid ${isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(168, 85, 247, 0.35)'};" data-icon-key="${isLocalCurrent ? 'connected' : 'idle'}">
-            <div class="voice-icon-pop-anim">${iconHTML}</div>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 mb-0.5">
-              <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.nome)}</h4>
-              <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border" style="background: rgba(168, 85, 247, 0.12); color: #c084fc; border-color: rgba(168, 85, 247, 0.3);">Privada</span>
+        <div class="voice-card-main flex items-center justify-between gap-3 w-full">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}" style="background: ${isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 18%, transparent)'}; color: ${isLocalCurrent ? '#10b981' : 'var(--color-primary-theme, #ef4444)'}; border: 1px solid ${isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent)'};" data-icon-key="${isLocalCurrent ? 'connected' : 'idle'}">
+              <div class="voice-icon-pop-anim">${iconHTML}</div>
             </div>
-            <p class="voice-room-subtitle text-[11px] text-[var(--color-text-muted)] truncate font-medium">${subtitleHTML}</p>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 mb-0.5">
+                <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.nome)}</h4>
+                <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 14%, transparent); color: var(--color-primary-theme, #ef4444); border-color: color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent);">Privada</span>
+              </div>
+              <p class="voice-room-subtitle text-[11px] text-[var(--color-text-muted)] truncate font-medium">${subtitleHTML}</p>
+            </div>
+          </div>
+
+          <div class="voice-room-actions flex flex-row items-center gap-2 shrink-0 whitespace-nowrap" data-action-key="${isLocalCurrent ? 'connected' : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`}">
+            ${actionsHTML}
           </div>
         </div>
-
-        <div class="voice-room-actions flex flex-row items-center gap-2 shrink-0 whitespace-nowrap" data-action-key="${isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`}">
-          ${actionsHTML}
-        </div>
+        ${participantsTrayHTML}
       `;
 
       container.appendChild(card);
@@ -8089,7 +8159,7 @@ function renderGeralChannels(filterQuery = '') {
 // ==============================================================================
 let activeVoiceRoomsSummary = [];
 
-function renderGeralVoice(filterQuery = '') {
+function renderGeralVoice(filterQuery = '', forceClean = false) {
   const container = document.getElementById('geral-list-voice');
   if (!container) return;
 
@@ -8133,7 +8203,7 @@ function renderGeralVoice(filterQuery = '') {
     return;
   }
 
-  if (container.querySelector('.internal-tab-pane-anim')) {
+  if (forceClean || container.querySelector('.internal-tab-pane-anim')) {
     container.innerHTML = '';
   }
 
@@ -8141,8 +8211,8 @@ function renderGeralVoice(filterQuery = '') {
 
   voiceRooms.forEach((room, index) => {
     renderedRoomIds.add(String(room.id));
-    const serverSession = (activeVoiceRoomsSummary || []).find(s => s.id === room.id);
-    const isLocalCurrent = currentVoiceSession && currentVoiceSession.id === room.id;
+    const serverSession = (activeVoiceRoomsSummary || []).find(s => String(s.id) === String(room.id));
+    const isLocalCurrent = currentVoiceSession && String(currentVoiceSession.id) === String(room.id);
 
     let participants = serverSession && serverSession.participants ? [...serverSession.participants] : [];
     if (isLocalCurrent) {
@@ -8165,34 +8235,33 @@ function renderGeralVoice(filterQuery = '') {
       ? `<span class="text-emerald-400 font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ${pCount} em chamada</span>`
       : escapeHtml(room.desc);
 
+    const isMuted = !!currentVoiceSession?.isMuted;
     const actionsHTML = isLocalCurrent ? `
       <div class="flex flex-row items-center gap-1.5 shrink-0 whitespace-nowrap voice-actions-connected-group">
-        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white flex flex-row items-center gap-1.5 shadow-sm whitespace-nowrap shrink-0 voice-badge-connected-anim">
-          <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0"></span>
-          Conectado
+        <span class="h-7 px-2 rounded-lg text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex flex-row items-center justify-center gap-1 shadow-xs whitespace-nowrap shrink-0 select-none" data-tooltip="Conectado à sala de voz">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+          <span class="hidden sm:inline">Conectado</span>
         </span>
-        <button type="button" onclick="toggleVoiceMute()" class="px-2.5 py-1 rounded-lg text-[10px] font-bold ${currentVoiceSession?.isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-colors duration-200 voice-btn-mute-anim">
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
-            ${currentVoiceSession?.isMuted 
+        <button type="button" onclick="toggleVoiceMute()" class="voice-btn-mute-toggle w-7 h-7 rounded-xl text-[11px] font-extrabold ${isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex items-center justify-center shrink-0 transition-colors duration-200 select-none" data-tooltip="${isMuted ? 'Desmutar Microfone' : 'Mutar Microfone'}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+            ${isMuted 
               ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
               : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
             }
           </svg>
-          <span class="whitespace-nowrap shrink-0">${currentVoiceSession?.isMuted ? 'Desmutar' : 'Mutar'}</span>
         </button>
-        <button type="button" onclick="leaveCurrentVoiceCall()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-rose-500 hover:bg-rose-600 text-white cursor-pointer shadow-xs flex flex-row items-center gap-1 whitespace-nowrap shrink-0 transition-transform active:scale-95 voice-btn-leave-anim">
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
-          <span class="whitespace-nowrap shrink-0">Sair</span>
+        <button type="button" onclick="leaveCurrentVoiceCall()" class="w-7 h-7 rounded-xl text-[11px] font-extrabold bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white cursor-pointer shadow-sm shadow-rose-500/25 flex items-center justify-center shrink-0 transition-transform active:scale-95 select-none" data-tooltip="Sair da sala de voz">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
         </button>
       </div>
     ` : (connectingVoiceRoomId === room.id ? `
-      <button type="button" disabled class="px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 opacity-90 cursor-wait shadow-xs whitespace-nowrap shrink-0 select-none animate-pulse" style="background: linear-gradient(135deg, #10b981, #059669);">
+      <button type="button" disabled class="voice-btn-connecting-anim h-7 px-3.5 rounded-xl font-extrabold text-[11px] text-white flex flex-row items-center justify-center gap-1.5 opacity-90 cursor-wait shadow-xs whitespace-nowrap shrink-0 select-none animate-pulse" style="background: linear-gradient(135deg, #10b981, #059669);">
         <svg class="animate-spin shrink-0" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
         <span class="whitespace-nowrap shrink-0">Conectando...</span>
       </button>
     ` : `
-      <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.name)}', 'channel')" class="voice-btn-enter-anim px-3.5 py-1.5 rounded-xl font-extrabold text-xs text-white flex flex-row items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95 whitespace-nowrap shrink-0 select-none" style="background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 80%, black))'};">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      <button type="button" onclick="joinSectorVoiceRoom('${room.id}', '${escapeHtml(room.name)}', 'channel')" class="voice-btn-enter-anim h-7 px-3.5 rounded-xl font-extrabold text-[11px] text-white flex flex-row items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95 whitespace-nowrap shrink-0 select-none" style="background: ${isLive ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 80%, black))'};">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
         <span class="whitespace-nowrap shrink-0">${isLive ? `Entrar (${pCount})` : 'Entrar'}</span>
       </button>
     `);
@@ -8208,9 +8277,39 @@ function renderGeralVoice(filterQuery = '') {
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
     `;
 
+    const participantsChipsHTML = participants.map(p => {
+      const name = p.operatorName || 'Participante';
+      const initial = name.charAt(0).toUpperCase();
+      const isSpeaking = p.isSpeaking;
+      const isMutedP = p.isMuted;
+      return `
+        <div class="voice-participant-chip" data-op-id="${escapeHtml(String(p.operatorId || ''))}" title="${escapeHtml(name)} ${isMutedP ? '(Mutado)' : (isSpeaking ? '(Falando...)' : '')}">
+          <div class="w-6 h-6 rounded-full flex items-center justify-center font-black text-[10px] shrink-0 border-2 border-[#0f172a] shadow-sm transition-all duration-200 overflow-hidden ${isSpeaking ? 'scale-110 z-10 animate-pulse' : ''} ${isMutedP ? 'opacity-60' : ''}" style="background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 65%, black)); ${isSpeaking ? 'box-shadow: 0 0 0 2px var(--color-primary-theme, #ef4444);' : ''}">
+            ${p.avatar ? `<img src="${escapeHtml(p.avatar)}" alt="${escapeHtml(name)}" class="w-full h-full object-cover">` : `<span class="text-white drop-shadow">${initial}</span>`}
+          </div>
+          ${isMutedP ? `<span class="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 border border-[#0f172a]"></span>` : ''}
+          <div class="voice-tooltip">
+            ${escapeHtml(name)} ${isMutedP ? '🔇' : (isSpeaking ? '🎙️' : '')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const participantsTrayHTML = isLocalCurrent && participants.length > 0 ? `
+      <div class="voice-card-participants voice-tray-entering flex items-center justify-between border-t border-white/[0.08] pt-2.5 mt-2.5 w-full">
+        <span class="voice-card-count-text text-[10px] font-extrabold text-[var(--color-text-muted)] uppercase tracking-wider flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          Na chamada (${participants.length})
+        </span>
+        <div class="voice-card-chips-container flex items-center -space-x-1.5 overflow-visible">
+          ${participantsChipsHTML}
+        </div>
+      </div>
+    ` : '';
+
     let card = container.querySelector(`[data-voice-room-id="${room.id}"]`);
     if (card) {
-      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      card.className = `p-3.5 internal-card flex flex-col justify-between select-none transition-all duration-300 ${isLocalCurrent ? 'internal-card-active' : ''}`;
       
       const iconEl = card.querySelector('.voice-icon-box');
       if (iconEl) {
@@ -8230,41 +8329,76 @@ function renderGeralVoice(filterQuery = '') {
         subtitleEl.innerHTML = subtitleHTML;
       }
       const actionsEl = card.querySelector('.voice-room-actions');
-      const actionKey = isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`;
+      const actionKey = isLocalCurrent ? 'connected' : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`;
       if (actionsEl && actionsEl.dataset.actionKey !== actionKey) {
         actionsEl.dataset.actionKey = actionKey;
-        actionsEl.style.opacity = '0';
-        actionsEl.style.transform = 'scale(0.95)';
-        setTimeout(() => {
-          actionsEl.innerHTML = actionsHTML;
-          actionsEl.style.opacity = '1';
-          actionsEl.style.transform = 'scale(1)';
-        }, 100);
+        actionsEl.innerHTML = actionsHTML;
+      } else if (actionsEl && isLocalCurrent) {
+        const muteBtn = actionsEl.querySelector('.voice-btn-mute-toggle');
+        if (muteBtn) {
+          muteBtn.className = `voice-btn-mute-toggle h-7 w-[84px] min-w-[84px] px-2 rounded-xl text-[11px] font-extrabold ${isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex flex-row items-center justify-center gap-1.5 whitespace-nowrap shrink-0 transition-colors duration-200 select-none`;
+          muteBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+              ${isMuted 
+                ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+                : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+              }
+            </svg>
+            <span class="whitespace-nowrap shrink-0">${isMuted ? 'Desmutar' : 'Mutar'}</span>
+          `;
+        }
+      }
+
+      let trayEl = card.querySelector('.voice-card-participants');
+      if (isLocalCurrent && participants.length > 0) {
+        if (trayEl && trayEl.classList.contains('voice-tray-collapsing')) {
+          trayEl.remove();
+          trayEl = null;
+        }
+        if (!trayEl) {
+          card.insertAdjacentHTML('beforeend', participantsTrayHTML);
+        } else {
+          // Atualiza apenas os chips internamente sem resetar a bandeja
+          const countEl = trayEl.querySelector('.voice-card-count-text');
+          if (countEl) countEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Na chamada (${participants.length})`;
+          const chipsContainer = trayEl.querySelector('.voice-card-chips-container');
+          if (chipsContainer) {
+            chipsContainer.innerHTML = participantsChipsHTML;
+          }
+        }
+      } else if (trayEl) {
+        if (!trayEl.classList.contains('voice-tray-collapsing')) {
+          trayEl.remove();
+        }
       }
     } else {
       card = document.createElement('div');
       card.setAttribute('data-voice-room-id', String(room.id));
-      card.className = `p-3.5 internal-card flex items-center justify-between gap-3 select-none ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      card.className = `p-3.5 internal-card internal-card-enter flex flex-col justify-between select-none transition-all duration-300 ${isLocalCurrent ? 'internal-card-active' : ''}`;
+      card.style.animationDelay = `${Math.min(index, 12) * 0.03}s`;
 
       card.innerHTML = `
-        <div class="flex items-center gap-3 min-w-0 flex-1">
-          <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}" style="background: ${isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : `color-mix(in srgb, ${room.themeColor} 18%, transparent)`}; color: ${isLocalCurrent ? '#10b981' : room.themeColor}; border: 1px solid ${isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : `color-mix(in srgb, ${room.themeColor} 30%, transparent)`};" data-icon-key="${isLocalCurrent ? 'connected' : 'idle'}">
-            <div class="voice-icon-pop-anim">${iconHTML}</div>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 mb-0.5">
-              <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.name)}</h4>
-              <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase internal-sector-tag shrink-0" style="color: ${room.themeColor}; border-color: color-mix(in srgb, ${room.themeColor} 25%, transparent);">
-                ${escapeHtml(room.sector)}
-              </span>
+        <div class="voice-card-main flex items-center justify-between gap-3 w-full">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 voice-icon-box ${isLocalCurrent ? 'voice-pulse-beacon' : ''}" style="background: ${isLocalCurrent ? 'rgba(16, 185, 129, 0.2)' : `color-mix(in srgb, ${room.themeColor} 18%, transparent)`}; color: ${isLocalCurrent ? '#10b981' : room.themeColor}; border: 1px solid ${isLocalCurrent ? 'rgba(16, 185, 129, 0.4)' : `color-mix(in srgb, ${room.themeColor} 30%, transparent)`};" data-icon-key="${isLocalCurrent ? 'connected' : 'idle'}">
+              <div class="voice-icon-pop-anim">${iconHTML}</div>
             </div>
-            <p class="voice-room-subtitle text-[11px] text-[var(--color-text-muted)] truncate font-medium">${subtitleHTML}</p>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 mb-0.5">
+                <h4 class="text-xs font-extrabold text-foreground truncate">${escapeHtml(room.name)}</h4>
+                <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase internal-sector-tag shrink-0" style="color: ${room.themeColor}; border-color: color-mix(in srgb, ${room.themeColor} 25%, transparent);">
+                  ${escapeHtml(room.sector)}
+                </span>
+              </div>
+              <p class="voice-room-subtitle text-[11px] text-[var(--color-text-muted)] truncate font-medium">${subtitleHTML}</p>
+            </div>
+          </div>
+
+          <div class="voice-room-actions flex flex-row items-center gap-2 shrink-0 whitespace-nowrap" data-action-key="${isLocalCurrent ? 'connected' : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`}">
+            ${actionsHTML}
           </div>
         </div>
-
-        <div class="voice-room-actions flex flex-row items-center gap-2 shrink-0 whitespace-nowrap" data-action-key="${isLocalCurrent ? `connected_${currentVoiceSession?.isMuted}` : `live_${isLive}_${pCount}_${connectingVoiceRoomId === room.id}`}">
-          ${actionsHTML}
-        </div>
+        ${participantsTrayHTML}
       `;
 
       container.appendChild(card);
@@ -8321,17 +8455,7 @@ function updateAllInternalBadges() {
     }
   }
 
-  // 3. Pessoal Voice
-  const rawPrivateRooms = internalRoomsList.filter(r => r.tipo === 'sala_privada');
-  const badgePessoalVoice = document.getElementById('badge-pessoal-voice-count');
-  if (badgePessoalVoice) {
-    if (rawPrivateRooms.length > 0) {
-      badgePessoalVoice.textContent = rawPrivateRooms.length;
-      badgePessoalVoice.classList.remove('hidden');
-    } else {
-      badgePessoalVoice.classList.add('hidden');
-    }
-  }
+
 
   // Badge Principal Pessoal
   const totalPessoalUnread = totalDMsUnread + totalGroupsUnread;
@@ -8704,7 +8828,7 @@ function renderPrivateCallSelectedMembersList() {
   if (count === 0) {
     container.innerHTML = `
       <div class="h-full flex flex-col items-center justify-center text-center p-4 text-[var(--color-text-muted)] my-auto">
-        <div class="w-9 h-9 rounded-xl mb-2 flex items-center justify-center internal-icon-box opacity-60" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">
+        <div class="w-9 h-9 rounded-xl mb-2 flex items-center justify-center internal-icon-box opacity-60" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>
         </div>
         <p class="text-xs font-bold text-foreground">Nenhum convidado</p>
@@ -8905,8 +9029,8 @@ function openInternalChannel(channelId, channelName, channelDesc) {
 
   const voiceCallBtn = document.getElementById('btn-internal-voice-call');
   if (voiceCallBtn) {
-    voiceCallBtn.classList.remove('hidden');
-    voiceCallBtn.classList.add('flex');
+    voiceCallBtn.classList.add('hidden');
+    voiceCallBtn.classList.remove('flex');
   }
 
   const closeDmBtn = document.getElementById('btn-internal-close-dm');
@@ -8940,13 +9064,10 @@ function openInternalChannel(channelId, channelName, channelDesc) {
   }, 100);
 }
 
-// Abrir Conversa Direta 1 x 1 com um Colega
-function openInternalDM(otherId, otherName, otherSector, otherStatus) {
-  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
-  const dmRoomId = `dm_${[currentOpId, otherId].sort().join('_')}`;
-  
-  currentInternalRoomId = dmRoomId;
-  internalRoomUnreads[dmRoomId] = 0;
+// Abrir Grupo Personalizado da Equipe
+function openInternalGroup(groupId, groupName, groupDesc, memberCount, creatorName) {
+  currentInternalRoomId = groupId;
+  internalRoomUnreads[groupId] = 0;
   updateInternalTotalUnreadBadge();
 
   const dirView = document.getElementById('internal-directory-view');
@@ -8970,67 +9091,672 @@ function openInternalDM(otherId, otherName, otherSector, otherStatus) {
   }
   if (backBtn) backBtn.classList.remove('hidden');
 
-  const closeDmBtn = document.getElementById('btn-internal-close-dm');
-  if (closeDmBtn) {
-    closeDmBtn.classList.remove('hidden');
-    closeDmBtn.classList.add('flex');
-  }
-
   const voiceCallBtn = document.getElementById('btn-internal-voice-call');
   if (voiceCallBtn) {
     voiceCallBtn.classList.remove('hidden');
     voiceCallBtn.classList.add('flex');
   }
 
-  const op = internalOperatorsList.find(o => String(o.id) === String(otherId));
-  const initial = otherName ? otherName.charAt(0).toUpperCase() : 'U';
-  
-  let statusColor = 'bg-slate-500';
-  let statusLabel = 'Offline';
-  if (otherStatus === 'online') {
-    statusColor = 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20';
-    statusLabel = 'Disponível';
-  } else if (otherStatus === 'atendendo') {
-    statusColor = 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20';
-    statusLabel = 'Em Atendimento';
-  } else if (otherStatus === 'ocupado') {
-    statusColor = 'bg-rose-500 shadow-sm shadow-rose-500 ring-2 ring-rose-500/20';
-    statusLabel = 'Ocupado';
-  } else if (otherStatus === 'ausente') {
-    statusColor = 'bg-orange-500 shadow-sm shadow-orange-500 ring-2 ring-orange-500/20';
-    statusLabel = 'Ausente';
+  const closeDmBtn = document.getElementById('btn-internal-close-dm');
+  if (closeDmBtn) {
+    closeDmBtn.classList.add('hidden');
+    closeDmBtn.classList.remove('flex');
   }
 
   if (iconContainer) {
-    iconContainer.className = 'relative w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 internal-avatar transition-all duration-300';
-    iconContainer.innerHTML = `
-      ${op && op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-2xl">` : initial}
-      <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]"></span>
-    `;
+    iconContainer.className = 'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 internal-icon-box transition-all duration-300';
+    iconContainer.style.background = 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent)';
+    iconContainer.style.color = 'var(--color-primary-theme, #ef4444)';
+    iconContainer.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
   }
 
-  if (titleEl) titleEl.textContent = otherName;
+  if (titleEl) titleEl.textContent = groupName || 'Grupo da Equipe';
   if (descEl) {
-    descEl.textContent = '';
-    descEl.classList.add('hidden');
+    descEl.textContent = groupDesc || 'Grupo personalizado de troca de mensagens';
+    descEl.classList.remove('hidden');
   }
   if (membersEl) {
-    membersEl.textContent = otherSector || 'Equipe';
+    membersEl.textContent = memberCount ? String(memberCount).toUpperCase() : 'GRUPO';
     membersEl.classList.remove('hidden');
   }
 
   if (currentOperator) {
-    socket.emit('internal_join_room', { sala_id: dmRoomId, atendente_id: currentOperator.id });
+    socket.emit('internal_join_room', { sala_id: groupId, atendente_id: currentOperator.id });
   }
 
   renderInternalMessages();
   setTimeout(() => {
     const input = document.getElementById('internal-chat-input');
     if (input) {
-      input.placeholder = 'Digite uma mensagem';
+      input.placeholder = 'Digite uma mensagem para o grupo...';
       input.focus();
     }
   }, 100);
+}
+
+// ==============================================================================
+// MODAL DE GESTÃO COMPLETA DE MEMBROS, PERMISSÕES E CONFIGURAÇÕES DO GRUPO
+// ==============================================================================
+let currentInspectedGroupId = null;
+let currentGroupActiveTab = 'members';
+let selectedNewMemberIds = new Set();
+
+function switchGroupModalTab(tab) {
+  currentGroupActiveTab = tab;
+  const tabBtnMembers = document.getElementById('tab-btn-group-members');
+  const tabBtnSettings = document.getElementById('tab-btn-group-settings');
+  const paneMembers = document.getElementById('group-tab-pane-members');
+  const paneSettings = document.getElementById('group-tab-pane-settings');
+
+  if (tab === 'members') {
+    if (tabBtnMembers) {
+      tabBtnMembers.className = 'py-2.5 px-3 text-xs font-extrabold border-b-2 border-[var(--color-primary-theme,#ef4444)] text-foreground flex items-center gap-1.5 transition-all cursor-pointer';
+    }
+    if (tabBtnSettings) {
+      tabBtnSettings.className = 'py-2.5 px-3 text-xs font-bold border-b-2 border-transparent text-[var(--color-text-muted)] hover:text-foreground flex items-center gap-1.5 transition-all cursor-pointer';
+    }
+    if (paneMembers) paneMembers.classList.remove('hidden');
+    if (paneSettings) paneSettings.classList.add('hidden');
+  } else {
+    if (tabBtnMembers) {
+      tabBtnMembers.className = 'py-2.5 px-3 text-xs font-bold border-b-2 border-transparent text-[var(--color-text-muted)] hover:text-foreground flex items-center gap-1.5 transition-all cursor-pointer';
+    }
+    if (tabBtnSettings) {
+      tabBtnSettings.className = 'py-2.5 px-3 text-xs font-extrabold border-b-2 border-[var(--color-primary-theme,#ef4444)] text-foreground flex items-center gap-1.5 transition-all cursor-pointer';
+    }
+    if (paneMembers) paneMembers.classList.add('hidden');
+    if (paneSettings) paneSettings.classList.remove('hidden');
+  }
+}
+
+function openCurrentGroupMembersModal() {
+  if (!currentInternalRoomId) return;
+  if (currentInternalRoomId.startsWith('dm_')) return;
+  openGroupMembersModal(currentInternalRoomId);
+}
+
+function parseGroupConfig(room) {
+  if (!room) return {};
+  try {
+    return typeof room.configuracoes === 'string' ? JSON.parse(room.configuracoes) : (room.configuracoes || {});
+  } catch (e) {
+    return {};
+  }
+}
+
+function openGroupMembersModal(roomId) {
+  if (!roomId) return;
+  const room = internalRoomsList.find(r => String(r.id) === String(roomId));
+  const modal = document.getElementById('internal-group-members-modal');
+  if (!modal) return;
+
+  currentInspectedGroupId = roomId;
+  const titleEl = document.getElementById('group-members-modal-title');
+  const subtitleEl = document.getElementById('group-members-modal-subtitle');
+  const searchInput = document.getElementById('input-search-group-members');
+  if (searchInput) searchInput.value = '';
+
+  const groupName = room ? room.nome : 'Grupo';
+  if (titleEl) titleEl.textContent = `Gestão • ${groupName}`;
+  if (subtitleEl) subtitleEl.textContent = room && room.descricao ? room.descricao : 'Participantes e permissões do grupo';
+
+  const configs = parseGroupConfig(room);
+  const currentOpId = currentOperator ? String(currentOperator.id) : '';
+  const isCreator = String(room?.criado_por_id || room?.criado_por || '') === currentOpId;
+  const isAdmin = isCreator || (Array.isArray(configs.admins) && configs.admins.includes(currentOpId));
+
+  // Popula os campos da aba de configurações
+  const nameInput = document.getElementById('input-group-edit-name');
+  const descInput = document.getElementById('input-group-edit-desc');
+  const onlyAdminSendCheck = document.getElementById('check-group-only-admin-send');
+  const onlyAdminInviteCheck = document.getElementById('check-group-only-admin-invite');
+  const saveBtn = document.getElementById('btn-group-save-settings');
+  const deleteBtn = document.getElementById('btn-group-delete');
+  const openAddBtn = document.getElementById('btn-group-open-add-modal');
+
+  if (nameInput) {
+    nameInput.value = room ? room.nome : '';
+    nameInput.disabled = !isAdmin;
+  }
+  if (descInput) {
+    descInput.value = (room && room.descricao) ? room.descricao : '';
+    descInput.disabled = !isAdmin;
+  }
+  if (onlyAdminSendCheck) {
+    onlyAdminSendCheck.checked = !!configs.only_admin_send;
+    onlyAdminSendCheck.disabled = !isAdmin;
+  }
+  if (onlyAdminInviteCheck) {
+    onlyAdminInviteCheck.checked = !!configs.only_admin_invite;
+    onlyAdminInviteCheck.disabled = !isAdmin;
+  }
+  if (saveBtn) {
+    saveBtn.classList.toggle('hidden', !isAdmin);
+  }
+  if (deleteBtn) {
+    deleteBtn.classList.toggle('hidden', !isCreator && !isAdmin);
+  }
+  if (openAddBtn) {
+    const canInvite = !configs.only_admin_invite || isAdmin;
+    openAddBtn.classList.toggle('hidden', !canInvite);
+  }
+
+  switchGroupModalTab('members');
+  renderGroupMembersList(roomId, '');
+
+  modal.classList.remove('hidden');
+}
+
+function closeGroupMembersModal() {
+  const modal = document.getElementById('internal-group-members-modal');
+  if (modal) modal.classList.add('hidden');
+  currentInspectedGroupId = null;
+}
+
+function filterGroupMembersList(query = '') {
+  if (!currentInspectedGroupId) return;
+  renderGroupMembersList(currentInspectedGroupId, query);
+}
+
+function renderGroupMembersList(roomId, query = '') {
+  const container = document.getElementById('group-members-list-container');
+  const summaryEl = document.getElementById('group-members-modal-count-summary');
+  const tabBadge = document.getElementById('group-tab-members-badge');
+  if (!container) return;
+
+  const room = internalRoomsList.find(r => String(r.id) === String(roomId));
+  let memberIds = [];
+
+  if (room && room.membros) {
+    try {
+      const m = typeof room.membros === 'string' ? JSON.parse(room.membros) : room.membros;
+      if (Array.isArray(m)) memberIds = m.map(String);
+    } catch (e) {}
+  }
+
+  let memberOperators = [];
+  if (memberIds.length > 0) {
+    memberOperators = memberIds.map(id => {
+      const found = internalOperatorsList.find(o => String(o.id) === String(id));
+      if (found) return found;
+      return { id: String(id), nome: `Operador #${id}`, setor: 'Equipe', status: 'offline' };
+    });
+  } else {
+    memberOperators = [...internalOperatorsList];
+  }
+
+  const configs = parseGroupConfig(room);
+  const creatorId = room ? String(room.criado_por_id || room.criado_por || '') : '';
+  const currentOpId = currentOperator ? String(currentOperator.id) : '';
+  const isCurrentOpAdmin = creatorId === currentOpId || (Array.isArray(configs.admins) && configs.admins.includes(currentOpId));
+
+  const q = (query || '').trim().toLowerCase();
+  const filtered = q
+    ? memberOperators.filter(op => (op.nome && op.nome.toLowerCase().includes(q)) || (op.setor && op.setor.toLowerCase().includes(q)))
+    : memberOperators;
+
+  container.innerHTML = '';
+
+  const totalCount = memberOperators.length;
+  if (summaryEl) summaryEl.textContent = `${totalCount} ${totalCount === 1 ? 'membro' : 'membros'}`;
+  if (tabBadge) tabBadge.textContent = totalCount;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="py-8 text-center text-[var(--color-text-muted)] space-y-1">
+        <p class="text-xs font-bold">Nenhum membro encontrado</p>
+        <p class="text-[10px]">Tente outro termo na busca.</p>
+      </div>
+    `;
+    return;
+  }
+
+  filtered.forEach(op => {
+    const isMe = String(op.id) === currentOpId;
+    const isCreator = String(op.id) === creatorId;
+    const isAdmin = isCreator || (Array.isArray(configs.admins) && configs.admins.includes(String(op.id)));
+    const isMuted = Array.isArray(configs.muted_members) && configs.muted_members.includes(String(op.id));
+    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'O';
+
+    let statusColor = 'bg-slate-500';
+    let statusLabel = 'Offline';
+    if (op.status === 'online') {
+      statusColor = 'bg-emerald-500 shadow-sm shadow-emerald-500 ring-2 ring-emerald-500/20';
+      statusLabel = 'Disponível';
+    } else if (op.status === 'atendendo') {
+      statusColor = 'bg-amber-500 shadow-sm shadow-amber-500 ring-2 ring-amber-500/20';
+      statusLabel = 'Em Atendimento';
+    } else if (op.status === 'ocupado') {
+      statusColor = 'bg-rose-500 shadow-sm shadow-rose-500 ring-2 ring-rose-500/20';
+      statusLabel = 'Ocupado';
+    } else if (op.status === 'ausente') {
+      statusColor = 'bg-orange-500 shadow-sm shadow-orange-500 ring-2 ring-orange-500/20';
+      statusLabel = 'Ausente';
+    }
+
+    const item = document.createElement('div');
+    item.className = 'p-2.5 rounded-xl internal-card flex items-center justify-between gap-3 select-none hover:border-slate-600/40 transition-all';
+
+    item.innerHTML = `
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="relative w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 internal-avatar text-white" style="background: var(--color-primary-theme, #ef4444);">
+          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-xl">` : initial}
+          <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ${statusColor} border-2 border-[var(--color-card,#0f172a)]"></span>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-xs font-bold text-foreground truncate">${escapeHtml(op.nome || 'Colega')}</span>
+            ${isMe ? '<span class="px-1.5 py-0.2 rounded text-[8px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Você</span>' : ''}
+            ${isCreator ? '<span class="px-1.5 py-0.2 rounded text-[8px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">Criador</span>' : (isAdmin ? '<span class="px-1.5 py-0.2 rounded text-[8px] font-black uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Admin</span>' : '')}
+            ${isMuted ? '<span class="px-1.5 py-0.2 rounded text-[8px] font-black uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30">Mudo</span>' : ''}
+          </div>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(op.setor || 'Equipe')}</span>
+            <span class="text-[10px] text-slate-500">•</span>
+            <span class="text-[10px] font-medium" style="color: ${op.status === 'online' ? '#10b981' : (op.status === 'atendendo' ? '#f59e0b' : '#94a3b8')}">${statusLabel}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 shrink-0">
+        ${!isMe ? `
+          <button type="button" onclick="startDirectDMFromGroupModal('${op.id}', '${escapeHtml(op.nome || '')}', '${escapeHtml(op.setor || '')}', '${op.status || 'online'}')" class="px-2 py-1.5 rounded-lg text-[11px] font-bold text-white bg-white/10 hover:bg-white/20 border border-white/10 flex items-center gap-1 cursor-pointer active:scale-95 transition-all" title="Conversar no particular">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span class="hidden sm:inline">Conversar</span>
+          </button>
+        ` : ''}
+
+        ${(isCurrentOpAdmin && !isMe && !isCreator) ? `
+          <!-- Botão Toggle Admin -->
+          <button type="button" onclick="toggleGroupMemberAdmin('${op.id}')" class="w-7 h-7 rounded-lg text-[11px] font-bold ${isAdmin ? 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30' : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'} flex items-center justify-center cursor-pointer transition-all" title="${isAdmin ? 'Remover função de Administrador' : 'Promover a Administrador'}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </button>
+
+          <!-- Botão Toggle Silenciar / Mudo -->
+          <button type="button" onclick="toggleGroupMemberMute('${op.id}')" class="w-7 h-7 rounded-lg text-[11px] font-bold ${isMuted ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30' : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'} flex items-center justify-center cursor-pointer transition-all" title="${isMuted ? 'Permitir envio de mensagens' : 'Silenciar membro (Modo Somente Leitura)'}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${isMuted ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>' : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'}</svg>
+          </button>
+
+          <!-- Botão Remover do Grupo -->
+          <button type="button" onclick="removeGroupMember('${op.id}', '${escapeHtml(op.nome)}')" class="w-7 h-7 rounded-lg text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 flex items-center justify-center cursor-pointer transition-all" title="Remover do Grupo">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        ` : ''}
+      </div>
+    `;
+
+    container.appendChild(item);
+  });
+}
+
+function startDirectDMFromGroupModal(opId, opName, opSetor, opStatus) {
+  closeGroupMembersModal();
+  openInternalDM(opId, opName, opSetor, opStatus);
+}
+
+// ------------------------------------------------------------------------------
+// SUB-MODAL: ADICIONAR NOVOS MEMBROS
+// ------------------------------------------------------------------------------
+function openGroupAddMembersModal() {
+  if (!currentInspectedGroupId) return;
+  const modal = document.getElementById('internal-group-add-members-modal');
+  if (!modal) return;
+
+  selectedNewMemberIds.clear();
+  const searchInput = document.getElementById('input-search-add-members');
+  if (searchInput) searchInput.value = '';
+
+  renderAddMembersList('');
+  modal.classList.remove('hidden');
+}
+
+function closeGroupAddMembersModal() {
+  const modal = document.getElementById('internal-group-add-members-modal');
+  if (modal) modal.classList.add('hidden');
+  selectedNewMemberIds.clear();
+}
+
+function filterAddMembersList(query = '') {
+  renderAddMembersList(query);
+}
+
+function renderAddMembersList(query = '') {
+  const container = document.getElementById('group-add-members-list-container');
+  const countEl = document.getElementById('group-add-members-selected-count');
+  const confirmBtn = document.getElementById('btn-confirm-add-members');
+  if (!container) return;
+
+  const room = internalRoomsList.find(r => String(r.id) === String(currentInspectedGroupId));
+  let existingMemberIds = [];
+  if (room && room.membros) {
+    try {
+      const m = typeof room.membros === 'string' ? JSON.parse(room.membros) : room.membros;
+      if (Array.isArray(m)) existingMemberIds = m.map(String);
+    } catch(e) {}
+  }
+
+  // Candidatos que ainda NÃO estão no grupo
+  const candidates = internalOperatorsList.filter(op => !existingMemberIds.includes(String(op.id)));
+
+  const q = (query || '').trim().toLowerCase();
+  const filtered = q
+    ? candidates.filter(op => (op.nome && op.nome.toLowerCase().includes(q)) || (op.setor && op.setor.toLowerCase().includes(q)))
+    : candidates;
+
+  container.innerHTML = '';
+  if (countEl) countEl.textContent = `${selectedNewMemberIds.size} selecionados`;
+  if (confirmBtn) confirmBtn.disabled = selectedNewMemberIds.size === 0;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="py-10 text-center text-[var(--color-text-muted)] space-y-1">
+        <p class="text-xs font-bold">${candidates.length === 0 ? 'Todos os colegas da equipe já fazem parte deste grupo' : 'Nenhum colega encontrado com esse nome'}</p>
+      </div>
+    `;
+    return;
+  }
+
+  filtered.forEach(op => {
+    const isSelected = selectedNewMemberIds.has(String(op.id));
+    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'O';
+
+    const item = document.createElement('label');
+    item.className = `p-2.5 rounded-xl internal-card flex items-center justify-between gap-3 cursor-pointer select-none transition-all ${isSelected ? 'border-[var(--color-primary-theme,#ef4444)] bg-white/5' : 'hover:border-white/20'}`;
+
+    item.innerHTML = `
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 internal-avatar text-white" style="background: var(--color-primary-theme, #ef4444);">
+          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-xl">` : initial}
+        </div>
+        <div class="min-w-0">
+          <p class="text-xs font-bold text-foreground truncate">${escapeHtml(op.nome)}</p>
+          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(op.setor || 'Equipe')}</p>
+        </div>
+      </div>
+      <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleSelectNewMember('${op.id}', this.checked)" class="w-4 h-4 rounded accent-[var(--color-primary-theme,#ef4444)] cursor-pointer">
+    `;
+
+    container.appendChild(item);
+  });
+}
+
+function toggleSelectNewMember(opId, checked) {
+  if (checked) {
+    selectedNewMemberIds.add(String(opId));
+  } else {
+    selectedNewMemberIds.delete(String(opId));
+  }
+  const countEl = document.getElementById('group-add-members-selected-count');
+  const confirmBtn = document.getElementById('btn-confirm-add-members');
+  if (countEl) countEl.textContent = `${selectedNewMemberIds.size} selecionados`;
+  if (confirmBtn) confirmBtn.disabled = selectedNewMemberIds.size === 0;
+}
+
+function confirmAddGroupMembers() {
+  if (!currentInspectedGroupId || selectedNewMemberIds.size === 0) return;
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Administrador';
+  const currentOpId = currentOperator ? String(currentOperator.id) : '';
+
+  socket.emit('internal_add_group_members', {
+    sala_id: currentInspectedGroupId,
+    novos_membros: Array.from(selectedNewMemberIds),
+    adicionado_por_nome: currentOpName,
+    adicionado_por_id: currentOpId
+  });
+
+  closeGroupAddMembersModal();
+  showInputBarNotification('Novos membros adicionados ao grupo!');
+}
+
+// ------------------------------------------------------------------------------
+// MODAL DE CONFIRMAÇÃO CUSTOMIZADO (Substitui confirm do navegador)
+// ------------------------------------------------------------------------------
+let internalConfirmCallback = null;
+
+function showInternalConfirmModal({ title, message, confirmText, confirmClass, onConfirm }) {
+  const modal = document.getElementById('internal-confirm-action-modal');
+  if (!modal) {
+    if (onConfirm) onConfirm();
+    return;
+  }
+  const titleEl = document.getElementById('confirm-modal-title');
+  const msgEl = document.getElementById('confirm-modal-message');
+  const btn = document.getElementById('confirm-modal-btn-action');
+
+  if (titleEl) titleEl.textContent = title || 'Confirmar Ação';
+  if (msgEl) msgEl.textContent = message || 'Tem certeza que deseja prosseguir com esta ação?';
+  if (btn) {
+    btn.textContent = confirmText || 'Confirmar';
+    btn.className = `flex-1 py-2 px-3 rounded-xl text-white text-xs font-extrabold shadow-md transition-all active:scale-95 cursor-pointer ${confirmClass || 'bg-rose-500 hover:bg-rose-400'}`;
+  }
+
+  internalConfirmCallback = onConfirm;
+  modal.classList.remove('hidden');
+
+  btn.onclick = () => {
+    modal.classList.add('hidden');
+    if (internalConfirmCallback) {
+      const cb = internalConfirmCallback;
+      internalConfirmCallback = null;
+      cb();
+    }
+  };
+}
+
+function closeInternalConfirmModal() {
+  const modal = document.getElementById('internal-confirm-action-modal');
+  if (modal) modal.classList.add('hidden');
+  internalConfirmCallback = null;
+}
+
+// ------------------------------------------------------------------------------
+// GESTÃO DE CARGOS E PERMISSÕES INDIVIDUAIS
+// ------------------------------------------------------------------------------
+function toggleGroupMemberAdmin(opId) {
+  if (!currentInspectedGroupId || !opId) return;
+  const room = internalRoomsList.find(r => String(r.id) === String(currentInspectedGroupId));
+  if (!room) return;
+
+  const configs = parseGroupConfig(room);
+  let admins = Array.isArray(configs.admins) ? configs.admins.map(String) : [];
+
+  const targetIdStr = String(opId);
+  const isNowAdmin = !admins.includes(targetIdStr);
+
+  if (isNowAdmin) {
+    admins.push(targetIdStr);
+  } else {
+    admins = admins.filter(a => a !== targetIdStr);
+  }
+  configs.admins = admins;
+
+  // Atualização otimista imediata na memória
+  room.configuracoes = configs;
+  renderGroupMembersList(currentInspectedGroupId, document.getElementById('input-search-group-members')?.value || '');
+
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Administrador';
+  socket.emit('internal_update_group_info', {
+    sala_id: currentInspectedGroupId,
+    nome: room.nome,
+    descricao: room.descricao,
+    configuracoes: configs,
+    alterado_por_nome: currentOpName
+  });
+
+  if (currentInternalRoomId === currentInspectedGroupId) {
+    renderInternalMessages();
+  }
+
+  showInputBarNotification(isNowAdmin ? 'Membro promovido a Administrador!' : 'Privilégios de Administrador removidos.');
+}
+
+function toggleGroupMemberMute(opId) {
+  if (!currentInspectedGroupId || !opId) return;
+  const room = internalRoomsList.find(r => String(r.id) === String(currentInspectedGroupId));
+  if (!room) return;
+
+  const configs = parseGroupConfig(room);
+  let muted = Array.isArray(configs.muted_members) ? configs.muted_members.map(String) : [];
+
+  const targetIdStr = String(opId);
+  const isNowMuted = !muted.includes(targetIdStr);
+
+  if (isNowMuted) {
+    muted.push(targetIdStr);
+  } else {
+    muted = muted.filter(m => m !== targetIdStr);
+  }
+  configs.muted_members = muted;
+
+  // Atualização otimista imediata na memória
+  room.configuracoes = configs;
+  renderGroupMembersList(currentInspectedGroupId, document.getElementById('input-search-group-members')?.value || '');
+
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Administrador';
+  socket.emit('internal_update_group_info', {
+    sala_id: currentInspectedGroupId,
+    nome: room.nome,
+    descricao: room.descricao,
+    configuracoes: configs,
+    alterado_por_nome: currentOpName
+  });
+
+  if (currentInternalRoomId === currentInspectedGroupId) {
+    renderInternalMessages();
+  }
+
+  showInputBarNotification(isNowMuted ? 'Membro silenciado (Somente Leitura).' : 'Membro desmutado (Pode enviar mensagens).');
+}
+
+function removeGroupMember(opId, opName) {
+  if (!currentInspectedGroupId || !opId) return;
+
+  showInternalConfirmModal({
+    title: 'Remover Participante',
+    message: `Deseja realmente remover ${opName || 'este participante'} do grupo?`,
+    confirmText: 'Remover do Grupo',
+    confirmClass: 'bg-rose-500 hover:bg-rose-400',
+    onConfirm: () => {
+      const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Administrador';
+      socket.emit('internal_remove_group_member', {
+        sala_id: currentInspectedGroupId,
+        membro_id: opId,
+        membro_nome: opName,
+        removido_por_nome: currentOpName
+      });
+
+      // Atualização otimista imediata
+      const room = internalRoomsList.find(r => String(r.id) === String(currentInspectedGroupId));
+      if (room && room.membros) {
+        let m = typeof room.membros === 'string' ? JSON.parse(room.membros) : room.membros;
+        if (Array.isArray(m)) {
+          room.membros = m.filter(id => String(id) !== String(opId));
+        }
+      }
+      renderGroupMembersList(currentInspectedGroupId, document.getElementById('input-search-group-members')?.value || '');
+      showInputBarNotification('Membro removido do grupo.');
+    }
+  });
+}
+
+// ------------------------------------------------------------------------------
+// SALVAR CONFIGURAÇÕES, SAIR OU EXCLUIR GRUPO
+// ------------------------------------------------------------------------------
+function saveGroupSettings() {
+  if (!currentInspectedGroupId) return;
+  const room = internalRoomsList.find(r => String(r.id) === String(currentInspectedGroupId));
+  if (!room) return;
+
+  const nameInput = document.getElementById('input-group-edit-name');
+  const descInput = document.getElementById('input-group-edit-desc');
+  const onlyAdminSendCheck = document.getElementById('check-group-only-admin-send');
+  const onlyAdminInviteCheck = document.getElementById('check-group-only-admin-invite');
+
+  const newName = nameInput ? nameInput.value.trim() : room.nome;
+  const newDesc = descInput ? descInput.value.trim() : (room.descricao || '');
+
+  if (!newName) {
+    showInputBarNotification('O nome do grupo não pode ficar vazio.');
+    return;
+  }
+
+  const configs = parseGroupConfig(room);
+  configs.only_admin_send = !!(onlyAdminSendCheck && onlyAdminSendCheck.checked);
+  configs.only_admin_invite = !!(onlyAdminInviteCheck && onlyAdminInviteCheck.checked);
+
+  room.nome = newName;
+  room.descricao = newDesc;
+  room.configuracoes = configs;
+
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Administrador';
+  socket.emit('internal_update_group_info', {
+    sala_id: currentInspectedGroupId,
+    nome: newName,
+    descricao: newDesc,
+    configuracoes: configs,
+    alterado_por_nome: currentOpName
+  });
+
+  if (currentInternalRoomId === currentInspectedGroupId) {
+    const titleEl = document.getElementById('internal-drawer-title');
+    const descEl = document.getElementById('internal-drawer-desc');
+    if (titleEl) titleEl.textContent = newName;
+    if (descEl) descEl.textContent = newDesc || 'Grupo personalizado da equipe';
+    renderInternalMessages();
+  }
+
+  showInputBarNotification('Configurações do grupo salvas com sucesso!');
+}
+
+function leaveCurrentInspectedGroup() {
+  if (!currentInspectedGroupId) return;
+
+  showInternalConfirmModal({
+    title: 'Sair do Grupo',
+    message: 'Deseja realmente sair deste grupo? Você não receberá mais as mensagens desta conversa.',
+    confirmText: 'Sair do Grupo',
+    confirmClass: 'bg-slate-700 hover:bg-slate-600',
+    onConfirm: () => {
+      const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente';
+      const currentOpId = currentOperator ? String(currentOperator.id) : '';
+
+      socket.emit('internal_leave_group', {
+        sala_id: currentInspectedGroupId,
+        atendente_id: currentOpId,
+        atendente_nome: currentOpName
+      });
+
+      closeGroupMembersModal();
+      if (currentInternalRoomId === currentInspectedGroupId) {
+        showInternalDirectoryView();
+      }
+      showInputBarNotification('Você saiu do grupo.');
+    }
+  });
+}
+
+function deleteCurrentInspectedGroup() {
+  if (!currentInspectedGroupId) return;
+
+  showInternalConfirmModal({
+    title: 'Excluir Grupo Permanentemente',
+    message: '⚠️ Esta ação é irreversível. O grupo será excluído para todos os participantes e todo o histórico será apagado.',
+    confirmText: 'Excluir Definitivamente',
+    confirmClass: 'bg-rose-600 hover:bg-rose-500',
+    onConfirm: () => {
+      const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Administrador';
+      socket.emit('internal_delete_group', {
+        sala_id: currentInspectedGroupId,
+        atendente_nome: currentOpName
+      });
+
+      closeGroupMembersModal();
+      if (currentInternalRoomId === currentInspectedGroupId) {
+        showInternalDirectoryView();
+      }
+      showInputBarNotification('Grupo excluído.');
+    }
+  });
 }
 
 // Renderiza o histórico de mensagens da sala interna
@@ -9070,6 +9796,51 @@ function renderInternalMessages() {
   requestAnimationFrame(() => {
     newAnchor.scrollIntoView({ behavior: 'auto', block: 'end' });
   });
+
+  // Verifica permissão de escrita no grupo/canal atual
+  const input = document.getElementById('internal-chat-input');
+  const inputContainer = document.getElementById('internal-chat-input-container');
+  const sendBtn = document.getElementById('btn-internal-send-message');
+  const audioBtn = document.getElementById('btn-internal-record-audio');
+  const attachBtn = document.getElementById('btn-internal-attach-file');
+
+  if (input && currentInternalRoomId) {
+    const room = internalRoomsList.find(r => String(r.id) === String(currentInternalRoomId));
+    let isMuted = false;
+    let isReadOnly = false;
+
+    if (room && room.tipo === 'grupo') {
+      const configs = parseGroupConfig(room);
+      const currentOpId = currentOperator ? String(currentOperator.id) : '';
+      const isCreator = String(room.criado_por_id || room.criado_por || '') === currentOpId;
+      const isAdmin = isCreator || (Array.isArray(configs.admins) && configs.admins.includes(currentOpId));
+
+      if (Array.isArray(configs.muted_members) && configs.muted_members.includes(currentOpId)) {
+        isMuted = true;
+      }
+      if (configs.only_admin_send && !isAdmin) {
+        isReadOnly = true;
+      }
+    }
+
+    if (isMuted || isReadOnly) {
+      input.disabled = true;
+      input.placeholder = isMuted 
+        ? '🔇 Você está em modo somente leitura neste grupo'
+        : '🔒 Somente administradores podem enviar mensagens neste grupo';
+      if (inputContainer) inputContainer.classList.add('opacity-60');
+      if (sendBtn) sendBtn.disabled = true;
+      if (audioBtn) audioBtn.classList.add('hidden');
+      if (attachBtn) attachBtn.classList.add('hidden');
+    } else {
+      input.disabled = false;
+      input.placeholder = currentInternalRoomId.startsWith('dm_') ? 'Digite uma mensagem' : 'Digite uma mensagem...';
+      if (inputContainer) inputContainer.classList.remove('opacity-60');
+      if (sendBtn) sendBtn.disabled = false;
+      if (audioBtn) audioBtn.classList.remove('hidden');
+      if (attachBtn) attachBtn.classList.remove('hidden');
+    }
+  }
 }
 
 let internalReplyingToMessage = null;
@@ -10106,6 +10877,53 @@ socket.on('internal_group_created', (group) => {
   }
 });
 
+// Recebe atualização de grupo (membros, nome, descrição, permissões)
+socket.on('internal_group_updated', (group) => {
+  const idx = internalRoomsList.findIndex(r => String(r.id) === String(group.id));
+  if (idx !== -1) {
+    internalRoomsList[idx] = { ...internalRoomsList[idx], ...group };
+  } else {
+    internalRoomsList.push(group);
+  }
+  refreshInternalUI();
+
+  // Se a gaveta estiver aberta nesta sala, atualiza título e badge
+  if (currentInternalRoomId === group.id) {
+    const titleEl = document.getElementById('internal-drawer-title');
+    const descEl = document.getElementById('internal-drawer-desc');
+    const membersEl = document.getElementById('internal-drawer-members-count');
+    if (titleEl) titleEl.textContent = group.nome;
+    if (descEl) descEl.textContent = group.descricao || 'Grupo personalizado da equipe';
+    if (membersEl) {
+      let count = 0;
+      try {
+        const m = typeof group.membros === 'string' ? JSON.parse(group.membros) : group.membros;
+        if (Array.isArray(m)) count = m.length;
+      } catch(e) {}
+      membersEl.textContent = count ? `${count} MEMBROS` : 'GRUPO';
+    }
+    renderInternalMessages();
+  }
+
+  // Se o modal de membros estiver aberto para este grupo, atualiza
+  if (currentInspectedGroupId === group.id) {
+    renderGroupMembersList(group.id, document.getElementById('input-search-group-members')?.value || '');
+  }
+});
+
+// Recebe exclusão de grupo
+socket.on('internal_group_deleted', ({ sala_id }) => {
+  internalRoomsList = internalRoomsList.filter(r => String(r.id) !== String(sala_id));
+  if (currentInternalRoomId === sala_id) {
+    showInternalDirectoryView();
+    showInputBarNotification('Este grupo foi excluído pelo administrador.');
+  }
+  if (currentInspectedGroupId === sala_id) {
+    closeGroupMembersModal();
+  }
+  refreshInternalUI();
+});
+
 // Recebe nova mensagem na sala aberta
 socket.on('internal_new_message', (msg) => {
   if (!internalMessagesMap[msg.sala_id]) {
@@ -10430,11 +11248,16 @@ async function joinSectorVoiceRoom(roomId, roomName, targetType) {
   connectingVoiceRoomId = roomId;
   refreshInternalUI();
 
+  const connectStart = Date.now();
   try {
     await initVoiceLocalAudio();
   } catch (e) {
     console.warn('Erro ao inicializar áudio:', e);
   } finally {
+    const elapsed = Date.now() - connectStart;
+    if (elapsed < 300) {
+      await new Promise(r => setTimeout(r, 300 - elapsed));
+    }
     connectingVoiceRoomId = null;
   }
 
@@ -10509,6 +11332,43 @@ function playVoiceDisconnectedSound() {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.25);
+  } catch (e) {}
+}
+
+function playVoiceMuteSound(isMuted) {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.connect(ctx.destination);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+
+    if (isMuted) {
+      // Tom suave descendente indicando mudo ativado
+      osc.frequency.setValueAtTime(560, now);
+      osc.frequency.exponentialRampToValueAtTime(340, now + 0.12);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.14, now + 0.02);
+      gain.gain.linearRampToValueAtTime(0, now + 0.15);
+    } else {
+      // Tom suave ascendente indicando microfone ativo / desmutado
+      osc.frequency.setValueAtTime(340, now);
+      osc.frequency.exponentialRampToValueAtTime(620, now + 0.12);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.14, now + 0.02);
+      gain.gain.linearRampToValueAtTime(0, now + 0.15);
+    }
+
+    osc.connect(gain);
+    osc.start(now);
+    osc.stop(now + 0.16);
+    setTimeout(() => { try { ctx.close(); } catch(e){} }, 250);
   } catch (e) {}
 }
 
@@ -10768,7 +11628,8 @@ function updateVoiceActiveBarUI() {
     if (bar) bar.classList.add('hidden');
     if (banner) banner.classList.add('hidden');
     if (voiceCallBtn) {
-      voiceCallBtn.className = 'h-8 md:h-9 px-3 rounded-xl items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 hover:text-white border border-emerald-500/30 hover:border-emerald-500/50 shadow-sm transition-all cursor-pointer select-none text-xs font-bold shrink-0 flex';
+      const isDM = currentInternalRoomId && currentInternalRoomId.startsWith('dm_');
+      voiceCallBtn.className = `h-8 md:h-9 px-3 rounded-xl items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 hover:text-white border border-emerald-500/30 hover:border-emerald-500/50 shadow-sm transition-all cursor-pointer select-none text-xs font-bold shrink-0 ${isDM ? 'flex' : 'hidden'}`;
       voiceCallBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
         <span class="hidden sm:inline">Voz</span>
@@ -10783,7 +11644,8 @@ function updateVoiceActiveBarUI() {
 
   // Atualiza botão do cabeçalho
   if (voiceCallBtn) {
-    voiceCallBtn.className = 'h-8 md:h-9 px-3 rounded-xl items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm transition-all cursor-pointer select-none text-xs font-extrabold shrink-0 flex animate-pulse';
+    const isDM = currentInternalRoomId && currentInternalRoomId.startsWith('dm_');
+    voiceCallBtn.className = `h-8 md:h-9 px-3 rounded-xl items-center gap-1.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm transition-all cursor-pointer select-none text-xs font-extrabold shrink-0 animate-pulse ${isDM ? 'flex' : 'hidden'}`;
     voiceCallBtn.innerHTML = `
       <span class="w-2 h-2 rounded-full bg-rose-500"></span>
       <span class="hidden sm:inline">Em Chamada</span>
@@ -10809,23 +11671,35 @@ function updateVoiceActiveBarUI() {
   if (currentVoiceSession.isMuted) {
     if (unmutedIcon) unmutedIcon.classList.add('hidden');
     if (mutedIcon) mutedIcon.classList.remove('hidden');
-    if (muteLabel) muteLabel.textContent = 'Desmutar';
-    if (btnMute) btnMute.className = 'h-8 px-2.5 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none';
+    if (muteLabel) muteLabel.classList.add('hidden');
+    if (btnMute) {
+      btnMute.className = 'w-8 h-8 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all flex items-center justify-center text-xs font-bold cursor-pointer select-none';
+      btnMute.setAttribute('data-tooltip', 'Desmutar Microfone (Espaço)');
+    }
 
     if (bannerUnmutedIcon) bannerUnmutedIcon.classList.add('hidden');
     if (bannerMutedIcon) bannerMutedIcon.classList.remove('hidden');
-    if (bannerMuteLabel) bannerMuteLabel.textContent = 'Desmutar';
-    if (btnBannerMute) btnBannerMute.className = 'h-7 px-2 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer select-none';
+    if (bannerMuteLabel) bannerMuteLabel.classList.add('hidden');
+    if (btnBannerMute) {
+      btnBannerMute.className = 'w-7 h-7 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all flex items-center justify-center text-[11px] font-bold cursor-pointer select-none';
+      btnBannerMute.setAttribute('data-tooltip', 'Desmutar Microfone');
+    }
   } else {
     if (unmutedIcon) unmutedIcon.classList.remove('hidden');
     if (mutedIcon) mutedIcon.classList.add('hidden');
-    if (muteLabel) muteLabel.textContent = 'Mutar';
-    if (btnMute) btnMute.className = 'h-8 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border border-white/10 transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none';
+    if (muteLabel) muteLabel.classList.add('hidden');
+    if (btnMute) {
+      btnMute.className = 'w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border border-white/10 transition-all flex items-center justify-center text-xs font-bold cursor-pointer select-none';
+      btnMute.setAttribute('data-tooltip', 'Mutar Microfone (Espaço)');
+    }
 
     if (bannerUnmutedIcon) bannerUnmutedIcon.classList.remove('hidden');
     if (bannerMutedIcon) bannerMutedIcon.classList.add('hidden');
-    if (bannerMuteLabel) bannerMuteLabel.textContent = 'Mutar';
-    if (btnBannerMute) btnBannerMute.className = 'h-7 px-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border border-white/10 transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer select-none';
+    if (bannerMuteLabel) bannerMuteLabel.classList.add('hidden');
+    if (btnBannerMute) {
+      btnBannerMute.className = 'w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border border-white/10 transition-all flex items-center justify-center text-[11px] font-bold cursor-pointer select-none';
+      btnBannerMute.setAttribute('data-tooltip', 'Mutar Microfone');
+    }
   }
 
   // Renderiza avatares dos participantes na barra e no banner
@@ -10860,19 +11734,73 @@ function updateVoiceActiveBarUI() {
 
 // Mutar / Desmutar Microfone
 function toggleVoiceMute() {
-  if (!currentVoiceSession || !voiceLocalAudioStream) return;
+  if (!currentVoiceSession) return;
 
   currentVoiceSession.isMuted = !currentVoiceSession.isMuted;
-  voiceLocalAudioStream.getAudioTracks().forEach(track => {
-    track.enabled = !currentVoiceSession.isMuted;
+
+  // Atualiza as faixas de áudio do microfone local se existirem
+  if (voiceLocalAudioStream) {
+    try {
+      voiceLocalAudioStream.getAudioTracks().forEach(track => {
+        track.enabled = !currentVoiceSession.isMuted;
+      });
+    } catch (e) {
+      console.warn('Erro ao alternar track de áudio local:', e);
+    }
+  }
+
+  // Atualiza o status de mudo no participante local
+  const myId = currentOperator ? String(currentOperator.id) : 'me';
+  if (currentVoiceSession.participants) {
+    const meP = currentVoiceSession.participants.find(p => String(p.operatorId) === myId || (socket && p.socketId === socket.id));
+    if (meP) {
+      meP.isMuted = currentVoiceSession.isMuted;
+    }
+  }
+
+  // Efeito sonoro suave de feedback
+  playVoiceMuteSound(currentVoiceSession.isMuted);
+
+  // Transmite para os outros participantes da chamada
+  if (typeof socket !== 'undefined' && socket && socket.connected) {
+    socket.emit('voice_mute_state', {
+      session_id: currentVoiceSession.id,
+      isMuted: currentVoiceSession.isMuted
+    });
+  }
+
+  // Atualiza diretamente no DOM todos os botões de mute de salas de voz
+  document.querySelectorAll('.voice-btn-mute-toggle').forEach(muteBtn => {
+    muteBtn.className = `voice-btn-mute-toggle w-7 h-7 rounded-xl text-[11px] font-extrabold ${currentVoiceSession.isMuted ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'} cursor-pointer flex items-center justify-center shrink-0 transition-colors duration-200 select-none`;
+    muteBtn.setAttribute('data-tooltip', currentVoiceSession.isMuted ? 'Desmutar Microfone' : 'Mutar Microfone');
+    muteBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0">
+        ${currentVoiceSession.isMuted 
+          ? '<line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+          : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'
+        }
+      </svg>
+    `;
   });
 
-  socket.emit('voice_mute_state', {
-    session_id: currentVoiceSession.id,
-    isMuted: currentVoiceSession.isMuted
+  // Atualiza o microfone do chip local do participante em todas as bandejas
+  document.querySelectorAll(`.voice-participant-chip[data-op-id="${myId}"]`).forEach(chip => {
+    let dot = chip.querySelector('.bg-rose-500');
+    const avatarInner = chip.querySelector('.w-6');
+    if (currentVoiceSession.isMuted) {
+      if (!dot) {
+        chip.insertAdjacentHTML('beforeend', '<span class="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500 border border-[#0f172a]"></span>');
+      }
+      if (avatarInner) avatarInner.classList.add('opacity-60');
+    } else {
+      if (dot) dot.remove();
+      if (avatarInner) avatarInner.classList.remove('opacity-60');
+    }
   });
 
+  // Atualiza barra de voz e dock externa
   updateVoiceActiveBarUI();
+  broadcastVoiceStateToParent();
 }
 
 // Modal de Adicionar Participante à Chamada Ativa (Escalonamento 1x1 ➡️ Grupo)
@@ -10924,22 +11852,21 @@ function filterVoiceInviteList(query = '') {
   }
 
   available.forEach(op => {
-    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'U';
     const item = document.createElement('div');
-    item.className = 'flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 transition-all select-none';
+    item.className = 'p-2.5 rounded-xl internal-card flex items-center justify-between gap-3 hover:border-slate-600/40 transition-all select-none';
+    const initial = op.nome ? op.nome.charAt(0).toUpperCase() : 'O';
 
     item.innerHTML = `
-      <div class="flex items-center gap-2.5 min-w-0 flex-1">
-        <div class="relative w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 internal-avatar">
-          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover rounded-lg">` : initial}
-          <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ${op.status === 'online' ? 'bg-emerald-500' : (op.status === 'atendendo' ? 'bg-amber-500' : 'bg-slate-500')}"></span>
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden text-white" style="background: var(--color-primary-theme, #ef4444);">
+          ${op.avatar ? `<img src="${op.avatar}" class="w-full h-full object-cover">` : initial}
         </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-xs font-bold text-foreground truncate leading-tight">${escapeHtml(op.nome)}</p>
-          <p class="text-[10px] text-[var(--color-text-muted)] truncate">${escapeHtml(op.setor || 'Equipe')}</p>
+        <div class="min-w-0">
+          <p class="text-xs font-bold text-foreground truncate">${escapeHtml(op.nome)}</p>
+          <span class="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase internal-sector-tag">${escapeHtml(op.setor || 'Atendimento')}</span>
         </div>
       </div>
-      <button type="button" onclick="inviteOperatorToVoiceCall('${op.id}', '${escapeHtml(op.nome)}')" class="px-3 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer">
+      <button onclick="inviteOperatorToActiveCall('${op.id}')" type="button" class="px-3 py-1.5 rounded-lg text-xs font-extrabold text-white cursor-pointer transition-all active:scale-95 shadow-sm" style="background: linear-gradient(135deg, var(--color-primary-theme, #ef4444), color-mix(in srgb, var(--color-primary-theme, #ef4444) 80%, black));">
         Convidar
       </button>
     `;
@@ -10947,24 +11874,37 @@ function filterVoiceInviteList(query = '') {
   });
 }
 
-function inviteOperatorToVoiceCall(operatorId, operatorName) {
+// Convidar Operador para a Chamada Ativa
+function inviteOperatorToActiveCall(targetOperatorId) {
   if (!currentVoiceSession) return;
+  const currentOpId = currentOperator ? String(currentOperator.id) : 'me';
+  const currentOpName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Atendente';
+  const currentOpAvatar = currentOperator ? currentOperator.avatar : null;
 
-  const inviterName = currentOperator ? (currentOperator.name || currentOperator.nome) : 'Colega';
-
-  socket.emit('voice_invite_user', {
+  socket.emit('voice_invite_operator', {
     session_id: currentVoiceSession.id,
-    target_operator_id: operatorId,
-    inviter_name: inviterName
+    target_operator_id: targetOperatorId,
+    caller_id: currentOpId,
+    caller_name: currentOpName,
+    caller_avatar: currentOpAvatar,
+    title: currentVoiceSession.title || 'Chamada de Voz'
   });
 
   closeVoiceAddParticipantModal();
-  showInputBarNotification(`Convite de voz enviado para ${operatorName}!`);
+  showInputBarNotification('Convite de chamada enviado!');
 }
 
-// Sair / Desconectar da Chamada de Voz
+// Encerrar Chamada de Voz
 function leaveCurrentVoiceCall() {
   stopSynthesizedVoiceRingtone();
+  playVoiceDisconnectedSound();
+
+  // Dispara a animação suave de retração do card no DOM
+  const activeTrays = document.querySelectorAll('.voice-card-participants');
+  activeTrays.forEach(tray => {
+    tray.classList.remove('voice-tray-entering');
+    tray.classList.add('voice-tray-collapsing');
+  });
 
   if (voiceCallTimerInterval) {
     clearInterval(voiceCallTimerInterval);
@@ -11004,6 +11944,12 @@ function leaveCurrentVoiceCall() {
   updateVoiceActiveBarUI();
   broadcastVoiceStateToParent();
   refreshInternalUI();
+
+  setTimeout(() => {
+    activeTrays.forEach(tray => {
+      try { if (tray && tray.parentNode) tray.parentNode.removeChild(tray); } catch (e) {}
+    });
+  }, 280);
 }
 
 // ==============================================================================
@@ -11222,6 +12168,202 @@ window.addEventListener('message', (event) => {
     broadcastVoiceStateToParent();
   }
 });
+
+// ==============================================================================
+// 🌟 MOTOR GLOBAL DE TOOLTIPS DO SISTEMA (Substitui Tooltips Padrões do Navegador)
+// ==============================================================================
+
+function initGlobalTooltips() {
+  let tooltipEl = document.getElementById('system-global-tooltip');
+  if (!tooltipEl) {
+    tooltipEl = document.createElement('div');
+    tooltipEl.id = 'system-global-tooltip';
+    tooltipEl.className = 'system-global-tooltip';
+    tooltipEl.innerHTML = `
+      <div class="system-global-tooltip-inner">
+        <span class="system-global-tooltip-text"></span>
+        <div class="system-global-tooltip-arrow"></div>
+      </div>
+    `;
+    document.body.appendChild(tooltipEl);
+  }
+
+  const textEl = tooltipEl.querySelector('.system-global-tooltip-text');
+  const arrowEl = tooltipEl.querySelector('.system-global-tooltip-arrow');
+
+  let currentTarget = null;
+
+  function hideTooltip() {
+    currentTarget = null;
+    tooltipEl.classList.remove('tooltip-visible');
+  }
+
+  function sanitizeTitlesInTree(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.hasAttribute && node.hasAttribute('title')) {
+      const val = node.getAttribute('title');
+      if (val && val.trim()) {
+        node.setAttribute('data-tooltip', val.trim());
+      }
+      node.removeAttribute('title');
+    }
+    if (node.querySelectorAll) {
+      const titles = node.querySelectorAll('[title]');
+      for (let i = 0; i < titles.length; i++) {
+        const el = titles[i];
+        const val = el.getAttribute('title');
+        if (val && val.trim()) {
+          el.setAttribute('data-tooltip', val.trim());
+        }
+        el.removeAttribute('title');
+      }
+    }
+  }
+
+  // Sanitiza títulos existentes no documento
+  sanitizeTitlesInTree(document.body);
+
+  // Observa nós inseridos dinamicamente para neutralizar o atributo 'title' nativo
+  if (window.MutationObserver) {
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'childList') {
+          for (let i = 0; i < m.addedNodes.length; i++) {
+            sanitizeTitlesInTree(m.addedNodes[i]);
+          }
+        } else if (m.type === 'attributes' && m.attributeName === 'title' && m.target) {
+          const val = m.target.getAttribute('title');
+          if (val && val.trim()) {
+            m.target.setAttribute('data-tooltip', val.trim());
+          }
+          m.target.removeAttribute('title');
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['title'] });
+  }
+
+  function showTooltipFor(target) {
+    if (!target) return;
+    const el = target.closest('[data-tooltip], [title], [data-title]');
+    if (!el) {
+      hideTooltip();
+      return;
+    }
+
+    if (el.hasAttribute('title')) {
+      const val = el.getAttribute('title');
+      if (val && val.trim()) {
+        el.setAttribute('data-tooltip', val.trim());
+      }
+      el.removeAttribute('title');
+    }
+
+    const text = el.getAttribute('data-tooltip') || el.getAttribute('data-title');
+    if (!text || !text.trim()) {
+      hideTooltip();
+      return;
+    }
+
+    currentTarget = el;
+    textEl.textContent = text.trim();
+
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      hideTooltip();
+      return;
+    }
+
+    // Reset classes para medição correta
+    tooltipEl.className = 'system-global-tooltip';
+    tooltipEl.style.top = '0px';
+    tooltipEl.style.left = '0px';
+    tooltipEl.style.visibility = 'hidden';
+    tooltipEl.style.display = 'block';
+
+    const tipRect = tooltipEl.getBoundingClientRect();
+    const preferredPos = el.getAttribute('data-tooltip-pos') || 'top';
+    const gap = 7;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let pos = preferredPos;
+    if (pos === 'top' && rect.top - tipRect.height - gap < 6) {
+      pos = 'bottom';
+    } else if (pos === 'bottom' && rect.bottom + tipRect.height + gap > viewportHeight - 6) {
+      pos = 'top';
+    }
+
+    let top = 0;
+    let left = 0;
+
+    if (pos === 'bottom') {
+      top = rect.bottom + gap;
+      left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+      tooltipEl.classList.add('pos-bottom');
+    } else if (pos === 'left') {
+      top = rect.top + (rect.height / 2) - (tipRect.height / 2);
+      left = rect.left - tipRect.width - gap;
+      tooltipEl.classList.add('pos-left');
+    } else if (pos === 'right') {
+      top = rect.top + (rect.height / 2) - (tipRect.height / 2);
+      left = rect.right + gap;
+      tooltipEl.classList.add('pos-right');
+    } else {
+      top = rect.top - tipRect.height - gap;
+      left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+      tooltipEl.classList.add('pos-top');
+    }
+
+    // Ajusta para não sair das bordas da tela
+    const minMargin = 8;
+    let arrowOffset = 0;
+    if (left < minMargin) {
+      arrowOffset = left - minMargin;
+      left = minMargin;
+    } else if (left + tipRect.width > viewportWidth - minMargin) {
+      arrowOffset = (left + tipRect.width) - (viewportWidth - minMargin);
+      left = viewportWidth - minMargin - tipRect.width;
+    }
+
+    if (arrowEl && (pos === 'top' || pos === 'bottom')) {
+      const arrowCenter = (tipRect.width / 2) + arrowOffset;
+      const clampedArrow = Math.max(10, Math.min(tipRect.width - 10, arrowCenter));
+      arrowEl.style.left = clampedArrow + 'px';
+      arrowEl.style.top = '';
+    } else if (arrowEl) {
+      arrowEl.style.left = '';
+      arrowEl.style.top = '';
+    }
+
+    tooltipEl.style.top = Math.round(top) + 'px';
+    tooltipEl.style.left = Math.round(left) + 'px';
+    tooltipEl.style.visibility = 'visible';
+    tooltipEl.classList.add('tooltip-visible');
+  }
+
+  document.addEventListener('mouseover', (e) => {
+    showTooltipFor(e.target);
+  }, { passive: true });
+
+  document.addEventListener('mouseout', (e) => {
+    if (currentTarget && (!e.relatedTarget || !currentTarget.contains(e.relatedTarget))) {
+      hideTooltip();
+    }
+  }, { passive: true });
+
+  document.addEventListener('mousedown', () => hideTooltip(), { passive: true });
+  document.addEventListener('click', () => hideTooltip(), { passive: true });
+  window.addEventListener('scroll', () => hideTooltip(), { capture: true, passive: true });
+}
+
+// Inicializa tooltips globais após carregamento do DOM
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initGlobalTooltips);
+} else {
+  initGlobalTooltips();
+}
+
 
 
 
