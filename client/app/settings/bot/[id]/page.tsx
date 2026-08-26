@@ -5,17 +5,19 @@ import { useParams, useRouter } from 'next/navigation';
 import { 
     Play, MessageSquare, HelpCircle, Clock, Users, Globe, Plus, Trash2, 
     Save, ArrowLeft, AlertCircle, X, ChevronRight, CheckCircle2, RotateCcw, Loader2, Pencil,
-    Timer, Star
+    Timer, Star, Image as ImageIcon, FileText, Bot, Sparkles, UserCheck, Ticket, User as UserIcon,
+    Upload, ExternalLink, Paperclip, Check, Music, Video
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import clsx from 'clsx';
-import { getSectors, Sector } from '@/lib/api';
+import { getSectors, Sector, getUsers, User, getCategories, Category } from '@/lib/api';
+import { getOllamaModels } from '@/lib/ollama';
 import { useNotification } from '@/components/NotificationProvider';
 
-type BotNode = {
+export type BotNode = {
     id: string;
-    type: 'start' | 'message' | 'question' | 'condition' | 'sector' | 'http' | 'close' | 'delay';
+    type: 'start' | 'message' | 'question' | 'condition' | 'sector' | 'http' | 'close' | 'delay' | 'media' | 'ai' | 'operator' | 'create_ticket';
     x: number;
     y: number;
     title: string;
@@ -37,19 +39,39 @@ type BotNode = {
         delaySeconds?: number;
         delayValue?: number;
         delayUnit?: 'seconds' | 'minutes';
+        // 1. Configurações de Mídia / Arquivo
+        mediaType?: 'image' | 'document' | 'audio' | 'video';
+        mediaSource?: 'library' | 'url';
+        mediaUrl?: string;
+        mediaCaption?: string;
+        mediaFileName?: string;
+        // 2. Configurações de Resposta por IA
+        aiModel?: string;
+        aiSystemPrompt?: string;
+        aiFallbackMessage?: string;
+        // 3. Configurações de Atendente Específico
+        operatorId?: string | number;
+        operatorName?: string;
+        operatorTransferMessage?: string;
+        // 4. Configurações de Criar Chamado
+        ticketTitle?: string;
+        ticketPriority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+        ticketCategoryId?: number;
+        ticketSectorId?: number;
+        ticketConfirmationMessage?: string;
     };
 };
 
-type BotEdge = {
+export type BotEdge = {
     id: string;
     source: string;
-    sourceHandle?: string; // option index or 'yes'/'no'
+    sourceHandle?: string; // option index or 'yes'/'no' or 'reply'/'timeout'
     target: string;
     targetHandle?: string; // 'inlet'
     vertices?: { x: number; y: number }[];
 };
 
-type WhatsAppChannel = {
+export type WhatsAppChannel = {
     id: string;
     name: string;
     port: number;
@@ -82,6 +104,14 @@ const getNodeHeight = (node: BotNode) => {
             return node.data.requestRating ? 175 : 155;
         case 'sector':
             return 140;
+        case 'operator':
+            return 140;
+        case 'media':
+            return 165;
+        case 'ai':
+            return 160;
+        case 'create_ticket':
+            return 165;
         case 'http':
             return 145;
         default:
@@ -100,6 +130,10 @@ export default function BotConfigPage() {
     const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
     const [channel, setChannel] = useState<WhatsAppChannel | null>(null);
     const [sectors, setSectors] = useState<Sector[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [aiModels, setAiModels] = useState<any[]>([]);
+    const [libraryFiles, setLibraryFiles] = useState<any[]>([]);
 
     // Estados do Construtor de Fluxo
     const [nodes, setNodes] = useState<BotNode[]>([]);
@@ -132,19 +166,58 @@ export default function BotConfigPage() {
 
     // Estados do Simulador de Fluxo
     const [isTestChatOpen, setIsTestChatOpen] = useState(false);
-    const [testMessages, setTestMessages] = useState<{ sender: 'bot' | 'client' | 'system'; text: string }[]>([]);
+    const [testMessages, setTestMessages] = useState<{ sender: 'bot' | 'client' | 'system'; text: string; mediaUrl?: string; mediaType?: string }[]>([]);
     const [testCurrentNodeId, setTestCurrentNodeId] = useState<string | null>(null);
     const [testActiveOptions, setTestActiveOptions] = useState<string[]>([]);
 
-    // Carregar Canais e Setores
+    // Carregar Dados Iniciais
     useEffect(() => {
         const loadData = async () => {
             try {
                 // Carregar setores do banco
-                const sectorData = await getSectors();
-                setSectors(sectorData);
+                try {
+                    const sectorData = await getSectors();
+                    setSectors(sectorData || []);
+                } catch (e) {
+                    console.warn('Erro ao carregar setores:', e);
+                }
 
-                // Carregar canais
+                // Carregar usuários para o bloco de atendente
+                try {
+                    const userData = await getUsers();
+                    setUsers(userData || []);
+                } catch (e) {
+                    console.warn('Erro ao carregar usuários:', e);
+                }
+
+                // Carregar categorias para o bloco de tickets
+                try {
+                    const catData = await getCategories();
+                    setCategories(catData || []);
+                } catch (e) {
+                    console.warn('Erro ao carregar categorias:', e);
+                }
+
+                // Carregar modelos de IA (Ollama)
+                try {
+                    const models = await getOllamaModels();
+                    setAiModels(models || []);
+                } catch (e) {
+                    console.warn('Erro ao carregar modelos Ollama:', e);
+                }
+
+                // Carregar biblioteca de arquivos pré-salvos do WhatsApp
+                try {
+                    const filesRes = await fetch('/api/whatsapp/files');
+                    if (filesRes.ok) {
+                        const filesData = await filesRes.json();
+                        setLibraryFiles(filesData.files || filesData || []);
+                    }
+                } catch (e) {
+                    console.warn('Erro ao carregar biblioteca de arquivos:', e);
+                }
+
+                // Carregar canais do WhatsApp
                 const res = await fetch('/api/whatsapp/channels');
                 if (res.ok) {
                     const data: WhatsAppChannel[] = await res.json();
@@ -219,8 +292,7 @@ export default function BotConfigPage() {
             });
 
             if (res.ok) {
-                // Notificar usuário ou redirecionar
-                alert('Fluxo do Bot salvo com sucesso! Reinicie o projeto para aplicar.');
+                alert('Fluxo do Bot salvo com sucesso! As alterações serão aplicadas em tempo real.');
             } else {
                 alert('Erro ao salvar o fluxo.');
             }
@@ -247,7 +319,7 @@ export default function BotConfigPage() {
 
         const edge = edges.find(e => e.source === startNode.id);
         if (!edge) {
-            setTestMessages(prev => [...prev, { sender: 'system', text: 'Conecte o nó de Início a um bloco de Mensagem ou Pergunta.' }]);
+            setTestMessages(prev => [...prev, { sender: 'system', text: 'Conecte o nó de Início a um bloco para começar.' }]);
             return;
         }
 
@@ -281,6 +353,85 @@ export default function BotConfigPage() {
             }
         } 
         
+        else if (node.type === 'media') {
+            const caption = node.data.mediaCaption || node.data.text || '';
+            const fileName = node.data.mediaFileName || 'arquivo_anexo';
+            const mediaType = node.data.mediaType || 'image';
+            const emoji = mediaType === 'image' ? '🖼️ Imagem' : mediaType === 'document' ? '📄 Documento PDF' : mediaType === 'audio' ? '🎵 Áudio' : '🎥 Vídeo';
+            
+            setTestMessages(prev => [...prev, { 
+                sender: 'bot', 
+                text: `${emoji} [${fileName}]: ${caption}`,
+                mediaUrl: node.data.mediaUrl,
+                mediaType
+            }]);
+
+            const edge = edges.find(e => e.source === node.id);
+            if (edge) {
+                setTimeout(() => {
+                    runTestNode(edge.target);
+                }, 1200);
+            } else {
+                setTimeout(() => {
+                    setTestMessages(prev => [...prev, { sender: 'system', text: 'Mídia enviada com sucesso ao cliente.' }]);
+                }, 1000);
+            }
+        }
+
+        else if (node.type === 'ai') {
+            const modelName = node.data.aiModel || 'phi3';
+            setTestMessages(prev => [...prev, { sender: 'system', text: `🤖 Processando resposta via IA (${modelName})...` }]);
+            
+            setTimeout(() => {
+                const sampleAiResponse = "Olá! Com base nas informações cadastradas, posso ajudar com orçamentos, status de chamados e orientações gerais de suporte. Como posso te auxiliar?";
+                setTestMessages(prev => [...prev, { sender: 'bot', text: sampleAiResponse }]);
+                
+                const edge = edges.find(e => e.source === node.id);
+                if (edge) {
+                    setTimeout(() => {
+                        runTestNode(edge.target);
+                    }, 1200);
+                }
+            }, 1000);
+        }
+
+        else if (node.type === 'operator') {
+            const opName = node.data.operatorName || (users.find(u => String(u.id) === String(node.data.operatorId))?.full_name || 'Atendente');
+            const customMsg = node.data.operatorTransferMessage || `Estou transferindo seu atendimento diretamente para ${opName}. Aguarde um instante.`;
+            
+            setTestMessages(prev => [...prev, { sender: 'bot', text: customMsg }]);
+            setTimeout(() => {
+                setTestMessages(prev => [...prev, { sender: 'system', text: `👤 Atendimento transferido diretamente para ${opName}. Saindo do Bot.` }]);
+            }, 600);
+        }
+
+        else if (node.type === 'create_ticket') {
+            const ticketTitle = node.data.ticketTitle || 'Chamado Aberto via WhatsApp';
+            const priority = node.data.ticketPriority || 'MEDIUM';
+            const catName = categories.find(c => c.id === node.data.ticketCategoryId)?.name || 'Geral';
+            const confirmMsg = node.data.ticketConfirmationMessage || `Chamado registrado com sucesso! Protocolo #${Math.floor(100000 + Math.random() * 900000)}.`;
+
+            setTestMessages(prev => [...prev, { 
+                sender: 'system', 
+                text: `📝 Criando chamado no sistema: "${ticketTitle}" | Categoria: ${catName} | Prioridade: ${priority}` 
+            }]);
+
+            setTimeout(() => {
+                setTestMessages(prev => [...prev, { sender: 'bot', text: confirmMsg }]);
+                
+                const edge = edges.find(e => e.source === node.id);
+                if (edge) {
+                    setTimeout(() => {
+                        runTestNode(edge.target);
+                    }, 1000);
+                } else {
+                    setTimeout(() => {
+                        setTestMessages(prev => [...prev, { sender: 'system', text: '✅ Chamado aberto e associado ao contato.' }]);
+                    }, 800);
+                }
+            }, 800);
+        }
+
         else if (node.type === 'question') {
             setTestMessages(prev => [...prev, { sender: 'bot', text: node.data.text || '' }]);
             setTestActiveOptions(node.data.options || []);
@@ -352,49 +503,50 @@ export default function BotConfigPage() {
                 text: closeNode?.data.ratingThanksMessage || 'Obrigado pela sua avaliação! Tenha um ótimo dia.' 
             }]);
             setTimeout(() => {
-                setTestMessages(prev => [...prev, { 
-                    sender: 'system', 
-                    text: `✅ Avaliação registrada (${star} estrelas) e atendimento finalizado com sucesso.` 
-                }]);
-            }, 600);
+                setTestMessages(prev => [...prev, { sender: 'system', text: `⭐ Avaliação de ${star} estrelas registrada com sucesso! Atendimento concluído.` }]);
+            }, 500);
         }, 500);
     };
 
     const handleSimulateDelayAction = (action: 'reply' | 'timeout') => {
-        if (!testCurrentNodeId) return;
+        const delayNode = nodes.find(n => n.id === testCurrentNodeId);
+        if (!delayNode) return;
 
         if (action === 'reply') {
-            setTestMessages(prev => [...prev, { sender: 'client', text: 'Olá! Enviei uma mensagem a tempo.' }]);
-            const edge = edges.find(e => e.source === testCurrentNodeId && (e.sourceHandle === 'reply' || !e.sourceHandle));
-            if (edge) {
-                setTimeout(() => {
-                    runTestNode(edge.target);
-                }, 600);
-            } else {
-                setTimeout(() => {
-                    setTestMessages(prev => [...prev, { sender: 'system', text: 'Nenhuma conexão configurada para a saída "Se Enviar Mensagem".' }]);
-                }, 600);
-            }
+            setTestMessages(prev => [...prev, { sender: 'client', text: 'Olá, ainda estou aqui!' }]);
+            setTimeout(() => {
+                setTestMessages(prev => [...prev, { sender: 'system', text: '✓ Mensagem recebida antes do tempo limite. Continuando pelo caminho [Se Enviar Mensagem].' }]);
+                const edge = edges.find(e => e.source === delayNode.id && (e.sourceHandle === 'reply' || !e.sourceHandle));
+                if (edge) {
+                    setTimeout(() => {
+                        runTestNode(edge.target);
+                    }, 600);
+                } else {
+                    setTimeout(() => {
+                        setTestMessages(prev => [...prev, { sender: 'system', text: 'Sem saída configurada para resposta do cliente. Enviando para fila.' }]);
+                    }, 600);
+                }
+            }, 600);
         } else {
-            setTestMessages(prev => [...prev, { sender: 'system', text: '⏰ Tempo limite esgotado sem nenhuma resposta do cliente.' }]);
-            const edge = edges.find(e => e.source === testCurrentNodeId && (e.sourceHandle === 'timeout' || !e.sourceHandle));
+            setTestMessages(prev => [...prev, { sender: 'system', text: '⏱️ Tempo esgotado sem resposta do cliente (Timeout). Continuando pelo caminho [Sem Resposta].' }]);
+            const edge = edges.find(e => e.source === delayNode.id && (e.sourceHandle === 'timeout' || !e.sourceHandle));
             if (edge) {
                 setTimeout(() => {
                     runTestNode(edge.target);
                 }, 600);
             } else {
                 setTimeout(() => {
-                    setTestMessages(prev => [...prev, { sender: 'system', text: 'Nenhuma conexão configurada para a saída "Sem Resposta (Timeout)".' }]);
+                    setTestMessages(prev => [...prev, { sender: 'system', text: 'Sem saída configurada para timeout. Enviando para fila.' }]);
                 }, 600);
             }
         }
     };
 
-    const handleSelectTestOption = (option: string) => {
-        setTestMessages(prev => [...prev, { sender: 'client', text: option }]);
+    const handleSelectTestOption = (opt: string) => {
+        setTestMessages(prev => [...prev, { sender: 'client', text: opt }]);
         setTestActiveOptions([]);
 
-        const edge = edges.find(e => e.source === testCurrentNodeId && e.sourceHandle === option);
+        const edge = edges.find(e => e.source === testCurrentNodeId && e.sourceHandle === opt);
         if (edge) {
             setTimeout(() => {
                 runTestNode(edge.target);
@@ -428,6 +580,41 @@ export default function BotConfigPage() {
             case 'sector':
                 title = 'Direcionar Setor';
                 data = { sectorId: sectors[0]?.id || 1 };
+                break;
+            case 'operator':
+                title = 'Direcionar Atendente';
+                data = { 
+                    operatorId: users[0]?.id || '',
+                    operatorName: users[0]?.full_name || users[0]?.username || 'Atendente',
+                    operatorTransferMessage: 'Estou transferindo seu contato para nosso atendente. Aguarde um instante.'
+                };
+                break;
+            case 'media':
+                title = 'Enviar Mídia / Arquivo';
+                data = {
+                    mediaType: 'image',
+                    mediaSource: 'library',
+                    mediaUrl: '',
+                    mediaCaption: 'Confira o arquivo em anexo:',
+                    mediaFileName: 'arquivo_anexo'
+                };
+                break;
+            case 'ai':
+                title = 'Resposta com IA';
+                data = {
+                    aiModel: aiModels[0]?.name || 'phi3',
+                    aiSystemPrompt: 'Você é um assistente prestativo da empresa. Responda com clareza, gentileza e brevidade em português.',
+                    aiFallbackMessage: 'Desculpe, não consegui processar a informação no momento. Vou transferir seu contato.'
+                };
+                break;
+            case 'create_ticket':
+                title = 'Criar Chamado';
+                data = {
+                    ticketTitle: 'Atendimento Aberto via Chatbot WhatsApp',
+                    ticketPriority: 'MEDIUM',
+                    ticketCategoryId: categories[0]?.id || 1,
+                    ticketConfirmationMessage: 'Seu chamado foi registrado em nosso sistema com sucesso!'
+                };
                 break;
             case 'http':
                 title = 'Requisição HTTP';
@@ -485,7 +672,6 @@ export default function BotConfigPage() {
         setIsDrawingConnection(true);
         setConnectingSource({ nodeId, handleId });
         
-        // Inicializa o ponto final temporário nas coordenadas do outlet
         const coords = getHandleCoords(nodeId, handleId, false);
         setTempConnectionEnd(coords);
     };
@@ -493,10 +679,10 @@ export default function BotConfigPage() {
     // Arrastar Nós - Eventos
     const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
         if ((e.target as HTMLElement).closest('.handle-connector') || (e.target as HTMLElement).closest('button')) {
-            return; // Ignora arrastar se clicou em conexões ou botões
+            return;
         }
-        e.stopPropagation(); // Evita que dispare o panning do background
-        setSelectedNodeId(nodeId); // Seleciona o nó ao clicar nele para abrir o painel de edição
+        e.stopPropagation();
+        setSelectedNodeId(nodeId);
         setDraggingNodeId(nodeId);
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
@@ -507,7 +693,6 @@ export default function BotConfigPage() {
 
     const handleCanvasMouseDown = (e: React.MouseEvent) => {
         const target = e.target as HTMLElement;
-        // Inicia o panning do background se clicar no fundo do canvas
         if (target === canvasRef.current || target.classList.contains('canvas-background') || target.tagName.toLowerCase() === 'svg') {
             e.preventDefault();
             setIsPanning(true);
@@ -519,7 +704,6 @@ export default function BotConfigPage() {
 
     const handleCanvasMouseMove = (e: React.MouseEvent) => {
         if (draggingNodeId) {
-            // Drag de nó compensando a escala de zoom
             const dx = (e.clientX - dragStartClient.current.x) / zoom;
             const dy = (e.clientY - dragStartClient.current.y) / zoom;
             let newX = dragStartNodePos.current.x + dx;
@@ -548,7 +732,6 @@ export default function BotConfigPage() {
                 return edge;
             }));
         } else if (isPanning) {
-            // Arrastar o background (Pan)
             const dx = e.clientX - panStartClient.current.x;
             const dy = e.clientY - panStartClient.current.y;
             setPan({
@@ -556,7 +739,6 @@ export default function BotConfigPage() {
                 y: panStartPos.current.y + dy
             });
         } else if (isDrawingConnection && canvasRef.current) {
-            // Desenhar cabo temporário seguindo a posição do mouse em coordenadas reais do Canvas
             const rect = canvasRef.current.getBoundingClientRect();
             const canvasX = (e.clientX - rect.left - pan.x) / zoom;
             const canvasY = (e.clientY - rect.top - pan.y) / zoom;
@@ -567,7 +749,6 @@ export default function BotConfigPage() {
     const handleCanvasMouseUp = () => {
         if (isDrawingConnection) {
             if (hoveredInletNodeId && connectingSource) {
-                // Finaliza a nova conexão criada por arrasto (evita duplicados idênticos)
                 setEdges(prev => {
                     const exists = prev.some(e => 
                         e.source === connectingSource.nodeId && 
@@ -596,121 +777,43 @@ export default function BotConfigPage() {
         setIsPanning(false);
     };
 
-    // Helper para calcular a distância entre um ponto e um segmento de reta
     const getDistanceToSegment = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
-        const l2 = (ax - bx) ** 2 + (ay - by) ** 2;
-        if (l2 === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+        const l2 = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
+        if (l2 === 0) return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
         let t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / l2;
         t = Math.max(0, Math.min(1, t));
-        return Math.sqrt((px - (ax + t * (bx - ax))) ** 2 + (py - (ay + t * (by - ay))) ** 2);
+        const projX = ax + t * (bx - ax);
+        const projY = ay + t * (by - ay);
+        return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
     };
 
-    // Localizar em qual segmento da linha de conexão inserir o novo vértice
-    const getInsertionIndexForVertex = (edge: BotEdge, x: number, y: number) => {
+    const handleAddVertex = (edgeId: string, clickX: number, clickY: number) => {
+        const edge = edges.find(e => e.id === edgeId);
+        if (!edge) return;
+
         const start = getHandleCoords(edge.source, edge.sourceHandle, false);
         const end = getHandleCoords(edge.target, edge.targetHandle, true);
-        const points = [start, ...(edge.vertices || []), end];
-        
+
+        const currentVertices = edge.vertices || [];
+        const fullPoints = [start, ...currentVertices, end];
+
+        let bestIndex = 0;
         let minDistance = Infinity;
-        let insertIndex = 0;
-        
-        for (let i = 0; i < points.length - 1; i++) {
-            const dist = getDistanceToSegment(x, y, points[i].x, points[i].y, points[i+1].x, points[i+1].y);
+
+        for (let i = 0; i < fullPoints.length - 1; i++) {
+            const p1 = fullPoints[i];
+            const p2 = fullPoints[i + 1];
+            const dist = getDistanceToSegment(clickX, clickY, p1.x, p1.y, p2.x, p2.y);
             if (dist < minDistance) {
                 minDistance = dist;
-                insertIndex = i;
-            }
-        }
-        return insertIndex;
-    };
-
-    // Calcular o ponto médio de uma conexão para renderizar o botão de excluir
-    const getEdgeMidpoint = (start: { x: number; y: number }, end: { x: number; y: number }, vertices?: { x: number; y: number }[]) => {
-        const points = [start, ...(vertices || []), end];
-        const midIdx = Math.floor((points.length - 1) / 2);
-        const p1 = points[midIdx];
-        const p2 = points[midIdx + 1];
-        return {
-            x: (p1.x + p2.x) / 2,
-            y: (p1.y + p2.y) / 2
-        };
-    };
-
-    // Suavizar cantos das linhas com curvas de Bezier quadráticas
-    const getRoundedCornerPath = (points: { x: number; y: number }[], radius: number) => {
-        if (points.length === 0) return '';
-        if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-        if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-
-        let path = `M ${points[0].x} ${points[0].y}`;
-
-        for (let i = 1; i < points.length - 1; i++) {
-            const prev = points[i - 1];
-            const curr = points[i];
-            const next = points[i + 1];
-
-            const v1 = { x: curr.x - prev.x, y: curr.y - prev.y };
-            const v2 = { x: next.x - curr.x, y: next.y - curr.y };
-
-            const len1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
-            const len2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
-
-            const r = Math.min(radius, len1 / 2, len2 / 2);
-
-            if (r > 0) {
-                const a = {
-                    x: curr.x - (v1.x / len1) * r,
-                    y: curr.y - (v1.y / len1) * r
-                };
-                const b = {
-                    x: curr.x + (v2.x / len2) * r,
-                    y: curr.y + (v2.y / len2) * r
-                };
-                path += ` L ${a.x} ${a.y} Q ${curr.x} ${curr.y} ${b.x} ${b.y}`;
-            } else {
-                path += ` L ${curr.x} ${curr.y}`;
+                bestIndex = i;
             }
         }
 
-        const last = points[points.length - 1];
-        path += ` L ${last.x} ${last.y}`;
-        return path;
-    };
+        const newVertices = [...currentVertices];
+        newVertices.splice(bestIndex, 0, { x: Math.round(clickX), y: Math.round(clickY) });
 
-    const handleAddVertex = (edgeId: string, x: number, y: number) => {
-        setEdges(prev => prev.map(edge => {
-            if (edge.id === edgeId) {
-                const currentVertices = edge.vertices || [];
-                const insertIndex = getInsertionIndexForVertex(edge, x, y);
-                const newVertices = [...currentVertices];
-                newVertices.splice(insertIndex, 0, { x, y });
-                return { ...edge, vertices: newVertices };
-            }
-            return edge;
-        }));
-    };
-
-    const handleRemoveVertex = (edgeId: string, index: number) => {
-        setEdges(prev => prev.map(edge => {
-            if (edge.id === edgeId) {
-                const newVertices = (edge.vertices || []).filter((_, idx) => idx !== index);
-                return { ...edge, vertices: newVertices };
-            }
-            return edge;
-        }));
-    };
-
-    const handleVertexMouseDown = (e: React.MouseEvent, edgeId: string, index: number) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDraggingVertex({ edgeId, index });
-        dragStartClient.current = { x: e.clientX, y: e.clientY };
-        
-        const edge = edges.find(ed => ed.id === edgeId);
-        const vertex = edge?.vertices?.[index];
-        if (vertex) {
-            dragStartNodePos.current = { x: vertex.x, y: vertex.y };
-        }
+        setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, vertices: newVertices } : e));
     };
 
     const handleEdgeContextMenu = (e: React.MouseEvent, edgeId: string) => {
@@ -723,23 +826,84 @@ export default function BotConfigPage() {
         });
     };
 
-    // Fechar menu de contexto da linha ao clicar fora
-    useEffect(() => {
-        const closeEdgeMenu = () => setEdgeContextMenu(null);
-        window.addEventListener('click', closeEdgeMenu);
-        window.addEventListener('contextmenu', closeEdgeMenu);
-        return () => {
-            window.removeEventListener('click', closeEdgeMenu);
-            window.removeEventListener('contextmenu', closeEdgeMenu);
-        };
-    }, []);
+    const handleDeleteVertex = (edgeId: string, vertexIndex: number) => {
+        setEdges(prev => prev.map(edge => {
+            if (edge.id === edgeId && edge.vertices) {
+                const newVertices = edge.vertices.filter((_, idx) => idx !== vertexIndex);
+                return { ...edge, vertices: newVertices };
+            }
+            return edge;
+        }));
+    };
 
-    const adjustZoomAtPoint = (direction: 1 | -1, focusX?: number, focusY?: number, animate = true) => {
+    const getRoundedCornerPath = (points: { x: number; y: number }[], radius: number = 20) => {
+        if (points.length < 2) return '';
+        if (points.length === 2) {
+            const [start, end] = points;
+            const dx = Math.abs(end.x - start.x) * 0.5;
+            const controlOffset = Math.max(80, dx);
+            return `M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${end.x - controlOffset} ${end.y}, ${end.x} ${end.y}`;
+        }
+
+        let path = `M ${points[0].x} ${points[0].y}`;
+        for (let i = 1; i < points.length - 1; i++) {
+            const pPrev = points[i - 1];
+            const pCurr = points[i];
+            const pNext = points[i + 1];
+
+            const v1 = { x: pPrev.x - pCurr.x, y: pPrev.y - pCurr.y };
+            const v2 = { x: pNext.x - pCurr.x, y: pNext.y - pCurr.y };
+
+            const len1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+            const len2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+
+            const r = Math.min(radius, len1 / 2, len2 / 2);
+            if (r < 1) {
+                path += ` L ${pCurr.x} ${pCurr.y}`;
+                continue;
+            }
+
+            const pStart = {
+                x: pCurr.x + (v1.x / len1) * r,
+                y: pCurr.y + (v1.y / len1) * r
+            };
+            const pEnd = {
+                x: pCurr.x + (v2.x / len2) * r,
+                y: pCurr.y + (v2.y / len2) * r
+            };
+
+            path += ` L ${pStart.x} ${pStart.y} Q ${pCurr.x} ${pCurr.y}, ${pEnd.x} ${pEnd.y}`;
+        }
+
+        path += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
+        return path;
+    };
+
+    const getEdgeMidpoint = (start: { x: number; y: number }, end: { x: number; y: number }, vertices?: { x: number; y: number }[]) => {
+        if (!vertices || vertices.length === 0) {
+            return {
+                x: (start.x + end.x) / 2,
+                y: (start.y + end.y) / 2
+            };
+        }
+        const midIdx = Math.floor(vertices.length / 2);
+        return vertices[midIdx];
+    };
+
+    const handleCanvasWheel = (e: React.WheelEvent) => {
         if (!canvasRef.current) return;
+        e.preventDefault();
+
         const rect = canvasRef.current.getBoundingClientRect();
-        
-        const x = focusX !== undefined ? focusX : rect.width / 2;
-        const y = focusY !== undefined ? focusY : rect.height / 2;
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const zoomDelta = e.deltaY < 0 ? 1 : -1;
+        adjustZoomAtPoint(zoomDelta, mouseX, mouseY);
+    };
+
+    const adjustZoomAtPoint = (delta: number, mouseX?: number, mouseY?: number, animate = false) => {
+        if (!canvasRef.current) return;
 
         if (animate) {
             setIsTransitionActive(true);
@@ -749,55 +913,25 @@ export default function BotConfigPage() {
             }, 250);
         }
 
-        const zoomFactor = 0.15;
-        setZoom(prev => {
-            const nextZoom = Math.max(0.25, Math.min(2.5, prev + direction * zoomFactor));
-            const roundedZoom = parseFloat(nextZoom.toFixed(2));
+        setZoom(prevZoom => {
+            const zoomStep = 0.15;
+            const newZoom = delta > 0 ? prevZoom + zoomStep : prevZoom - zoomStep;
+            const clampedZoom = Math.min(Math.max(newZoom, 0.4), 2.5);
+            const roundedZoom = Math.round(clampedZoom * 100) / 100;
+
+            if (roundedZoom === prevZoom) return prevZoom;
+
+            const rect = canvasRef.current!.getBoundingClientRect();
+            const targetMouseX = mouseX !== undefined ? mouseX : rect.width / 2;
+            const targetMouseY = mouseY !== undefined ? mouseY : rect.height / 2;
 
             setPan(prevPan => {
-                const canvasX = (x - prevPan.x) / prev;
-                const canvasY = (y - prevPan.y) / prev;
+                const canvasX = (targetMouseX - prevPan.x) / prevZoom;
+                const canvasY = (targetMouseY - prevPan.y) / prevZoom;
+
                 return {
-                    x: x - canvasX * roundedZoom,
-                    y: y - canvasY * roundedZoom
-                };
-            });
-
-            return roundedZoom;
-        });
-    };
-
-    const handleCanvasWheel = (e: React.WheelEvent) => {
-        e.preventDefault();
-        if (!canvasRef.current) return;
-        
-        const rect = canvasRef.current.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
-        // Ativa transição suave e fluida durante o scroll
-        setIsTransitionActive(true);
-        if (wheelTimeoutRef.current) {
-            clearTimeout(wheelTimeoutRef.current);
-        }
-        wheelTimeoutRef.current = setTimeout(() => {
-            setIsTransitionActive(false);
-        }, 180);
-
-        // Fator de escala contínuo e proporcional à intensidade do scroll
-        const delta = e.deltaY;
-        const scaleMultiplier = delta > 0 ? 0.90 : 1.11;
-
-        setZoom(prev => {
-            const nextZoom = Math.max(0.25, Math.min(2.5, prev * scaleMultiplier));
-            const roundedZoom = parseFloat(nextZoom.toFixed(3));
-
-            setPan(prevPan => {
-                const canvasX = (mouseX - prevPan.x) / prev;
-                const canvasY = (mouseY - prevPan.y) / prev;
-                return {
-                    x: mouseX - canvasX * roundedZoom,
-                    y: mouseY - canvasY * roundedZoom
+                    x: targetMouseX - canvasX * roundedZoom,
+                    y: targetMouseY - canvasY * roundedZoom
                 };
             });
 
@@ -815,48 +949,16 @@ export default function BotConfigPage() {
         setPan({ x: 0, y: 0 });
     };
 
-    // Gerenciador de conexões por cliques
-    const handleHandleClick = (nodeId: string, handleId?: string, isInput?: boolean) => {
-        if (isInput) {
-            // Clicou em uma Entrada (Inlet)
-            if (connectingSource) {
-                // Se já temos uma Saída selecionada, cria a conexão (evita duplicados idênticos)
-                const exists = edges.some(e => 
-                    e.source === connectingSource.nodeId && 
-                    e.sourceHandle === connectingSource.handleId && 
-                    e.target === nodeId
-                );
-                if (!exists) {
-                    const newEdge: BotEdge = {
-                        id: `edge-${Date.now()}`,
-                        source: connectingSource.nodeId,
-                        sourceHandle: connectingSource.handleId,
-                        target: nodeId,
-                        targetHandle: 'inlet'
-                    };
-                    setEdges(prev => [...prev, newEdge]);
-                }
-                setConnectingSource(null);
-            }
-        } else {
-            // Clicou em uma Saída (Outlet)
-            setConnectingSource({ nodeId, handleId });
-        }
-    };
-
-    // Calcular as coordenadas exatas dos conectores para desenhar os cabos SVG
     const getHandleCoords = (nodeId: string, handleId?: string, isInput?: boolean) => {
         const node = nodes.find(n => n.id === nodeId);
         if (!node) return { x: 0, y: 0 };
 
-        const nodeWidth = 280; // Largura do nó configurada no Tailwind
+        const nodeWidth = 280;
         const nodeHeight = getNodeHeight(node);
 
         if (isInput) {
-            // Conector esquerdo (inlet)
             return { x: node.x, y: node.y + 60 };
         } else {
-            // Conectores direitos (outlets)
             if (node.type === 'condition') {
                 if (handleId === 'yes') {
                     return { x: node.x + nodeWidth, y: node.y + 104 };
@@ -876,7 +978,6 @@ export default function BotConfigPage() {
                     return { x: node.x + nodeWidth, y: node.y + 110 + idx * 46 };
                 }
             }
-            // Saída padrão para outros nós
             return { x: node.x + nodeWidth, y: node.y + 60 };
         }
     };
@@ -964,63 +1065,106 @@ export default function BotConfigPage() {
             </header>
 
             {/* Sub-Barra de Ferramentas / Blocos */}
-            <div className="h-14 bg-background/40 border-b border-border-theme flex items-center px-6 gap-3.5 z-20 shrink-0 relative backdrop-blur-md overflow-x-auto custom-scrollbar">
-                <span className="text-[9px] font-black text-text-muted uppercase tracking-[0.2em] mr-2 shrink-0">Adicionar Bloco:</span>
+            <div className="h-14 bg-background/40 border-b border-border-theme flex items-center px-6 gap-2.5 z-20 shrink-0 relative backdrop-blur-md overflow-x-auto custom-scrollbar">
+                <span className="text-[9px] font-black text-text-muted uppercase tracking-[0.2em] mr-1 shrink-0">Adicionar Bloco:</span>
                 
+                {/* 1. Mensagem */}
                 <button 
                     onClick={() => handleAddNode('message')} 
-                    className="flex items-center gap-2 px-4 py-2 bg-accent-theme/5 hover:bg-accent-theme/10 border border-accent-theme/15 hover:border-accent-theme/30 text-accent-theme hover:text-accent-theme/90 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 duration-200 shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-accent-theme/5 hover:bg-accent-theme/10 border border-accent-theme/15 hover:border-accent-theme/30 text-accent-theme hover:text-accent-theme/90 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0"
                 >
                     <MessageSquare className="w-3.5 h-3.5" />
-                    Enviar Mensagem
+                    Mensagem
                 </button>
                 
+                {/* 2. Menu de Pergunta */}
                 <button 
                     onClick={() => handleAddNode('question')} 
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-500/5 hover:bg-blue-500/10 border border-blue-500/15 hover:border-blue-500/30 text-blue-400 hover:text-blue-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 duration-200 shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-500/5 hover:bg-blue-500/10 border border-blue-500/15 hover:border-blue-500/30 text-blue-400 hover:text-blue-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0"
                 >
                     <HelpCircle className="w-3.5 h-3.5" />
-                    Fazer Pergunta (Menu)
+                    Pergunta (Menu)
+                </button>
+
+                {/* 3. MÍDIA / ARQUIVO (NOVO) */}
+                <button 
+                    onClick={() => handleAddNode('media')} 
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/25 hover:border-violet-500/40 text-violet-300 hover:text-violet-200 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0 shadow-sm"
+                >
+                    <ImageIcon className="w-3.5 h-3.5 text-violet-400" />
+                    Mídia / Arquivo
+                </button>
+
+                {/* 4. RESPOSTA IA (NOVO) */}
+                <button 
+                    onClick={() => handleAddNode('ai')} 
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 hover:border-indigo-500/40 text-indigo-300 hover:text-indigo-200 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0 shadow-sm"
+                >
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                    Resposta IA
                 </button>
                 
+                {/* 5. Horário */}
                 <button 
                     onClick={() => handleAddNode('condition')} 
-                    className="flex items-center gap-2 px-4 py-2 bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/15 hover:border-amber-500/30 text-amber-400 hover:text-amber-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 duration-200 shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/15 hover:border-amber-500/30 text-amber-400 hover:text-amber-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0"
                 >
                     <Clock className="w-3.5 h-3.5" />
-                    Horário Funcionamento
+                    Horário
                 </button>
                 
+                {/* 6. Direcionar Setor */}
                 <button 
                     onClick={() => handleAddNode('sector')} 
-                    className="flex items-center gap-2 px-4 py-2 bg-red-500/5 hover:bg-red-500/10 border border-red-500/15 hover:border-red-500/30 text-red-400 hover:text-red-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 duration-200 shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-500/5 hover:bg-red-500/10 border border-red-500/15 hover:border-red-500/30 text-red-400 hover:text-red-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0"
                 >
                     <Users className="w-3.5 h-3.5" />
                     Direcionar Setor
                 </button>
+
+                {/* 7. ATENDENTE ESPECÍFICO (NOVO) */}
+                <button 
+                    onClick={() => handleAddNode('operator')} 
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500/40 text-emerald-300 hover:text-emerald-200 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0 shadow-sm"
+                >
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    Atendente Direto
+                </button>
+
+                {/* 8. CRIAR CHAMADO (NOVO) */}
+                <button 
+                    onClick={() => handleAddNode('create_ticket')} 
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/25 hover:border-orange-500/40 text-orange-300 hover:text-orange-200 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0 shadow-sm"
+                >
+                    <Ticket className="w-3.5 h-3.5 text-orange-400" />
+                    Criar Chamado
+                </button>
                 
+                {/* 9. HTTP */}
                 <button 
                     onClick={() => handleAddNode('http')} 
-                    className="flex items-center gap-2 px-4 py-2 bg-cyan-500/5 hover:bg-cyan-500/10 border border-cyan-500/15 hover:border-cyan-500/30 text-cyan-400 hover:text-cyan-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 duration-200 shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-cyan-500/5 hover:bg-cyan-500/10 border border-cyan-500/15 hover:border-cyan-500/30 text-cyan-400 hover:text-cyan-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0"
                 >
                     <Globe className="w-3.5 h-3.5" />
-                    Integração HTTP
+                    HTTP
                 </button>
 
+                {/* 10. Tempo de Espera */}
                 <button 
                     onClick={() => handleAddNode('delay')} 
-                    className="flex items-center gap-2 px-4 py-2 bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/15 hover:border-amber-500/30 text-amber-400 hover:text-amber-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 duration-200 shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/15 hover:border-amber-500/30 text-amber-400 hover:text-amber-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0"
                 >
                     <Timer className="w-3.5 h-3.5" />
-                    Tempo de Espera
+                    Espera
                 </button>
 
+                {/* 11. Finalizar */}
                 <button 
                     onClick={() => handleAddNode('close')} 
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/15 hover:border-emerald-500/30 text-emerald-400 hover:text-emerald-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 duration-200 shrink-0"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/15 hover:border-emerald-500/30 text-emerald-400 hover:text-emerald-300 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0"
                 >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Finalizar Atendimento
+                    Finalizar
                 </button>
             </div>
 
@@ -1063,7 +1207,6 @@ export default function BotConfigPage() {
                             const start = getHandleCoords(edge.source, edge.sourceHandle, false);
                             const end = getHandleCoords(edge.target, edge.targetHandle, true);
                             
-                            // Calcula a linha de caminho: Bezier clássica se não houver vértices, cantos suavizados caso existam
                             let d = '';
                             if (!edge.vertices || edge.vertices.length === 0) {
                                 const dx = Math.abs(end.x - start.x) * 0.5;
@@ -1071,14 +1214,13 @@ export default function BotConfigPage() {
                                 d = `M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${end.x - controlOffset} ${end.y}, ${end.x} ${end.y}`;
                             } else {
                                 const points = [start, ...edge.vertices, end];
-                                d = getRoundedCornerPath(points, 20); // Raio de 20px para cantos suavizados e premium
+                                d = getRoundedCornerPath(points, 20);
                             }
 
                             const midPoint = getEdgeMidpoint(start, end, edge.vertices);
 
                             return (
                                 <g key={edge.id} className="group pointer-events-auto">
-                                    {/* Linha invisível maior para facilitar cliques e duplo clique para vértice */}
                                     <path 
                                         d={d} 
                                         fill="none" 
@@ -1096,157 +1238,147 @@ export default function BotConfigPage() {
                                             }
                                         }}
                                     />
-                                    {/* A linha visível */}
                                     <path 
                                         d={d} 
-                                        stroke="var(--color-accent-theme)" 
-                                        strokeWidth="3" 
                                         fill="none" 
-                                        className="transition-[stroke,stroke-width] duration-200 group-hover:stroke-red-500 group-hover:stroke-[4px]"
+                                        stroke="url(#edge-grad)" 
+                                        strokeWidth={2.5} 
                                         markerEnd="url(#arrow)"
-                                        onContextMenu={(e) => handleEdgeContextMenu(e, edge.id)}
+                                        className="transition-all duration-300 group-hover:stroke-accent-theme group-hover:stroke-[3.5]"
                                     />
                                     
-                                    {/* Alças/Handles de controle dos vértices (Apenas visíveis ao passar o mouse sobre o grupo/linha) */}
+                                    {/* Botão de Excluir Conexão ao passar o mouse sobre o cabo */}
+                                    <g 
+                                        transform={`translate(${midPoint.x}, ${midPoint.y})`}
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer pointer-events-auto"
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const confirmed = await askConfirm({
+                                                title: 'Excluir Conexão?',
+                                                message: 'Deseja desconectar estes dois blocos?',
+                                                confirmText: 'Desconectar',
+                                                type: 'danger'
+                                            });
+                                            if (confirmed) {
+                                                setEdges(prev => prev.filter(item => item.id !== edge.id));
+                                            }
+                                        }}
+                                    >
+                                        <circle r="9" fill="var(--color-card, #172033)" stroke="var(--color-border-theme)" strokeWidth="1.5" className="hover:stroke-red-500" />
+                                        <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" />
+                                        <line x1="3.5" y1="-3.5" x2="-3.5" y2="3.5" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" />
+                                    </g>
+
+                                    {/* Pontos de Vértices Intermediários */}
                                     {(edge.vertices || []).map((vertex, vIdx) => (
-                                        <circle
-                                            key={`${edge.id}-v-${vIdx}`}
-                                            cx={vertex.x}
-                                            cy={vertex.y}
-                                            r={7}
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 fill-[var(--color-accent-theme)] stroke-[var(--color-card)] stroke-2 cursor-grab active:cursor-grabbing hover:fill-[var(--color-primary-theme)] hover:stroke-white transition-colors duration-150"
-                                            onMouseDown={(e) => handleVertexMouseDown(e, edge.id, vIdx)}
+                                        <g 
+                                            key={vIdx} 
+                                            transform={`translate(${vertex.x}, ${vertex.y})`}
+                                            className="pointer-events-auto"
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                dragStartClient.current = { x: e.clientX, y: e.clientY };
+                                                dragStartNodePos.current = { x: vertex.x, y: vertex.y };
+                                                setDraggingVertex({ edgeId: edge.id, index: vIdx });
+                                            }}
                                             onDoubleClick={(e) => {
                                                 e.stopPropagation();
-                                                handleRemoveVertex(edge.id, vIdx);
+                                                handleDeleteVertex(edge.id, vIdx);
                                             }}
                                         >
-                                            <title>Arraste para mover. Clique duplo para excluir.</title>
-                                        </circle>
+                                            <circle 
+                                                r="6" 
+                                                className="fill-accent-theme stroke-background stroke-2 cursor-move hover:scale-125 transition-transform" 
+                                            />
+                                        </g>
                                     ))}
                                 </g>
                             );
                         })}
-                        
-                        {/* Linha de conexão temporária ao arrastar */}
-                        {isDrawingConnection && tempConnectionEnd && connectingSource && (() => {
-                            const start = getHandleCoords(connectingSource.nodeId, connectingSource.handleId, false);
-                            const dx = Math.abs(tempConnectionEnd.x - start.x) * 0.5;
-                            const controlOffset = Math.max(80, dx);
-                            const d = `M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${tempConnectionEnd.x - controlOffset} ${tempConnectionEnd.y}, ${tempConnectionEnd.x} ${tempConnectionEnd.y}`;
-                            
-                            return (
-                                <path 
-                                    d={d} 
-                                    stroke="var(--color-accent-theme)" 
-                                    strokeWidth="2.5" 
-                                    strokeDasharray="4 4" 
-                                    fill="none" 
-                                    className="animate-[dash_10s_linear_infinite]"
-                                    markerEnd="url(#arrow)"
-                                />
-                            );
-                        })()}
+
+                        {/* Linha Temporária de Conexão durante o Arrasto */}
+                        {isDrawingConnection && tempConnectionEnd && connectingSource && (
+                            <path 
+                                d={`M ${getHandleCoords(connectingSource.nodeId, connectingSource.handleId, false).x} ${getHandleCoords(connectingSource.nodeId, connectingSource.handleId, false).y} L ${tempConnectionEnd.x} ${tempConnectionEnd.y}`}
+                                fill="none" 
+                                stroke="var(--color-accent-theme)" 
+                                strokeWidth={2} 
+                                strokeDasharray="6 6"
+                                className="animate-pulse"
+                            />
+                        )}
                     </svg>
-{/* Renderizador de Nós (Cards) */}
+
+                    {/* Renderização de todos os Nós / Blocos */}
                     {nodes.map(node => {
                         const isSelected = selectedNodeId === node.id;
-                        const nHeight = getNodeHeight(node);
-                        const isConnecting = connectingSource !== null;
-                        
+                        const isConnecting = isDrawingConnection && connectingSource?.nodeId !== node.id;
+
                         return (
-                            <div
+                            <div 
                                 key={node.id}
                                 onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedNodeId(node.id);
+                                style={{
+                                    left: `${node.x}px`,
+                                    top: `${node.y}px`,
+                                    width: '280px',
+                                    height: `${getNodeHeight(node)}px`
                                 }}
                                 className={clsx(
-                                    "absolute w-[280px] bg-card border rounded-3xl shadow-2xl select-none z-10 flex flex-col backdrop-blur-md group cursor-pointer overflow-visible",
-                                    draggingNodeId !== node.id && "transition-[border-color,transform,box-shadow,ring] duration-200",
-                                    isSelected 
-                                        ? "border-accent-theme ring-2 ring-accent-theme/20 scale-[1.01]" 
-                                        : "border-border-theme hover:border-border-theme/70"
+                                    "absolute rounded-2xl border bg-card/95 shadow-xl transition-shadow duration-200 cursor-move flex flex-col group backdrop-blur-md z-10",
+                                    isSelected ? "border-accent-theme ring-2 ring-accent-theme/20 shadow-2xl" : "border-border-theme hover:border-border-theme/80",
+                                    node.type === 'start' ? "border-l-4 border-l-green-500" :
+                                    node.type === 'message' ? "border-l-4 border-l-primary-theme" :
+                                    node.type === 'media' ? "border-l-4 border-l-violet-500" :
+                                    node.type === 'ai' ? "border-l-4 border-l-indigo-500" :
+                                    node.type === 'operator' ? "border-l-4 border-l-emerald-500" :
+                                    node.type === 'create_ticket' ? "border-l-4 border-l-orange-500" :
+                                    node.type === 'question' ? "border-l-4 border-l-blue-500" :
+                                    node.type === 'condition' ? "border-l-4 border-l-amber-500" :
+                                    node.type === 'sector' ? "border-l-4 border-l-red-500" :
+                                    node.type === 'delay' ? "border-l-4 border-l-amber-500" :
+                                    node.type === 'close' ? "border-l-4 border-l-emerald-500" :
+                                    "border-l-4 border-l-cyan-500"
                                 )}
-                                style={{ 
-                                    left: node.x, 
-                                    top: node.y,
-                                    height: nHeight
-                                }}
                             >
-                                {/* Cabeçalho do Bloco */}
-                                <div 
-                                    className={clsx(
-                                        "px-4 py-3 flex items-center justify-between border-b shrink-0 cursor-move rounded-t-3xl",
-                                        node.type === 'start' ? "bg-green-500/5 border-green-500/10" :
-                                        node.type === 'message' ? "bg-violet-500/5 border-violet-500/10" :
-                                        node.type === 'question' ? "bg-blue-500/5 border-blue-500/10" :
-                                        node.type === 'condition' ? "bg-amber-500/5 border-amber-500/10" :
-                                        node.type === 'sector' ? "bg-red-500/5 border-red-500/10" :
-                                        node.type === 'delay' ? "bg-amber-500/5 border-amber-500/10" :
-                                        node.type === 'close' ? "bg-emerald-500/5 border-emerald-500/10" :
-                                        "bg-cyan-500/5 border-cyan-500/10"
-                                    )}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <div 
-                                            className={clsx(
-                                                "w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0",
-                                                node.type === 'start' ? "bg-green-500" :
-                                                node.type === 'message' ? "bg-violet-500" :
-                                                node.type === 'question' ? "bg-blue-500" :
-                                                node.type === 'condition' ? "bg-amber-500" :
-                                                node.type === 'sector' ? "bg-red-500" :
-                                                node.type === 'delay' ? "bg-amber-500" :
-                                                node.type === 'close' ? "bg-emerald-500" :
-                                                "bg-cyan-500"
-                                            )}
-                                        >
-                                            {node.type === 'start' && <Play className="w-3.5 h-3.5 fill-white" />}
-                                            {node.type === 'message' && <MessageSquare className="w-3.5 h-3.5" />}
-                                            {node.type === 'question' && <HelpCircle className="w-3.5 h-3.5" />}
-                                            {node.type === 'condition' && <Clock className="w-3.5 h-3.5" />}
-                                            {node.type === 'sector' && <Users className="w-3.5 h-3.5" />}
-                                            {node.type === 'http' && <Globe className="w-3.5 h-3.5" />}
-                                            {node.type === 'delay' && <Timer className="w-3.5 h-3.5" />}
-                                            {node.type === 'close' && <CheckCircle2 className="w-3.5 h-3.5" />}
-                                        </div>
-                                        <span className="text-[10px] font-black uppercase tracking-wider text-foreground truncate max-w-[150px]">{node.title}</span>
+                                {/* Header do Bloco */}
+                                <div className="px-3.5 py-2.5 border-b border-border-theme/60 flex items-center justify-between shrink-0 bg-foreground/[0.02]">
+                                    <div className="flex items-center gap-2 truncate">
+                                        {node.type === 'start' && <Play className="w-3.5 h-3.5 text-green-400 shrink-0" />}
+                                        {node.type === 'message' && <MessageSquare className="w-3.5 h-3.5 text-primary-theme shrink-0" />}
+                                        {node.type === 'media' && <ImageIcon className="w-3.5 h-3.5 text-violet-400 shrink-0" />}
+                                        {node.type === 'ai' && <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                                        {node.type === 'operator' && <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                                        {node.type === 'create_ticket' && <Ticket className="w-3.5 h-3.5 text-orange-400 shrink-0" />}
+                                        {node.type === 'question' && <HelpCircle className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                                        {node.type === 'condition' && <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                        {node.type === 'sector' && <Users className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                                        {node.type === 'delay' && <Timer className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                        {node.type === 'close' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                                        {node.type === 'http' && <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+
+                                        <span className="font-extrabold text-[10px] uppercase tracking-wider text-foreground truncate">{node.title}</span>
                                     </div>
-                                    <div className="flex items-center gap-1 shrink-0">
+
+                                    {node.type !== 'start' && (
                                         <button 
-                                            onClick={(e) => { 
-                                                e.stopPropagation(); 
-                                                setSelectedNodeId(node.id); 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteNode(node.id);
                                             }}
-                                            className={clsx(
-                                                "p-1 rounded-lg transition-all border",
-                                                isSelected 
-                                                    ? "bg-accent-theme/20 text-accent-theme border-accent-theme/30" 
-                                                    : "hover:bg-foreground/10 border-transparent text-text-muted hover:text-foreground"
-                                            )}
-                                            title="Editar Bloco"
+                                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 text-text-muted hover:text-red-400 rounded-lg transition-all"
+                                            title="Excluir Bloco"
                                         >
-                                            <Pencil className="w-3.5 h-3.5" />
+                                            <Trash2 className="w-3 h-3" />
                                         </button>
-                                        {node.id !== 'node-start' && (
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id); }}
-                                                className="p-1 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 text-text-muted hover:text-red-400 rounded-lg transition-all"
-                                                title="Excluir Bloco"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        )}
-                                    </div>
+                                    )}
                                 </div>
 
-                                {/* Conector de Entrada (Esquerda) */}
+                                {/* Entrada Esquerda Única (Exceto Nó Start) */}
                                 {node.type !== 'start' && (
                                     <div 
                                         onMouseEnter={() => {
-                                            if (isDrawingConnection) {
+                                            if (isDrawingConnection && connectingSource?.nodeId !== node.id) {
                                                 setHoveredInletNodeId(node.id);
                                             }
                                         }}
@@ -1268,16 +1400,85 @@ export default function BotConfigPage() {
                                 )}
 
                                 {/* Corpo do Bloco (Resumo/Config) */}
-                                <div className="p-4 flex-1 flex flex-col justify-start leading-normal text-left select-none text-[10px]">
+                                <div className="p-3.5 flex-1 flex flex-col justify-start leading-normal text-left select-none text-[10px]">
                                     {node.type === 'start' && (
                                         <div className="flex items-center gap-2 pt-2">
                                             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
                                             <span className="font-black text-green-400 uppercase tracking-wider text-[10px]">Início das Interações</span>
                                         </div>
                                     )}
+
                                     {node.type === 'message' && (
                                         <p className="text-foreground/90 line-clamp-3 font-medium leading-relaxed break-words text-[11px] whitespace-pre-wrap">{node.data.text || 'Sem mensagem configurada.'}</p>
                                     )}
+
+                                    {/* MÍDIA / ARQUIVO (RENDERIZAÇÃO NO CANVAS) */}
+                                    {node.type === 'media' && (
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="px-2 py-0.5 rounded-md bg-violet-500/15 border border-violet-500/25 text-violet-300 font-bold text-[9px] uppercase tracking-wider">
+                                                    {node.data.mediaType === 'image' ? '🖼️ Imagem' : node.data.mediaType === 'document' ? '📄 Documento' : node.data.mediaType === 'audio' ? '🎵 Áudio' : '🎥 Vídeo'}
+                                                </span>
+                                                <span className="text-[8px] text-text-muted truncate max-w-[120px] font-mono">
+                                                    {node.data.mediaFileName || 'anexo'}
+                                                </span>
+                                            </div>
+                                            <p className="text-foreground/80 line-clamp-2 text-[10px] font-medium leading-relaxed italic">
+                                                "{node.data.mediaCaption || node.data.text || 'Sem legenda'}"
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* RESPOSTA IA (RENDERIZAÇÃO NO CANVAS) */}
+                                    {node.type === 'ai' && (
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 font-bold text-[9px] uppercase tracking-wider flex items-center gap-1">
+                                                    <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                                                    {node.data.aiModel || 'phi3'}
+                                                </span>
+                                                <span className="text-[8px] text-emerald-400 font-black uppercase">LLM Ativo</span>
+                                            </div>
+                                            <p className="text-text-muted line-clamp-2 text-[9px] font-mono leading-relaxed">
+                                                {node.data.aiSystemPrompt || 'Instruções padrão do assistente virtual.'}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* ATENDENTE ESPECÍFICO (RENDERIZAÇÃO NO CANVAS) */}
+                                    {node.type === 'operator' && (
+                                        <div className="space-y-1.5">
+                                            <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">Transferir para Atendente:</p>
+                                            <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-xl truncate">
+                                                <UserIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                <span className="text-xs font-black text-foreground truncate">
+                                                    {node.data.operatorName || (users.find(u => String(u.id) === String(node.data.operatorId))?.full_name || 'Atendente')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* CRIAR CHAMADO (RENDERIZAÇÃO NO CANVAS) */}
+                                    {node.type === 'create_ticket' && (
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[9px] font-bold text-orange-400 uppercase tracking-widest">Abrir Ticket:</span>
+                                                <span className={clsx(
+                                                    "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
+                                                    node.data.ticketPriority === 'URGENT' ? "bg-red-500/20 text-red-400" :
+                                                    node.data.ticketPriority === 'HIGH' ? "bg-orange-500/20 text-orange-400" :
+                                                    node.data.ticketPriority === 'LOW' ? "bg-blue-500/20 text-blue-400" :
+                                                    "bg-amber-500/20 text-amber-400"
+                                                )}>
+                                                    {node.data.ticketPriority || 'MEDIUM'}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs font-black text-foreground truncate bg-orange-500/10 border border-orange-500/20 px-2.5 py-1.5 rounded-xl">
+                                                {node.data.ticketTitle || 'Atendimento via Chatbot'}
+                                            </p>
+                                        </div>
+                                    )}
+
                                     {node.type === 'question' && (
                                         <div className="space-y-2.5">
                                             <p className="text-foreground/90 font-bold truncate text-[11px] whitespace-pre-wrap">{node.data.text}</p>
@@ -1303,6 +1504,7 @@ export default function BotConfigPage() {
                                             </div>
                                         </div>
                                     )}
+
                                     {node.type === 'condition' && (
                                         <div className="space-y-2.5">
                                             <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[10px]">
@@ -1310,7 +1512,6 @@ export default function BotConfigPage() {
                                                 <span>{node.data.startTime} às {node.data.endTime}</span>
                                             </div>
                                             <div className="space-y-2">
-                                                {/* Saída SIM */}
                                                 <div className="relative flex items-center justify-between px-3 py-1.5 bg-green-500/5 border border-green-500/10 rounded-xl text-[9px] font-black uppercase tracking-wider text-green-400">
                                                     <span>Dentro do Horário</span>
                                                     <div 
@@ -1325,7 +1526,6 @@ export default function BotConfigPage() {
                                                     </div>
                                                 </div>
 
-                                                {/* Saída NÃO */}
                                                 <div className="relative flex items-center justify-between px-3 py-1.5 bg-red-500/5 border border-red-500/10 rounded-xl text-[9px] font-black uppercase tracking-wider text-red-400">
                                                     <span>Fora do Horário</span>
                                                     <div 
@@ -1342,6 +1542,7 @@ export default function BotConfigPage() {
                                             </div>
                                         </div>
                                     )}
+
                                     {node.type === 'sector' && (
                                         <div className="space-y-2">
                                             <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest">Direcionar para:</p>
@@ -1350,6 +1551,7 @@ export default function BotConfigPage() {
                                             </div>
                                         </div>
                                     )}
+
                                     {node.type === 'http' && (
                                         <div className="space-y-2">
                                             <div className="flex items-center justify-between">
@@ -1359,6 +1561,7 @@ export default function BotConfigPage() {
                                             <p className="text-[9px] font-mono text-text-muted truncate bg-foreground/5 p-2 rounded-xl border border-border-theme">{node.data.url || 'https://...'}</p>
                                         </div>
                                     )}
+
                                     {node.type === 'delay' && (
                                         <div className="space-y-2.5">
                                             <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[10px]">
@@ -1366,7 +1569,6 @@ export default function BotConfigPage() {
                                                 <span>Aguardar {node.data.delayValue || (node.data.delayUnit === 'minutes' ? Math.round((node.data.delaySeconds || 300) / 60) : (node.data.delaySeconds || 5))} {node.data.delayUnit === 'minutes' ? 'min' : 'seg'}</span>
                                             </div>
                                             <div className="space-y-2">
-                                                {/* Saída 1: Se o usuário responder */}
                                                 <div className="relative flex items-center justify-between px-3 py-1.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl text-[9px] font-black uppercase tracking-wider text-emerald-400">
                                                     <div className="flex items-center gap-1">
                                                         <MessageSquare className="w-2.5 h-2.5" />
@@ -1384,7 +1586,6 @@ export default function BotConfigPage() {
                                                     </div>
                                                 </div>
 
-                                                {/* Saída 2: Se tempo esgotar sem resposta */}
                                                 <div className="relative flex items-center justify-between px-3 py-1.5 bg-amber-500/5 border border-amber-500/10 rounded-xl text-[9px] font-black uppercase tracking-wider text-amber-400">
                                                     <div className="flex items-center gap-1">
                                                         <Clock className="w-2.5 h-2.5" />
@@ -1404,6 +1605,7 @@ export default function BotConfigPage() {
                                             </div>
                                         </div>
                                     )}
+
                                     {node.type === 'close' && (
                                         <div className="space-y-2 py-0.5">
                                             <div className="flex items-center justify-between">
@@ -1471,7 +1673,7 @@ export default function BotConfigPage() {
                 </div>
             </div>
 
-            {/* Painel Lateral de Configurações (Slide-In) */}
+            {/* Painel Lateral de Configurações (Slide-In Inspector) */}
             <AnimatePresence>
                 {selectedNode && (
                     <motion.aside
@@ -1509,7 +1711,7 @@ export default function BotConfigPage() {
                                 />
                             </div>
 
-                            {/* Conteúdo específico por tipo */}
+                            {/* Conteúdo específico: Mensagem */}
                             {selectedNode.type === 'message' && (
                                 <div className="space-y-2">
                                     <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Mensagem de Texto</label>
@@ -1526,6 +1728,353 @@ export default function BotConfigPage() {
                                 </div>
                             )}
 
+                            {/* Conteúdo específico: 1. MÍDIA / ARQUIVO */}
+                            {selectedNode.type === 'media' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Tipo de Mídia</label>
+                                        <div className="grid grid-cols-4 gap-1.5 bg-background p-1 rounded-xl border border-border-theme">
+                                            {(['image', 'document', 'audio', 'video'] as const).map((mType) => (
+                                                <button
+                                                    key={mType}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                            ...n, 
+                                                            data: { ...n.data, mediaType: mType } 
+                                                        } : n));
+                                                    }}
+                                                    className={clsx(
+                                                        "py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all",
+                                                        (selectedNode.data.mediaType || 'image') === mType
+                                                            ? "bg-violet-500 text-white shadow-md"
+                                                            : "text-text-muted hover:text-foreground"
+                                                    )}
+                                                >
+                                                    {mType === 'image' ? 'Imagem' : mType === 'document' ? 'Doc' : mType === 'audio' ? 'Áudio' : 'Vídeo'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Origem da Mídia: Biblioteca ou URL */}
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Origem do Arquivo</label>
+                                        <div className="grid grid-cols-2 gap-2 bg-background p-1 rounded-xl border border-border-theme">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                        ...n, 
+                                                        data: { ...n.data, mediaSource: 'library' } 
+                                                    } : n));
+                                                }}
+                                                className={clsx(
+                                                    "py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all",
+                                                    (selectedNode.data.mediaSource || 'library') === 'library'
+                                                        ? "bg-violet-500 text-white shadow-md"
+                                                        : "text-text-muted hover:text-foreground"
+                                                )}
+                                            >
+                                                Biblioteca Salva
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                        ...n, 
+                                                        data: { ...n.data, mediaSource: 'url' } 
+                                                    } : n));
+                                                }}
+                                                className={clsx(
+                                                    "py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all",
+                                                    selectedNode.data.mediaSource === 'url'
+                                                        ? "bg-violet-500 text-white shadow-md"
+                                                        : "text-text-muted hover:text-foreground"
+                                                )}
+                                            >
+                                                URL Externa
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Seleção de arquivo da biblioteca */}
+                                    {(selectedNode.data.mediaSource || 'library') === 'library' && (
+                                        <div className="space-y-2">
+                                            <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Selecionar Arquivo da Base</label>
+                                            {libraryFiles.length > 0 ? (
+                                                <select
+                                                    value={selectedNode.data.mediaUrl || ''}
+                                                    onChange={(e) => {
+                                                        const fileUrl = e.target.value;
+                                                        const selFile = libraryFiles.find(f => f.url === fileUrl);
+                                                        setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                            ...n, 
+                                                            data: { 
+                                                                ...n.data, 
+                                                                mediaUrl: fileUrl,
+                                                                mediaFileName: selFile?.titulo || selFile?.filename || 'arquivo',
+                                                                mediaCaption: selFile?.descricao || n.data.mediaCaption || ''
+                                                            } 
+                                                        } : n));
+                                                    }}
+                                                    className="w-full bg-background border border-border-theme rounded-xl p-3 font-bold outline-none text-foreground"
+                                                >
+                                                    <option value="">-- Escolha um arquivo --</option>
+                                                    {libraryFiles.map(f => (
+                                                        <option key={f.id} value={f.url} className="bg-card text-foreground">
+                                                            {f.titulo || f.filename} ({f.ext || 'arquivo'})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <div className="p-3 bg-violet-500/5 border border-violet-500/15 rounded-xl text-[10px] text-text-muted">
+                                                    Nenhum arquivo pré-salvo na aba <strong>Ajustes &gt; WhatsApp &gt; Arquivos</strong>. Você pode informar uma URL direta.
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* URL Externa */}
+                                    {selectedNode.data.mediaSource === 'url' && (
+                                        <div className="space-y-2">
+                                            <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">URL do Arquivo / Mídia</label>
+                                            <input
+                                                type="text"
+                                                value={selectedNode.data.mediaUrl || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                        ...n, 
+                                                        data: { ...n.data, mediaUrl: val } 
+                                                    } : n));
+                                                }}
+                                                placeholder="https://exemplo.com/tabela_precos.pdf"
+                                                className="w-full bg-background border border-border-theme focus:border-violet-500 rounded-xl p-3 font-mono text-xs outline-none text-foreground"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Legenda / Mensagem de Acompanhamento */}
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Legenda / Texto da Mensagem</label>
+                                        <textarea
+                                            rows={3}
+                                            value={selectedNode.data.mediaCaption || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { ...n.data, mediaCaption: val, text: val } 
+                                                } : n));
+                                            }}
+                                            placeholder="Ex: Segue em anexo nossa apresentação e catálogo de serviços."
+                                            className="w-full bg-background border border-border-theme focus:border-violet-500 rounded-xl p-3 font-medium outline-none text-foreground resize-none text-xs"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Conteúdo específico: 2. RESPOSTA COM IA */}
+                            {selectedNode.type === 'ai' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Modelo de Linguagem (LLM Local / Ollama)</label>
+                                        <select
+                                            value={selectedNode.data.aiModel || 'phi3'}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { ...n.data, aiModel: val } 
+                                                } : n));
+                                            }}
+                                            className="w-full bg-background border border-border-theme rounded-xl p-3 font-bold outline-none text-foreground"
+                                        >
+                                            {aiModels.length > 0 ? (
+                                                aiModels.map((m, idx) => (
+                                                    <option key={idx} value={m.name || m} className="bg-card text-foreground">
+                                                        {m.name || m}
+                                                    </option>
+                                                ))
+                                            ) : (
+                                                <>
+                                                    <option value="phi3" className="bg-card text-foreground">phi3 (Ultra-Rápido)</option>
+                                                    <option value="llama3" className="bg-card text-foreground">llama3 (Alta Inteligência)</option>
+                                                    <option value="mistral" className="bg-card text-foreground">mistral (Equilibrado)</option>
+                                                    <option value="gemma" className="bg-card text-foreground">gemma (Eficiente)</option>
+                                                </>
+                                            )}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Instruções / Prompt do Sistema</label>
+                                        <textarea
+                                            rows={5}
+                                            value={selectedNode.data.aiSystemPrompt || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { ...n.data, aiSystemPrompt: val } 
+                                                } : n));
+                                            }}
+                                            placeholder="Ex: Você é a atendente virtual da empresa. Seja cordial, responda dúvidas frequentes sobre horários e envie o link de agendamento."
+                                            className="w-full bg-background border border-border-theme focus:border-indigo-500 rounded-xl p-3 font-medium outline-none text-foreground resize-none text-xs leading-relaxed"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Mensagem de Fallback (Se a IA falhar)</label>
+                                        <input
+                                            type="text"
+                                            value={selectedNode.data.aiFallbackMessage || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { ...n.data, aiFallbackMessage: val } 
+                                                } : n));
+                                            }}
+                                            placeholder="Desculpe, não consegui entender. Vou transferir seu contato."
+                                            className="w-full bg-background border border-border-theme focus:border-indigo-500 rounded-xl p-3 font-bold text-xs outline-none text-foreground"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Conteúdo específico: 3. ATENDENTE ESPECÍFICO */}
+                            {selectedNode.type === 'operator' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Atendente de Destino</label>
+                                        <select
+                                            value={selectedNode.data.operatorId || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const selectedUser = users.find(u => String(u.id) === String(val));
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { 
+                                                        ...n.data, 
+                                                        operatorId: val,
+                                                        operatorName: selectedUser?.full_name || selectedUser?.username || 'Atendente'
+                                                    } 
+                                                } : n));
+                                            }}
+                                            className="w-full bg-background border border-border-theme rounded-xl p-3.5 font-bold outline-none text-foreground"
+                                        >
+                                            <option value="">-- Selecione o atendente --</option>
+                                            {users.map(u => (
+                                                <option key={u.id} value={u.id} className="bg-card text-foreground">
+                                                    {u.full_name || u.username} ({u.role})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Mensagem de Transferência ao Cliente</label>
+                                        <textarea
+                                            rows={3}
+                                            value={selectedNode.data.operatorTransferMessage || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { ...n.data, operatorTransferMessage: val } 
+                                                } : n));
+                                            }}
+                                            placeholder="Ex: Estou transferindo você diretamente para o nosso especialista. Aguarde um instante."
+                                            className="w-full bg-background border border-border-theme focus:border-emerald-500 rounded-xl p-3 font-medium outline-none text-foreground text-xs resize-none leading-relaxed"
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-text-muted">Ao atingir este bloco, o chatbot é pausado e a conversa é atribuída diretamente à caixa de entrada do operador.</p>
+                                </div>
+                            )}
+
+                            {/* Conteúdo específico: 4. CRIAR CHAMADO AUTOMÁTICO */}
+                            {selectedNode.type === 'create_ticket' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Assunto do Chamado</label>
+                                        <input
+                                            type="text"
+                                            value={selectedNode.data.ticketTitle || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { ...n.data, ticketTitle: val } 
+                                                } : n));
+                                            }}
+                                            placeholder="Ex: Solicitação de Suporte via WhatsApp"
+                                            className="w-full bg-background border border-border-theme focus:border-orange-500 rounded-xl p-3 font-bold text-xs outline-none text-foreground"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-2">
+                                            <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Prioridade</label>
+                                            <select
+                                                value={selectedNode.data.ticketPriority || 'MEDIUM'}
+                                                onChange={(e) => {
+                                                    const val = e.target.value as any;
+                                                    setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                        ...n, 
+                                                        data: { ...n.data, ticketPriority: val } 
+                                                    } : n));
+                                                }}
+                                                className="w-full bg-background border border-border-theme rounded-xl p-2.5 font-bold outline-none text-foreground text-xs"
+                                            >
+                                                <option value="LOW" className="bg-card text-foreground">Baixa</option>
+                                                <option value="MEDIUM" className="bg-card text-foreground">Média</option>
+                                                <option value="HIGH" className="bg-card text-foreground">Alta</option>
+                                                <option value="URGENT" className="bg-card text-foreground">Urgente</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Categoria</label>
+                                            <select
+                                                value={selectedNode.data.ticketCategoryId || ''}
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value);
+                                                    setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                        ...n, 
+                                                        data: { ...n.data, ticketCategoryId: val } 
+                                                    } : n));
+                                                }}
+                                                className="w-full bg-background border border-border-theme rounded-xl p-2.5 font-bold outline-none text-foreground text-xs"
+                                            >
+                                                {categories.map(c => (
+                                                    <option key={c.id} value={c.id} className="bg-card text-foreground">{c.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Mensagem de Confirmação ao Cliente</label>
+                                        <textarea
+                                            rows={2}
+                                            value={selectedNode.data.ticketConfirmationMessage || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setNodes(prev => prev.map(n => n.id === selectedNode.id ? { 
+                                                    ...n, 
+                                                    data: { ...n.data, ticketConfirmationMessage: val } 
+                                                } : n));
+                                            }}
+                                            placeholder="Ex: Seu chamado foi aberto com sucesso em nosso sistema! Em breve nossa equipe entrará em contato."
+                                            className="w-full bg-background border border-border-theme focus:border-orange-500 rounded-xl p-3 font-medium outline-none text-foreground text-xs resize-none"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Conteúdo específico: Pergunta / Menu */}
                             {selectedNode.type === 'question' && (
                                 <div className="space-y-6">
                                     <div className="space-y-2">
@@ -1566,8 +2115,6 @@ export default function BotConfigPage() {
                                                         onChange={(e) => {
                                                             const text = e.target.value;
                                                             const copy = [...(selectedNode.data.options || [])];
-                                                            
-                                                            // Se alterou a chave da opção, precisamos ajustar as conexões apontando para a chave antiga!
                                                             const oldKey = copy[idx];
                                                             setEdges(prev => prev.map(edge => {
                                                                 if (edge.source === selectedNode.id && edge.sourceHandle === oldKey) {
@@ -1585,7 +2132,6 @@ export default function BotConfigPage() {
                                                         onClick={() => {
                                                             const optToDelete = selectedNode.data.options?.[idx];
                                                             const copy = (selectedNode.data.options || []).filter((_, i) => i !== idx);
-                                                            // Remove conexões vinculadas à opção excluída
                                                             setEdges(prev => prev.filter(e => !(e.source === selectedNode.id && e.sourceHandle === optToDelete)));
                                                             setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, options: copy } } : n));
                                                         }}
@@ -1600,6 +2146,7 @@ export default function BotConfigPage() {
                                 </div>
                             )}
 
+                            {/* Conteúdo específico: Horário */}
                             {selectedNode.type === 'condition' && (
                                 <div className="space-y-4">
                                     <div className="grid grid-cols-2 gap-4">
@@ -1657,6 +2204,7 @@ export default function BotConfigPage() {
                                 </div>
                             )}
 
+                            {/* Conteúdo específico: Setor */}
                             {selectedNode.type === 'sector' && (
                                 <div className="space-y-2">
                                     <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Setor de Direcionamento</label>
@@ -1676,6 +2224,7 @@ export default function BotConfigPage() {
                                 </div>
                             )}
 
+                            {/* Conteúdo específico: HTTP */}
                             {selectedNode.type === 'http' && (
                                 <div className="space-y-4">
                                     <div className="space-y-2">
@@ -1708,12 +2257,12 @@ export default function BotConfigPage() {
                                 </div>
                             )}
 
+                            {/* Conteúdo específico: Tempo de Espera */}
                             {selectedNode.type === 'delay' && (
                                 <div className="space-y-4">
                                     <div className="space-y-3">
                                         <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Unidade de Tempo</label>
                                         
-                                        {/* Seletor de Unidade (Segundos / Minutos) */}
                                         <div className="grid grid-cols-2 gap-2 bg-background p-1 rounded-xl border border-border-theme">
                                             <button
                                                 type="button"
@@ -1763,7 +2312,6 @@ export default function BotConfigPage() {
                                             </button>
                                         </div>
 
-                                        {/* Input e Slider */}
                                         <div className="space-y-2">
                                             <div className="flex items-center justify-between">
                                                 <span className="text-[10px] text-text-muted font-bold">Duração do Intervalo</span>
@@ -1791,12 +2339,6 @@ export default function BotConfigPage() {
                                                 }}
                                                 className="w-full accent-amber-500 cursor-pointer h-2 bg-background rounded-lg"
                                             />
-                                            <div className="flex justify-between text-[9px] font-mono text-text-muted">
-                                                <span>1</span>
-                                                <span>{selectedNode.data.delayUnit === 'minutes' ? '15m' : '30s'}</span>
-                                                <span>{selectedNode.data.delayUnit === 'minutes' ? '30m' : '60s'}</span>
-                                                <span>{selectedNode.data.delayUnit === 'minutes' ? '60m' : '120s'}</span>
-                                            </div>
                                         </div>
                                     </div>
 
@@ -1816,6 +2358,7 @@ export default function BotConfigPage() {
                                 </div>
                             )}
 
+                            {/* Conteúdo específico: Finalizar Atendimento */}
                             {selectedNode.type === 'close' && (
                                 <div className="space-y-4">
                                     <div className="space-y-2">
@@ -1832,7 +2375,6 @@ export default function BotConfigPage() {
                                         />
                                     </div>
 
-                                    {/* Opção de Avaliação do Atendimento */}
                                     <div className="p-4 bg-background border border-border-theme rounded-2xl space-y-3">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2">
@@ -1893,7 +2435,6 @@ export default function BotConfigPage() {
                                                     />
                                                 </div>
 
-                                                {/* Slider de Tempo de Espera da Avaliação (1 a 15 min) */}
                                                 <div className="space-y-2 pt-1">
                                                     <div className="flex items-center justify-between">
                                                         <label className="block text-[9px] font-black uppercase tracking-widest text-text-muted">Tempo Limite para Avaliar</label>
@@ -1913,23 +2454,10 @@ export default function BotConfigPage() {
                                                         }}
                                                         className="w-full accent-amber-500 cursor-pointer h-2 bg-card rounded-lg"
                                                     />
-                                                    <div className="flex justify-between text-[9px] font-mono text-text-muted">
-                                                        <span>1 min</span>
-                                                        <span>5 min</span>
-                                                        <span>10 min</span>
-                                                        <span>15 min</span>
-                                                    </div>
-                                                    <p className="text-[9px] text-text-muted mt-1 leading-relaxed">
-                                                        O bot aguardará até <strong>{selectedNode.data.ratingTimeoutMinutes || 5} minutos</strong> pela resposta. Se avaliar, envia o agradecimento; se o tempo esgotar, encerra silenciosamente.
-                                                    </p>
                                                 </div>
                                             </div>
                                         )}
                                     </div>
-
-                                    <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
-                                        Este é um <strong>nó terminal</strong>. Ao chegar aqui, o bot enviará a mensagem de despedida e gerenciará a pesquisa de avaliação antes de finalizar no histórico.
-                                    </p>
                                 </div>
                             )}
                         </div>
@@ -1990,7 +2518,7 @@ export default function BotConfigPage() {
                             ))}
                         </div>
 
-                        {/* Ações de Teste para Avaliação do Cliente (Nó Close com Avaliação) */}
+                        {/* Ações de Teste para Avaliação do Cliente */}
                         {nodes.find(n => n.id === testCurrentNodeId)?.type === 'close' && nodes.find(n => n.id === testCurrentNodeId)?.data.requestRating && (
                             <div className="border-t border-border-theme pt-3.5 space-y-2 shrink-0 animate-in fade-in duration-200">
                                 <p className="text-[8px] text-text-muted font-black uppercase tracking-widest mb-1.5">Simular Avaliação do Cliente (1 a 5 ⭐):</p>

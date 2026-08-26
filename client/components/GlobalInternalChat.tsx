@@ -344,6 +344,7 @@ export default function GlobalInternalChat() {
                                     ? `Chat Interno: ${unreadCount} mensagem(ns) não lida(s)`
                                     : "Chat Interno da Equipe (Alt + C)"
                         }
+                        data-tooltip-pos="left"
                     >
                         {/* Borda Neon Pulsante para Chamada Ativa ou Não Lidas */}
                         {(voiceState.inCall || unreadCount > 0) && (
@@ -506,7 +507,7 @@ export default function GlobalInternalChat() {
                         src={iframeUrl}
                         className="w-full h-full border-none bg-slate-950"
                         allow="microphone; clipboard-read; clipboard-write"
-                        title="Chat Interno TicketFlow"
+                        aria-label="Chat Interno TicketFlow"
                         onLoad={requestVoiceState}
                     />
                 </div>

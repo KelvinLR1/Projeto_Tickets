@@ -30,6 +30,7 @@ socket.on('connect', () => {
     socket.emit('register_attendant', { atendente_id: savedId, nome: savedName });
     socket.emit('internal_set_status', { atendente_id: savedId, status: savedManualStatus });
   }
+  socket.emit('internal_get_rooms', { atendente_id: savedId || 'admin' });
   if (typeof currentInternalRoomId !== 'undefined' && currentInternalRoomId) {
     socket.emit('internal_join_room', { sala_id: currentInternalRoomId, atendente_id: savedId || 'admin' });
   }
@@ -1613,12 +1614,10 @@ async function handleRemoveParticipantClick(atendenteId, atendenteNome) {
 function updateChatHeaderParticipantsUI(data) {
   const badgeEl = document.getElementById('chat-header-participants-badge');
   const coBadgeEl = document.getElementById('chat-header-co-badge');
-  const summaryEl = document.getElementById('chat-header-participants-summary');
 
   if (!data || !data.cliente_jid || data.cliente_jid !== selectedChatJid) {
     if (badgeEl) badgeEl.classList.add('hidden');
     if (coBadgeEl) coBadgeEl.classList.add('hidden');
-    if (summaryEl) summaryEl.classList.add('hidden');
     return;
   }
 
@@ -1638,19 +1637,9 @@ function updateChatHeaderParticipantsUI(data) {
     if (isCoAttendant || participantsCount > 0) {
       coBadgeEl.classList.remove('hidden');
       coBadgeEl.textContent = isCoAttendant ? 'Co-atendimento' : `${participantsCount + 1} Atendentes`;
+      coBadgeEl.title = `Clique para gerenciar participantes (${participantsCount + 1} atendentes)`;
     } else {
       coBadgeEl.classList.add('hidden');
-    }
-  }
-
-  if (summaryEl) {
-    if (participantsCount > 0) {
-      summaryEl.classList.remove('hidden');
-      const names = [data.primary ? (data.primary.nome || data.primary.id) : 'Principal', ...data.participants.map(p => p.atendente_nome || p.atendente_id)].join(', ');
-      summaryEl.textContent = `👥 ${participantsCount + 1} atendentes: ${names}`;
-      summaryEl.title = `Clique para gerenciar participantes (${names})`;
-    } else {
-      summaryEl.classList.add('hidden');
     }
   }
 }
@@ -2080,7 +2069,6 @@ function renderActiveChats() {
     const isUnread = chat.unread === 1 && !isSelected;
     const isGroup = chat.cliente_jid && chat.cliente_jid.endsWith('@g.us');
     const isCoAttendant = chat.is_co_attendant === 1;
-    const participantsCount = chat.participantes_count || 0;
 
     return `
       <div onclick="selectChat('${chat.cliente_jid}', '${chat.cliente_nome}')" oncontextmenu="openChatContextMenu(event, '${chat.cliente_jid}')" data-client-jid="${chat.cliente_jid}" class="glass-card rounded-2xl p-4 flex items-center gap-3 cursor-pointer border ${isSelected ? 'active' : ''}">
@@ -2093,12 +2081,7 @@ function renderActiveChats() {
             ` : ''}
             ${isCoAttendant ? `
               <span class="text-[8px] bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold px-1.5 py-0.5 rounded-md uppercase shrink-0" title="Você é participante deste atendimento">Co-atendimento</span>
-            ` : (participantsCount > 0 ? `
-              <span class="text-[8px] bg-purple-500/15 text-purple-300 font-bold px-1.5 py-0.5 rounded-md uppercase shrink-0 flex items-center gap-0.5" title="${participantsCount} participante(s) adicional(is)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                +${participantsCount}
-              </span>
-            ` : '')}
+            ` : ''}
           </div>
           <div class="flex items-center gap-1.5 mt-1">
             <span class="text-[9px] text-slate-500 font-mono block truncate">${chat.cliente_jid.split('@')[0]}</span>
@@ -6739,6 +6722,7 @@ window.addEventListener('DOMContentLoaded', () => {
 function showCustomConfirm(title, message, type = 'danger') {
   return new Promise((resolve) => {
     const modal = document.getElementById('custom-confirm-modal');
+    const modalBox = modal ? (modal.querySelector('.modal-card') || modal.firstElementChild) : null;
     const titleEl = document.getElementById('confirm-modal-title');
     const messageEl = document.getElementById('confirm-modal-message');
     const cancelBtn = document.getElementById('confirm-modal-cancel');
@@ -6747,43 +6731,94 @@ function showCustomConfirm(title, message, type = 'danger') {
     const iconSvg = document.getElementById('confirm-modal-icon');
 
     // Textos
-    titleEl.textContent = title;
-    messageEl.textContent = message;
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
 
     // Estilos do contêiner do ícone e do botão de confirmação baseados no tipo (danger vs info)
     if (type === 'danger') {
-      iconContainer.className = 'w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-red-500/10 text-red-500';
-      confirmBtn.className = 'flex-1 h-11 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg shadow-red-600/20 cursor-pointer';
-      // Ícone de triângulo de aviso
-      iconSvg.innerHTML = '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+      if (iconContainer) {
+        iconContainer.className = 'w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-red-500/15 text-red-500 border border-red-500/20 shadow-lg shadow-red-500/10';
+      }
+      if (confirmBtn) {
+        confirmBtn.className = 'flex-1 h-11 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg shadow-red-600/30 cursor-pointer';
+      }
+      if (iconSvg) {
+        iconSvg.innerHTML = '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+      }
     } else {
-      iconContainer.className = 'w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 badge-accent-theme';
-      confirmBtn.className = 'flex-1 h-11 btn-accent-theme text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer';
-      // Ícone de informação (círculo com 'i')
-      iconSvg.innerHTML = '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>';
+      if (iconContainer) {
+        iconContainer.className = 'w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 badge-accent-theme border border-white/10 shadow-lg';
+      }
+      if (confirmBtn) {
+        confirmBtn.className = 'flex-1 h-11 btn-accent-theme text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all active:scale-95 shadow-lg cursor-pointer';
+      }
+      if (iconSvg) {
+        iconSvg.innerHTML = '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>';
+      }
     }
 
-    const handleCancel = () => {
-      modal.classList.add('hidden');
+    let isClosing = false;
+    const closeModal = (result) => {
+      if (isClosing) return;
+      isClosing = true;
       cleanup();
-      resolve(false);
+
+      if (modal) {
+        modal.classList.remove('animate-modal-backdrop-in');
+        if (modalBox) modalBox.classList.remove('animate-modal-content-in');
+
+        void modal.offsetWidth; // Force reflow para disparar animação de saída
+
+        modal.classList.add('animate-modal-backdrop-out');
+        if (modalBox) modalBox.classList.add('animate-modal-content-out');
+
+        setTimeout(() => {
+          modal.classList.add('hidden');
+          modal.classList.remove('animate-modal-backdrop-out');
+          if (modalBox) modalBox.classList.remove('animate-modal-content-out');
+          resolve(result);
+        }, 220);
+      } else {
+        resolve(result);
+      }
     };
 
-    const handleConfirm = () => {
-      modal.classList.add('hidden');
-      cleanup();
-      resolve(true);
+    const handleCancel = (e) => {
+      if (e) e.stopPropagation();
+      closeModal(false);
+    };
+
+    const handleConfirm = (e) => {
+      if (e) e.stopPropagation();
+      closeModal(true);
+    };
+
+    const handleBackdrop = (e) => {
+      if (e && e.target && e.target.id === 'custom-confirm-modal') {
+        closeModal(false);
+      }
     };
 
     const cleanup = () => {
-      cancelBtn.removeEventListener('click', handleCancel);
-      confirmBtn.removeEventListener('click', handleConfirm);
+      if (cancelBtn) cancelBtn.removeEventListener('click', handleCancel);
+      if (confirmBtn) confirmBtn.removeEventListener('click', handleConfirm);
+      if (modal) modal.removeEventListener('click', handleBackdrop);
     };
 
-    cancelBtn.addEventListener('click', handleCancel);
-    confirmBtn.addEventListener('click', handleConfirm);
+    if (cancelBtn) cancelBtn.addEventListener('click', handleCancel);
+    if (confirmBtn) confirmBtn.addEventListener('click', handleConfirm);
+    if (modal) modal.addEventListener('click', handleBackdrop);
 
-    modal.classList.remove('hidden');
+    // Entrada suave
+    if (modal) {
+      modal.classList.remove('hidden', 'animate-modal-backdrop-out');
+      if (modalBox) modalBox.classList.remove('animate-modal-content-out');
+
+      void modal.offsetWidth; // Force reflow
+
+      modal.classList.add('animate-modal-backdrop-in');
+      if (modalBox) modalBox.classList.add('animate-modal-content-in');
+    }
   });
 }
 
@@ -9093,8 +9128,8 @@ function openInternalGroup(groupId, groupName, groupDesc, memberCount, creatorNa
 
   const voiceCallBtn = document.getElementById('btn-internal-voice-call');
   if (voiceCallBtn) {
-    voiceCallBtn.classList.remove('hidden');
-    voiceCallBtn.classList.add('flex');
+    voiceCallBtn.classList.add('hidden');
+    voiceCallBtn.classList.remove('flex');
   }
 
   const closeDmBtn = document.getElementById('btn-internal-close-dm');
@@ -9898,21 +9933,35 @@ function createInternalMessageElement(msg) {
   if (msg.card_meta) {
     try {
       const card = typeof msg.card_meta === 'string' ? JSON.parse(msg.card_meta) : msg.card_meta;
+      const initials = (card.cliente_nome || 'CL').split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
       cardHTML = `
-        <div class="internal-shared-card p-3 my-1.5 w-full max-w-sm rounded-xl">
-          <div class="flex items-center gap-2.5 mb-2 pb-2 border-b border-white/10">
-            <div class="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-500/30 overflow-hidden">
-              ${card.cliente_avatar ? `<img src="${card.cliente_avatar}" class="w-full h-full object-cover">` : (card.cliente_nome ? card.cliente_nome.charAt(0) : 'C')}
+        <div class="internal-shared-card p-3.5 my-2 w-full max-w-sm select-none">
+          <!-- Cabeçalho do Card -->
+          <div class="flex items-center gap-2.5 pb-2.5 border-b" style="border-color: var(--border-color, rgba(255,255,255,0.1));">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center font-extrabold text-xs text-white uppercase shrink-0 shadow-md" style="background: var(--accent-gradient, var(--color-primary-theme, #ef4444));">
+              ${card.cliente_avatar ? `<img src="${card.cliente_avatar}" class="w-full h-full object-cover rounded-xl">` : (initials || 'CL')}
             </div>
             <div class="min-w-0 flex-1">
-              <h4 class="text-xs font-bold text-slate-100 truncate">${escapeHtml(card.cliente_nome || 'Cliente')}</h4>
-              <p class="text-[10px] text-slate-400 font-mono">${escapeHtml(card.cliente_telefone || card.cliente_jid)}</p>
+              <h4 class="text-xs font-extrabold truncate" style="color: var(--color-foreground, #fff);">${escapeHtml(card.cliente_nome || 'Cliente')}</h4>
+              <p class="text-[10px] font-mono opacity-75 truncate" style="color: var(--color-text-muted, #94a3b8);">${escapeHtml(card.cliente_telefone || card.cliente_jid || '')}</p>
             </div>
-            <span class="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold uppercase tracking-wider">WhatsApp</span>
+            <span class="px-2 py-0.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wider" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444); border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent);">
+              WhatsApp
+            </span>
           </div>
-          <p class="text-xs text-slate-300 italic mb-2.5 line-clamp-2 bg-black/20 p-2 rounded-lg border border-white/5">"${escapeHtml(card.resumo || 'Atendimento em andamento')}"</p>
-          <button onclick="handleOpenSharedChat('${card.cliente_jid}', '${card.cliente_nome || ''}')" class="w-full h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/25 transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+
+          <!-- Resumo / Mensagem / Comentário -->
+          ${card.resumo ? `
+            <div class="my-2.5 p-2.5 rounded-xl border" style="background: rgba(0,0,0,0.25); border-color: var(--border-color, rgba(255,255,255,0.06));">
+              <p class="text-xs font-medium italic line-clamp-3 leading-relaxed" style="color: var(--color-foreground, #fff);">
+                "${escapeHtml(card.resumo)}"
+              </p>
+            </div>
+          ` : ''}
+
+          <!-- Botão de Ação: Abrir Conversa no Painel -->
+          <button onclick="handleOpenSharedChat('${card.cliente_jid}', '${(card.cliente_nome || '').replace(/'/g, "\\'")}')" class="w-full h-9 rounded-xl text-white font-extrabold text-xs transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer shadow-md" style="background: var(--accent-gradient, linear-gradient(135deg, var(--color-primary-theme, #ef4444), var(--color-accent-theme, #f43f5e))); box-shadow: 0 4px 15px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 40%, transparent);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Abrir Conversa no Painel
           </button>
         </div>
@@ -10695,68 +10744,418 @@ function updateInternalTotalUnreadBadge() {
   }
 }
 
+// Estado do seletor customizado de destino
+let currentSelectedShareTarget = {
+  id: 'channel-geral',
+  name: 'Geral',
+  type: 'canal',
+  displayLabel: '# Geral',
+  subText: 'Canal da Equipe'
+};
+let currentShareTargetsSearch = '';
+let isShareDropdownClosing = false;
+
+// Estado de expansão dos agrupamentos do seletor (Todas Fechadas por Padrão)
+let shareCategoryOpenState = {
+  canais: false,
+  grupos: false,
+  colegas: false
+};
+
+function toggleShareTargetDropdown(e) {
+  if (e) e.stopPropagation();
+  const dropdown = document.getElementById('share-target-dropdown-menu');
+  const chevron = document.getElementById('share-target-chevron');
+  if (!dropdown) return;
+
+  const isHidden = dropdown.classList.contains('hidden');
+  if (isHidden) {
+    currentShareTargetsSearch = '';
+    // Todas as opções iniciam fechadas ao abrir
+    shareCategoryOpenState = {
+      canais: false,
+      grupos: false,
+      colegas: false
+    };
+
+    const searchInput = document.getElementById('input-search-share-targets');
+    if (searchInput) {
+      searchInput.value = '';
+      setTimeout(() => searchInput.focus(), 100);
+    }
+    renderShareTargetsCustomList();
+
+    dropdown.classList.remove('hidden', 'animate-dropdown-out');
+    void dropdown.offsetWidth; // Force reflow
+    dropdown.classList.add('animate-dropdown-in');
+
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+  } else {
+    closeShareTargetDropdown();
+  }
+}
+
+function closeShareTargetDropdown() {
+  const dropdown = document.getElementById('share-target-dropdown-menu');
+  const chevron = document.getElementById('share-target-chevron');
+  if (!dropdown || dropdown.classList.contains('hidden') || isShareDropdownClosing) return;
+
+  isShareDropdownClosing = true;
+  if (chevron) chevron.style.transform = 'rotate(0deg)';
+
+  dropdown.classList.remove('animate-dropdown-in');
+  void dropdown.offsetWidth; // Force reflow
+  dropdown.classList.add('animate-dropdown-out');
+
+  setTimeout(() => {
+    dropdown.classList.add('hidden');
+    dropdown.classList.remove('animate-dropdown-out');
+    isShareDropdownClosing = false;
+  }, 180);
+}
+
+// Estado de expansão dos agrupamentos do seletor (Accordion)
+function toggleShareCategory(catKey, e) {
+  if (e) e.stopPropagation();
+  
+  const wrapper = document.getElementById('share-cat-wrapper-' + catKey);
+  const chevron = document.getElementById('share-cat-chevron-' + catKey);
+  
+  if (wrapper) {
+    const isNowExpanded = wrapper.classList.toggle('expanded');
+    shareCategoryOpenState[catKey] = isNowExpanded;
+    if (chevron) {
+      chevron.style.transform = isNowExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
+    }
+  } else {
+    shareCategoryOpenState[catKey] = !shareCategoryOpenState[catKey];
+    renderShareTargetsCustomList();
+  }
+}
+
+function filterShareTargets(query) {
+  currentShareTargetsSearch = (query || '').toLowerCase().trim();
+  renderShareTargetsCustomList();
+}
+
+function renderShareTargetsCustomList() {
+  const listContainer = document.getElementById('share-targets-custom-list');
+  if (!listContainer) return;
+
+  const query = currentShareTargetsSearch;
+  let html = '';
+
+  // 1. Canais da Equipe
+  const channels = (internalRoomsList || []).filter(r => r.tipo === 'canal');
+  const filteredChannels = channels.filter(c => !query || (c.nome || '').toLowerCase().includes(query));
+  
+  if (filteredChannels.length > 0 || (!query && channels.length === 0)) {
+    const isChannelsOpen = Boolean(query || shareCategoryOpenState.canais);
+    const channelsCount = filteredChannels.length || 1;
+
+    html += `
+      <div onclick="toggleShareCategory('canais', event)" class="px-2.5 py-2 rounded-xl flex items-center justify-between cursor-pointer transition-all hover:bg-white/5 select-none my-0.5 border" style="background: color-mix(in srgb, var(--color-foreground, #fff) 4%, transparent); border-color: var(--border-color, rgba(255,255,255,0.08));">
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs">📢</span>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider" style="color: var(--color-primary-theme, #ef4444);">Canais da Equipe</span>
+          <span class="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">${channelsCount}</span>
+        </div>
+        <svg id="share-cat-chevron-canais" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="transition-transform duration-250 ease-out" style="color: var(--color-text-muted, #94a3b8); transform: rotate(${isChannelsOpen ? '180deg' : '0deg'});"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+
+      <div id="share-cat-wrapper-canais" class="share-category-wrapper ${isChannelsOpen ? 'expanded' : ''}">
+        <div class="share-category-inner space-y-1 pl-1 pr-0.5 py-1">
+    `;
+
+    if (filteredChannels.length > 0) {
+      filteredChannels.forEach(c => {
+        const isSelected = currentSelectedShareTarget.id === c.id;
+        html += `
+          <div onclick="selectShareTarget('${c.id}', '${(c.nome || '').replace(/'/g, "\\'")}', 'canal', '# ${(c.nome || '').replace(/'/g, "\\'")}', 'Canal da Equipe')" class="px-3 py-2 rounded-xl flex items-center justify-between gap-2.5 cursor-pointer transition-all ${isSelected ? 'shadow-md' : 'hover:bg-white/5 border border-transparent'}" style="${isSelected ? 'background-color: var(--color-primary-theme, #ef4444) !important; color: #ffffff !important; border: 1px solid var(--color-primary-theme, #ef4444) !important;' : ''}">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="w-6 h-6 rounded-lg flex items-center justify-center font-mono font-bold text-xs" style="background: ${isSelected ? 'rgba(255,255,255,0.2)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, var(--color-background, #000))'}; color: ${isSelected ? '#ffffff' : 'var(--color-primary-theme, #ef4444)'};">#</span>
+              <span class="text-xs font-bold truncate" style="color: ${isSelected ? '#ffffff' : 'var(--color-foreground, #fff)'};">${escapeHtml(c.nome)}</span>
+            </div>
+            ${isSelected ? `<span class="text-xs font-black text-white">✓</span>` : ''}
+          </div>
+        `;
+      });
+    } else {
+      const isSelected = currentSelectedShareTarget.id === 'channel-geral';
+      html += `
+        <div onclick="selectShareTarget('channel-geral', 'Geral', 'canal', '# Geral', 'Canal da Equipe')" class="px-3 py-2 rounded-xl flex items-center justify-between gap-2.5 cursor-pointer transition-all ${isSelected ? 'shadow-md' : 'hover:bg-white/5 border border-transparent'}" style="${isSelected ? 'background-color: var(--color-primary-theme, #ef4444) !important; color: #ffffff !important; border: 1px solid var(--color-primary-theme, #ef4444) !important;' : ''}">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-6 h-6 rounded-lg flex items-center justify-center font-mono font-bold text-xs" style="background: ${isSelected ? 'rgba(255,255,255,0.2)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, var(--color-background, #000))'}; color: ${isSelected ? '#ffffff' : 'var(--color-primary-theme, #ef4444)'};">#</span>
+            <span class="text-xs font-bold truncate" style="color: ${isSelected ? '#ffffff' : 'var(--color-foreground, #fff)'};">Geral</span>
+          </div>
+          ${isSelected ? `<span class="text-xs font-black text-white">✓</span>` : ''}
+        </div>
+      `;
+    }
+
+    html += `
+        </div>
+      </div>
+    `;
+  }
+
+  // 2. Grupos de Trabalho
+  const groups = (internalRoomsList || []).filter(r => r.tipo === 'grupo');
+  const filteredGroups = groups.filter(g => !query || (g.nome || '').toLowerCase().includes(query));
+  if (filteredGroups.length > 0) {
+    const isGroupsOpen = Boolean(query || shareCategoryOpenState.grupos);
+
+    html += `
+      <div onclick="toggleShareCategory('grupos', event)" class="px-2.5 py-2 rounded-xl flex items-center justify-between cursor-pointer transition-all hover:bg-white/5 select-none my-0.5 border" style="background: color-mix(in srgb, var(--color-foreground, #fff) 4%, transparent); border-color: var(--border-color, rgba(255,255,255,0.08));">
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs">👥</span>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider" style="color: var(--color-primary-theme, #ef4444);">Grupos de Trabalho</span>
+          <span class="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">${filteredGroups.length}</span>
+        </div>
+        <svg id="share-cat-chevron-grupos" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="transition-transform duration-250 ease-out" style="color: var(--color-text-muted, #94a3b8); transform: rotate(${isGroupsOpen ? '180deg' : '0deg'});"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+
+      <div id="share-cat-wrapper-grupos" class="share-category-wrapper ${isGroupsOpen ? 'expanded' : ''}">
+        <div class="share-category-inner space-y-1 pl-1 pr-0.5 py-1">
+    `;
+
+    filteredGroups.forEach(g => {
+      const isSelected = currentSelectedShareTarget.id === g.id;
+      html += `
+        <div onclick="selectShareTarget('${g.id}', '${(g.nome || '').replace(/'/g, "\\'")}', 'grupo', '👥 ${(g.nome || '').replace(/'/g, "\\'")}', 'Grupo')" class="px-3 py-2 rounded-xl flex items-center justify-between gap-2.5 cursor-pointer transition-all ${isSelected ? 'shadow-md' : 'hover:bg-white/5 border border-transparent'}" style="${isSelected ? 'background-color: var(--color-primary-theme, #ef4444) !important; color: #ffffff !important; border: 1px solid var(--color-primary-theme, #ef4444) !important;' : ''}">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-6 h-6 rounded-lg flex items-center justify-center text-xs" style="background: ${isSelected ? 'rgba(255,255,255,0.2)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, var(--color-background, #000))'};">👥</span>
+            <span class="text-xs font-bold truncate" style="color: ${isSelected ? '#ffffff' : 'var(--color-foreground, #fff)'};">${escapeHtml(g.nome)}</span>
+          </div>
+          ${isSelected ? `<span class="text-xs font-black text-white">✓</span>` : ''}
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  }
+
+  // 3. Colegas / Atendentes
+  const operators = (internalOperatorsList || []).filter(op => !currentOperator || String(op.id) !== String(currentOperator.id));
+  const filteredOperators = operators.filter(op => !query || (op.nome || op.id || '').toLowerCase().includes(query) || (op.setor || '').toLowerCase().includes(query));
+  if (filteredOperators.length > 0) {
+    const isOperatorsOpen = Boolean(query || shareCategoryOpenState.colegas);
+
+    html += `
+      <div onclick="toggleShareCategory('colegas', event)" class="px-2.5 py-2 rounded-xl flex items-center justify-between cursor-pointer transition-all hover:bg-white/5 select-none my-0.5 border" style="background: color-mix(in srgb, var(--color-foreground, #fff) 4%, transparent); border-color: var(--border-color, rgba(255,255,255,0.08));">
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs">👤</span>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider" style="color: var(--color-primary-theme, #ef4444);">Colegas / Atendentes</span>
+          <span class="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">${filteredOperators.length}</span>
+        </div>
+        <svg id="share-cat-chevron-colegas" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="transition-transform duration-250 ease-out" style="color: var(--color-text-muted, #94a3b8); transform: rotate(${isOperatorsOpen ? '180deg' : '0deg'});"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+
+      <div id="share-cat-wrapper-colegas" class="share-category-wrapper ${isOperatorsOpen ? 'expanded' : ''}">
+        <div class="share-category-inner space-y-1 pl-1 pr-0.5 py-1">
+    `;
+
+    filteredOperators.forEach(op => {
+      const dmRoomId = `dm_${[currentOperator ? currentOperator.id : 'me', op.id].sort().join('_')}`;
+      const isSelected = currentSelectedShareTarget.id === dmRoomId;
+      const statusColor = op.status === 'online' ? '#22c55e' : (op.status === 'atendendo' ? '#eab308' : '#94a3b8');
+      const statusText = op.status === 'online' ? 'Online' : (op.status === 'atendendo' ? 'Atendendo' : 'Offline');
+      const initials = (op.nome || op.id || 'OP').split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+
+      html += `
+        <div onclick="selectShareTarget('${dmRoomId}', '${(op.nome || op.id).replace(/'/g, "\\'")}', 'dm', '👤 ${(op.nome || op.id).replace(/'/g, "\\'")}', '${statusText}')" class="px-3 py-2 rounded-xl flex items-center justify-between gap-2.5 cursor-pointer transition-all ${isSelected ? 'shadow-md' : 'hover:bg-white/5 border border-transparent'}" style="${isSelected ? 'background-color: var(--color-primary-theme, #ef4444) !important; color: #ffffff !important; border: 1px solid var(--color-primary-theme, #ef4444) !important;' : ''}">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="relative shrink-0">
+              <div class="w-6 h-6 rounded-lg flex items-center justify-center font-bold text-[10px] text-white" style="background: ${isSelected ? 'rgba(255,255,255,0.25)' : 'color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, var(--color-background, #000))'};">
+                ${initials}
+              </div>
+              <span class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-black" style="background-color: ${statusColor};"></span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs font-bold truncate" style="color: ${isSelected ? '#ffffff' : 'var(--color-foreground, #fff)'};">${escapeHtml(op.nome || op.id)}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="text-[9px] font-bold px-1.5 py-0.2 rounded" style="color: ${isSelected ? '#ffffff' : statusColor}; background: ${isSelected ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.06)'};">${statusText}</span>
+            ${isSelected ? `<span class="text-xs font-black text-white">✓</span>` : ''}
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  }
+
+  if (!html) {
+    html = `<div class="p-4 text-center text-xs text-slate-500 font-medium">Nenhum canal ou colega encontrado.</div>`;
+  }
+
+  listContainer.innerHTML = html;
+}
+
+function selectShareTarget(id, name, type, displayLabel, subText) {
+  currentSelectedShareTarget = { id, name, type, displayLabel, subText };
+  
+  // Mantém a categoria do item selecionado aberta
+  if (type === 'canal') shareCategoryOpenState.canais = true;
+  else if (type === 'grupo') shareCategoryOpenState.grupos = true;
+  else if (type === 'dm') shareCategoryOpenState.colegas = true;
+
+  const hiddenInput = document.getElementById('share-target-room-id');
+  if (hiddenInput) hiddenInput.value = id;
+
+  updateShareTargetSelectedDisplay();
+  closeShareTargetDropdown();
+}
+
+function updateShareTargetSelectedDisplay() {
+  const display = document.getElementById('share-target-selected-display');
+  if (!display) return;
+
+  const target = currentSelectedShareTarget;
+  if (target.type === 'canal') {
+    display.innerHTML = `
+      <span class="w-7 h-7 rounded-xl flex items-center justify-center font-mono font-bold text-xs shrink-0" style="background: color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent); color: var(--color-primary-theme, #ef4444);">#</span>
+      <div class="min-w-0 text-left">
+        <p class="text-xs font-bold truncate" style="color: var(--color-foreground, #fff);">${escapeHtml(target.name)}</p>
+        <span class="text-[9px] block truncate" style="color: var(--color-text-muted, #94a3b8);">Canal da Equipe</span>
+      </div>
+    `;
+  } else if (target.type === 'grupo') {
+    display.innerHTML = `
+      <span class="w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0" style="background: rgba(255,255,255,0.08);">👥</span>
+      <div class="min-w-0 text-left">
+        <p class="text-xs font-bold truncate" style="color: var(--color-foreground, #fff);">${escapeHtml(target.name)}</p>
+        <span class="text-[9px] block truncate" style="color: var(--color-text-muted, #94a3b8);">Grupo de Trabalho</span>
+      </div>
+    `;
+  } else {
+    const initials = (target.name || 'OP').split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+    display.innerHTML = `
+      <div class="w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs text-white uppercase shrink-0" style="background: var(--color-primary-theme, #ef4444);">
+        ${initials}
+      </div>
+      <div class="min-w-0 text-left">
+        <p class="text-xs font-bold truncate" style="color: var(--color-foreground, #fff);">${escapeHtml(target.name)}</p>
+        <span class="text-[9px] block truncate" style="color: var(--color-text-muted, #94a3b8);">Atendente / Colega (${target.subText || 'Conversa Direta'})</span>
+      </div>
+    `;
+  }
+}
+
 // Modal de Compartilhamento do Atendimento
 function openInternalShareModal(clienteJid, clienteNome) {
-  if (!clienteJid) {
-    alert('Selecione uma conversa para compartilhar.');
+  const targetJid = clienteJid || selectedChatJid;
+  const targetName = clienteNome || selectedChatName || targetJid;
+
+  if (!targetJid) {
+    if (typeof showToast === 'function') {
+      showToast('Selecione uma conversa para compartilhar.', 'Aviso', 'warning');
+    } else {
+      alert('Selecione uma conversa para compartilhar.');
+    }
     return;
   }
 
-  internalChatToShare = { jid: clienteJid, name: clienteNome || clienteJid };
+  internalChatToShare = { jid: targetJid, name: targetName };
 
-  const select = document.getElementById('share-target-room-select');
-  if (select) {
-    select.innerHTML = '';
-    
-    // Canais
-    const channelGroup = document.createElement('optgroup');
-    channelGroup.label = 'Canais da Equipe';
-    internalRoomsList.filter(r => r.tipo === 'canal').forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = `# ${c.nome}`;
-      channelGroup.appendChild(opt);
-    });
-    select.appendChild(channelGroup);
+  // Atualiza card preview do cliente
+  const nameEl = document.getElementById('share-chat-preview-name');
+  const phoneEl = document.getElementById('share-chat-preview-phone');
+  const avatarEl = document.getElementById('share-chat-preview-avatar');
 
-    // Colegas
-    const dmGroup = document.createElement('optgroup');
-    dmGroup.label = 'Colegas / Atendentes';
-    internalOperatorsList.forEach(op => {
-      if (currentOperator && String(op.id) === String(currentOperator.id)) return;
-      const dmRoomId = `dm_${[currentOperator ? currentOperator.id : 'me', op.id].sort().join('_')}`;
-      const opt = document.createElement('option');
-      opt.value = dmRoomId;
-      opt.textContent = `👤 ${op.nome} (${op.status === 'online' ? 'Online' : (op.status === 'atendendo' ? 'Atendendo' : 'Offline')})`;
-      dmGroup.appendChild(opt);
-    });
-    select.appendChild(dmGroup);
+  if (nameEl) nameEl.textContent = targetName;
+  if (phoneEl) phoneEl.textContent = targetJid.replace('@c.us', '').replace('@g.us', '');
+  if (avatarEl) {
+    const initials = (targetName || 'CL').split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+    avatarEl.textContent = initials || 'CL';
   }
 
+  // Define seleção padrão se não houver
+  const firstChannel = (internalRoomsList || []).find(r => r.tipo === 'canal');
+  if (firstChannel) {
+    currentSelectedShareTarget = {
+      id: firstChannel.id,
+      name: firstChannel.nome,
+      type: 'canal',
+      displayLabel: `# ${firstChannel.nome}`,
+      subText: 'Canal da Equipe'
+    };
+  } else {
+    currentSelectedShareTarget = {
+      id: 'channel-geral',
+      name: 'Geral',
+      type: 'canal',
+      displayLabel: '# Geral',
+      subText: 'Canal da Equipe'
+    };
+  }
+
+  const hiddenInput = document.getElementById('share-target-room-id');
+  if (hiddenInput) hiddenInput.value = currentSelectedShareTarget.id;
+  updateShareTargetSelectedDisplay();
+
+  // Solicita dados atualizados ao servidor
+  socket.emit('internal_get_rooms', { atendente_id: currentOperator ? currentOperator.id : null });
+
+  closeShareTargetDropdown();
+
   const modal = document.getElementById('internal-share-modal');
+  const modalBox = modal ? (modal.querySelector('.modal-card') || modal.querySelector('.relative')) : null;
+
   if (modal) {
-    modal.classList.remove('hidden');
-    modal.classList.add('internal-modal-overlay');
-    const dialog = modal.querySelector('.animate-modal-content-in') || modal.querySelector('.relative');
-    if (dialog) dialog.classList.add('internal-modal-dialog');
+    modal.classList.remove('hidden', 'animate-modal-backdrop-out');
+    if (modalBox) modalBox.classList.remove('animate-modal-content-out');
+
+    void modal.offsetWidth; // Force reflow
+
+    modal.classList.add('animate-modal-backdrop-in');
+    if (modalBox) modalBox.classList.add('animate-modal-content-in');
+  }
+
+  // Foco no comentário
+  const commentInput = document.getElementById('share-comment-input');
+  if (commentInput) {
+    setTimeout(() => commentInput.focus(), 150);
   }
 }
 
 function closeInternalShareModal() {
   const modal = document.getElementById('internal-share-modal');
-  if (modal) {
+  if (!modal || modal.classList.contains('hidden')) return;
+
+  closeShareTargetDropdown();
+
+  const modalBox = modal.querySelector('.modal-card') || modal.querySelector('.relative');
+
+  modal.classList.remove('animate-modal-backdrop-in');
+  if (modalBox) modalBox.classList.remove('animate-modal-content-in');
+
+  void modal.offsetWidth; // Force reflow
+
+  modal.classList.add('animate-modal-backdrop-out');
+  if (modalBox) modalBox.classList.add('animate-modal-content-out');
+
+  setTimeout(() => {
     modal.classList.add('hidden');
-    modal.classList.remove('internal-modal-overlay');
-  }
-  internalChatToShare = null;
+    modal.classList.remove('animate-modal-backdrop-out');
+    if (modalBox) modalBox.classList.remove('animate-modal-content-out');
+    internalChatToShare = null;
+  }, 220);
 }
 
 function confirmShareChatToInternal() {
   if (!internalChatToShare) return;
 
-  const select = document.getElementById('share-target-room-select');
+  const hiddenInput = document.getElementById('share-target-room-id');
   const commentInput = document.getElementById('share-comment-input');
-  const targetRoomId = select ? select.value : 'channel-geral';
+  const targetRoomId = (hiddenInput ? hiddenInput.value : null) || currentSelectedShareTarget.id || 'channel-geral';
   const comentario = commentInput ? commentInput.value.trim() : '';
 
   socket.emit('internal_share_chat', {
@@ -10770,20 +11169,12 @@ function confirmShareChatToInternal() {
   closeInternalShareModal();
   if (commentInput) commentInput.value = '';
 
-  showInputBarNotification('Atendimento compartilhado com a equipe com sucesso!');
-
-  // Abre a conversa onde foi compartilhado
-  if (targetRoomId.startsWith('dm_')) {
-    const parts = targetRoomId.replace('dm_', '').split('_');
-    const otherId = parts.find(id => !currentOperator || id !== String(currentOperator.id)) || parts[0];
-    const opObj = internalOperatorsList.find(o => String(o.id) === String(otherId));
-    openInternalDM(otherId, opObj ? opObj.nome : otherId, opObj ? opObj.setor : '', opObj ? opObj.status : 'online');
+  // Confirmação visual de envio sem abrir a tela do chat interno
+  if (typeof showToast === 'function') {
+    showToast('Atendimento compartilhado com a equipe com sucesso!', 'Card Enviado', 'success');
   } else {
-    const canal = internalRoomsList.find(r => r.id === targetRoomId);
-    openInternalChannel(targetRoomId, canal ? canal.nome : 'Canal', canal ? canal.descricao : '');
+    showInputBarNotification('Atendimento compartilhado com a equipe com sucesso!');
   }
-
-  openInternalChatDrawer();
 }
 
 // Atalho de Teclado Global: Alt + C para abrir/fechar Chat Interno
@@ -10833,6 +11224,11 @@ socket.on('internal_rooms_data', ({ salas, atendentes, recent_messages, closed_d
       if (me.manual_status) currentUserManualStatus = me.manual_status;
       updateUserStatusUI(me.status, me.manual_status);
     }
+  }
+
+  const shareModal = document.getElementById('internal-share-modal');
+  if (shareModal && !shareModal.classList.contains('hidden')) {
+    populateInternalShareSelect();
   }
 
   refreshInternalUI();
@@ -12191,39 +12587,62 @@ function initGlobalTooltips() {
   const textEl = tooltipEl.querySelector('.system-global-tooltip-text');
   const arrowEl = tooltipEl.querySelector('.system-global-tooltip-arrow');
 
+  const TOOLTIP_DELAY_MS = 1000;
+  let showTimeout = null;
+  let pendingTarget = null;
   let currentTarget = null;
 
+  function clearTimer() {
+    if (showTimeout) {
+      clearTimeout(showTimeout);
+      showTimeout = null;
+    }
+    pendingTarget = null;
+  }
+
   function hideTooltip() {
+    clearTimer();
     currentTarget = null;
     tooltipEl.classList.remove('tooltip-visible');
   }
 
+  function isIgnored(el) {
+    if (!el || !el.tagName) return true;
+    if (el.tagName === 'IFRAME' || (el.hasAttribute && el.hasAttribute('data-no-tooltip'))) return true;
+    return false;
+  }
+
+  function sanitizeElement(el) {
+    if (!el || !el.hasAttribute) return;
+    if (el.tagName === 'IFRAME') {
+      el.removeAttribute('title');
+      return;
+    }
+    if (el.hasAttribute('title')) {
+      const val = el.getAttribute('title');
+      if (val && val.trim()) {
+        el.setAttribute('data-tooltip', val.trim());
+      }
+      el.removeAttribute('title');
+    }
+  }
+
   function sanitizeTitlesInTree(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
-    if (node.hasAttribute && node.hasAttribute('title')) {
-      const val = node.getAttribute('title');
-      if (val && val.trim()) {
-        node.setAttribute('data-tooltip', val.trim());
-      }
-      node.removeAttribute('title');
-    }
-    if (node.querySelectorAll) {
-      const titles = node.querySelectorAll('[title]');
+    const el = node;
+    sanitizeElement(el);
+    if (el.querySelectorAll) {
+      const titles = el.querySelectorAll('[title]');
       for (let i = 0; i < titles.length; i++) {
-        const el = titles[i];
-        const val = el.getAttribute('title');
-        if (val && val.trim()) {
-          el.setAttribute('data-tooltip', val.trim());
-        }
-        el.removeAttribute('title');
+        sanitizeElement(titles[i]);
       }
     }
   }
 
-  // Sanitiza títulos existentes no documento
+  // Sanitiza títulos existentes no documento imediatamente
   sanitizeTitlesInTree(document.body);
 
-  // Observa nós inseridos dinamicamente para neutralizar o atributo 'title' nativo
+  // Observa nós inseridos dinamicamente para neutralizar o atributo 'title' nativo imediatamente
   if (window.MutationObserver) {
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
@@ -12232,31 +12651,17 @@ function initGlobalTooltips() {
             sanitizeTitlesInTree(m.addedNodes[i]);
           }
         } else if (m.type === 'attributes' && m.attributeName === 'title' && m.target) {
-          const val = m.target.getAttribute('title');
-          if (val && val.trim()) {
-            m.target.setAttribute('data-tooltip', val.trim());
-          }
-          m.target.removeAttribute('title');
+          sanitizeElement(m.target);
         }
       }
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['title'] });
   }
 
-  function showTooltipFor(target) {
-    if (!target) return;
-    const el = target.closest('[data-tooltip], [title], [data-title]');
-    if (!el) {
+  function showTooltipFor(el) {
+    if (!el || isIgnored(el)) {
       hideTooltip();
       return;
-    }
-
-    if (el.hasAttribute('title')) {
-      const val = el.getAttribute('title');
-      if (val && val.trim()) {
-        el.setAttribute('data-tooltip', val.trim());
-      }
-      el.removeAttribute('title');
     }
 
     const text = el.getAttribute('data-tooltip') || el.getAttribute('data-title');
@@ -12343,11 +12748,44 @@ function initGlobalTooltips() {
   }
 
   document.addEventListener('mouseover', (e) => {
-    showTooltipFor(e.target);
+    if (!e.target || !(e.target instanceof HTMLElement)) return;
+
+    // Neutraliza imediatamente qualquer 'title' no elemento ou ancestrais ao passar o cursor
+    const elWithTitle = e.target.closest('[title]');
+    if (elWithTitle) {
+      sanitizeElement(elWithTitle);
+    }
+
+    if (isIgnored(e.target)) {
+      hideTooltip();
+      return;
+    }
+
+    const el = e.target.closest('[data-tooltip], [data-title]');
+    if (!el || isIgnored(el)) {
+      if (currentTarget || pendingTarget) {
+        hideTooltip();
+      }
+      return;
+    }
+
+    if (el === pendingTarget || el === currentTarget) {
+      return;
+    }
+
+    hideTooltip();
+    pendingTarget = el;
+    showTimeout = setTimeout(() => {
+      if (pendingTarget && document.body.contains(pendingTarget)) {
+        showTooltipFor(pendingTarget);
+      }
+      showTimeout = null;
+    }, TOOLTIP_DELAY_MS);
   }, { passive: true });
 
   document.addEventListener('mouseout', (e) => {
-    if (currentTarget && (!e.relatedTarget || !currentTarget.contains(e.relatedTarget))) {
+    const targetToCheck = currentTarget || pendingTarget;
+    if (targetToCheck && (!e.relatedTarget || !targetToCheck.contains(e.relatedTarget))) {
       hideTooltip();
     }
   }, { passive: true });

@@ -1122,53 +1122,74 @@ body.internal-only-view #voice-active-bar {
 }
 
 /* ==============================================================================
-   CLASSES PARA DIÁLOGOS DE CONFIRMAÇÃO DO SISTEMA (MODAL CONFIRM)
+   CLASSES PARA DIÁLOGOS DE CONFIRMAÇÃO DO SISTEMA (MODAL CONFIRM SINCRONIZADO)
    ============================================================================== */
 #custom-confirm-modal {
-  background: rgba(15, 23, 42, 0.4) !important;
-  backdrop-filter: blur(12px) !important;
-  transition: all 0.3s ease;
+  z-index: 9999999 !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
 }
 
 #custom-confirm-modal .modal-card {
-  background: var(--color-card) !important;
-  border: 1px solid var(--border-color) !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;
-  border-radius: 24px !important;
-  color: var(--color-foreground) !important;
-  transition: all 0.3s ease;
+  background: color-mix(in srgb, var(--color-card, #172033) 96%, black) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, var(--border-color, rgba(255, 255, 255, 0.15))) !important;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.85), 0 0 40px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, transparent) !important;
+  border-radius: 28px !important;
+  color: var(--color-foreground, #fff) !important;
 }
 
 .theme-light #custom-confirm-modal {
-  background: rgba(241, 245, 249, 0.4) !important;
+  background: rgba(15, 23, 42, 0.45) !important;
+}
+
+.theme-light #custom-confirm-modal .modal-card {
+  background: #ffffff !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, rgba(0,0,0,0.12)) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 30px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent) !important;
 }
 
 #custom-confirm-modal h2 {
-  color: var(--color-foreground) !important;
+  color: var(--color-foreground, #fff) !important;
+  font-family: var(--font-family, 'Outfit', sans-serif);
+  font-weight: 800 !important;
+  letter-spacing: -0.01em;
 }
 
 #custom-confirm-modal p {
-  color: var(--color-text-muted) !important;
+  color: var(--color-text-muted, #94a3b8) !important;
 }
 
 #custom-confirm-modal #confirm-modal-cancel {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border: 1px solid var(--border-color) !important;
-  color: var(--color-text-muted) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.12)) !important;
+  color: var(--color-text-muted, #94a3b8) !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .theme-light #custom-confirm-modal #confirm-modal-cancel {
-  background: rgba(0, 0, 0, 0.03) !important;
+  background: rgba(0, 0, 0, 0.04) !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  color: #64748b !important;
 }
 
 #custom-confirm-modal #confirm-modal-cancel:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: var(--color-foreground) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: var(--color-foreground, #fff) !important;
+  transform: translateY(-1px);
 }
 
 .theme-light #custom-confirm-modal #confirm-modal-cancel:hover {
-  background: rgba(0, 0, 0, 0.06) !important;
+  background: rgba(0, 0, 0, 0.08) !important;
+  color: #0f172a !important;
+}
+
+#custom-confirm-modal #confirm-modal-cancel:active {
+  transform: translateY(0);
 }
 
 .badge-danger-theme {
@@ -1182,6 +1203,169 @@ body.internal-only-view #voice-active-bar {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   box-shadow: 0 4px 15px -3px rgba(239, 68, 68, 0.3) !important;
 }
+
+/* ==============================================================================
+   MODAL DE COMPARTILHAR ATENDIMENTO COM A EQUIPE (TEMA SINCRONIZADO)
+   ============================================================================== */
+#internal-share-modal {
+  z-index: 9999999 !important;
+}
+
+#internal-share-modal .modal-card {
+  background-color: var(--color-background, #0b0f19) !important;
+  background-image: linear-gradient(0deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 7%, var(--color-background, #0b0f19)), color-mix(in srgb, var(--color-primary-theme, #ef4444) 7%, var(--color-background, #0b0f19))) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, var(--border-color, rgba(255, 255, 255, 0.15))) !important;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.95), 0 0 35px -5px color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, transparent) !important;
+  border-radius: 28px !important;
+  color: var(--color-foreground, #fff) !important;
+  opacity: 1 !important;
+}
+
+.theme-light #internal-share-modal .modal-card {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, rgba(0, 0, 0, 0.12)) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 30px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 15%, transparent) !important;
+}
+
+#internal-share-modal #share-target-dropdown-trigger {
+  background-color: var(--color-background, #0b0f19) !important;
+  background-image: linear-gradient(0deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 10%, var(--color-background, #0b0f19)), color-mix(in srgb, var(--color-primary-theme, #ef4444) 10%, var(--color-background, #0b0f19))) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, var(--border-color, rgba(255, 255, 255, 0.15))) !important;
+  opacity: 1 !important;
+}
+
+.theme-light #internal-share-modal #share-target-dropdown-trigger {
+  background-color: #f8fafc !important;
+  background-image: none !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+
+#internal-share-modal textarea {
+  background-color: var(--color-background, #0b0f19) !important;
+  background-image: linear-gradient(0deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 8%, var(--color-background, #0b0f19)), color-mix(in srgb, var(--color-primary-theme, #ef4444) 8%, var(--color-background, #0b0f19))) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 25%, var(--border-color, rgba(255, 255, 255, 0.15))) !important;
+  color: var(--color-foreground, #fff) !important;
+  border-radius: 16px !important;
+  transition: all 0.2s ease !important;
+  opacity: 1 !important;
+}
+
+.theme-light #internal-share-modal textarea {
+  background-color: #f8fafc !important;
+  background-image: none !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+  color: #0f172a !important;
+}
+
+#internal-share-modal textarea:focus {
+  border-color: var(--color-primary-theme, #ef4444) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+  outline: none !important;
+}
+
+/* Dropdown Customizado 100% Sólido e com as Cores Exatas do Tema do Sistema */
+#internal-share-modal #share-target-dropdown-menu {
+  background-color: var(--color-background, #0b0f19) !important;
+  background-image: linear-gradient(0deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 10%, var(--color-background, #0b0f19)), color-mix(in srgb, var(--color-primary-theme, #ef4444) 10%, var(--color-background, #0b0f19))) !important;
+  opacity: 1 !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 50%, var(--border-color, rgba(255, 255, 255, 0.2))) !important;
+  box-shadow: 0 25px 60px -8px rgba(0, 0, 0, 0.98), 0 0 30px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 30%, transparent) !important;
+  z-index: 50 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.theme-light #internal-share-modal #share-target-dropdown-menu {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, rgba(0, 0, 0, 0.15)) !important;
+  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.25), 0 0 25px -4px color-mix(in srgb, var(--color-primary-theme, #ef4444) 20%, transparent) !important;
+}
+
+#internal-share-modal #input-search-share-targets {
+  background-color: var(--color-background, #0b0f19) !important;
+  background-image: linear-gradient(0deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 14%, var(--color-background, #0b0f19)), color-mix(in srgb, var(--color-primary-theme, #ef4444) 14%, var(--color-background, #0b0f19))) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, var(--border-color, rgba(255, 255, 255, 0.15))) !important;
+  color: var(--color-foreground, #fff) !important;
+  opacity: 1 !important;
+}
+
+.theme-light #internal-share-modal #input-search-share-targets {
+  background-color: #f1f5f9 !important;
+  background-image: none !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+  color: #0f172a !important;
+}
+
+#internal-share-modal #input-search-share-targets:focus {
+  border-color: var(--color-primary-theme, #ef4444) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, transparent) !important;
+}
+
+/* Keyframes de Animação Suave de Entrada e Saída do Dropdown */
+@keyframes dropdownSlideFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dropdownSlideFadeOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+
+.animate-dropdown-in {
+  animation: dropdownSlideFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  transform-origin: top center !important;
+}
+
+.animate-dropdown-out {
+  animation: dropdownSlideFadeOut 0.18s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+  transform-origin: top center !important;
+}
+
+/* Transição Suave de Expansão/Recolhimento dos Agrupamentos (Accordion) */
+.share-category-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: grid-template-rows;
+}
+
+.share-category-wrapper.expanded {
+  grid-template-rows: 1fr;
+}
+
+.share-category-inner {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.22s ease, transform 0.26s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.share-category-wrapper.expanded .share-category-inner {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#share-targets-custom-list {
+  scroll-behavior: smooth;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .btn-danger-theme:hover {
   background: #b91c1c !important;
   box-shadow: 0 6px 20px -3px rgba(239, 68, 68, 0.4) !important;
@@ -2435,18 +2619,26 @@ body.internal-only-view #voice-active-bar {
   pointer-events: auto !important;
 }
 
-/* Cards de Atendimento Compartilhado no Chat Interno */
+/* Cards de Atendimento Compartilhado no Chat Interno (Padrão do Sistema) */
 .internal-shared-card {
-  background: color-mix(in srgb, var(--color-card, #172033) 90%, black 10%);
-  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #6366f1) 40%, var(--border-color, rgba(255,255,255,0.12)));
-  border-radius: 14px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35), 0 0 12px color-mix(in srgb, var(--color-primary-theme, #6366f1) 12%, transparent);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  background-color: var(--color-background, #0b0f19) !important;
+  background-image: linear-gradient(0deg, color-mix(in srgb, var(--color-primary-theme, #ef4444) 9%, var(--color-background, #0b0f19)), color-mix(in srgb, var(--color-primary-theme, #ef4444) 9%, var(--color-background, #0b0f19))) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 45%, var(--border-color, rgba(255, 255, 255, 0.15))) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.6), 0 0 20px -3px color-mix(in srgb, var(--color-primary-theme, #ef4444) 22%, transparent) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.theme-light .internal-shared-card {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary-theme, #ef4444) 35%, rgba(0, 0, 0, 0.12)) !important;
+  box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.15) !important;
 }
 
 .internal-shared-card:hover {
-  border-color: var(--color-primary-theme, #6366f1);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 18px color-mix(in srgb, var(--color-primary-theme, #6366f1) 22%, transparent);
+  border-color: var(--color-primary-theme, #ef4444) !important;
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.7), 0 0 25px -2px color-mix(in srgb, var(--color-primary-theme, #ef4444) 32%, transparent) !important;
 }
 
 /* Indicadores de Status dos Usuários no Chat Interno */

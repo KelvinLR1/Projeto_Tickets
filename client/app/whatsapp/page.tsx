@@ -292,7 +292,7 @@ export default function WhatsAppPage() {
                                 className="w-full h-full border-none bg-transparent transition-opacity duration-300 opacity-0"
                                 onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
                                 allow="camera; microphone; clipboard-read; clipboard-write"
-                                title={`WhatsApp — ${channel.name}`}
+                                aria-label={`WhatsApp — ${channel.name}`}
                             />
                         </div>
                     );

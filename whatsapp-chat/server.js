@@ -3190,6 +3190,67 @@ async function sendBotMessage(clienteJid, texto) {
   });
 }
 
+// Envia mídia/arquivo do bot (imagem, pdf, áudio, etc.)
+async function sendBotMedia(clienteJid, mediaUrl, caption) {
+  console.log(`🤖 [BOT -> ${clienteJid}] Envio de mídia: ${mediaUrl} | Legenda: "${caption || ''}"`);
+  if (!mediaUrl) return;
+
+  if (whatsappStatus === 'pronto') {
+    try {
+      let media = null;
+
+      if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+        const filename = path.basename(mediaUrl.split('?')[0]);
+        const potentialLocalPath = path.join(uploadDir, filename);
+        if (fs.existsSync(potentialLocalPath)) {
+          media = MessageMedia.fromFilePath(potentialLocalPath);
+        } else {
+          try {
+            media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+          } catch (urlErr) {
+            console.warn('[BOT] Erro ao baixar mídia por URL externa:', urlErr.message);
+          }
+        }
+      } else {
+        const filename = path.basename(mediaUrl);
+        const localPath = path.join(uploadDir, filename);
+        if (fs.existsSync(localPath)) {
+          media = MessageMedia.fromFilePath(localPath);
+        }
+      }
+
+      if (media) {
+        const options = caption ? { caption } : {};
+        await wwebClient.sendMessage(clienteJid, media, options);
+      } else if (caption) {
+        await wwebClient.sendMessage(clienteJid, caption);
+      }
+    } catch (err) {
+      console.error('Erro ao enviar mídia do bot via WhatsApp:', err.message);
+    }
+  }
+
+  const anexoTexto = `[ANEXO] ${mediaUrl}\n${caption || ''}`.trim();
+  return new Promise((resolve) => {
+    db.run(
+      `INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'bot', ?)`,
+      [clienteJid, anexoTexto],
+      function (err) {
+        if (err) console.error('Erro ao salvar anexo do bot:', err.message);
+        const msg = {
+          id: this.lastID,
+          cliente_jid: clienteJid,
+          remetente: 'bot',
+          texto: anexoTexto,
+          timestamp: new Date().toISOString()
+        };
+        io.emit('queue_message', msg);
+        resolve();
+      }
+    );
+  });
+}
+
 // Envia a estrutura de Pergunta/Menu
 async function sendQuestionNode(clienteJid, node) {
   const options = node.data.options || [];
@@ -3489,6 +3550,146 @@ async function executeNode(row, node, texto, depth = 0) {
     }
     moveToQueue(row);
   } 
+
+  else if (node.type === 'media') {
+    const caption = node.data.mediaCaption || node.data.text || '';
+    const mediaUrl = node.data.mediaUrl || '';
+    if (mediaUrl) {
+      await sendBotMedia(row.cliente_jid, mediaUrl, caption);
+    } else if (caption) {
+      await sendBotMessage(row.cliente_jid, caption);
+    }
+
+    const edge = edges.find(e => e.source === node.id);
+    if (edge) {
+      const nextNode = nodes.find(n => n.id === edge.target);
+      if (nextNode) {
+        await new Promise(r => setTimeout(r, 1200 + Math.floor(Math.random() * 800)));
+        db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [nextNode.id, row.cliente_jid]);
+        executeNode(row, nextNode, texto, depth + 1);
+        return;
+      }
+    }
+    moveToQueue(row);
+  }
+
+  else if (node.type === 'ai') {
+    console.log(`[BOT] Executando nó de IA (${node.data.aiModel || 'phi3'}) para [${row.cliente_jid}]`);
+    let aiAnswer = node.data.aiFallbackMessage || "Estou transferindo seu contato para nossa equipe.";
+    
+    try {
+      const model = node.data.aiModel || 'phi3';
+      const systemPrompt = node.data.aiSystemPrompt || 'Você é o assistente virtual da empresa. Responda em português com clareza e brevidade.';
+      
+      const payload = {
+        model: model,
+        prompt: `${systemPrompt}\n\nCliente: ${texto || 'Olá'}\nAssistente:`,
+        stream: false,
+        options: {
+          num_predict: 120,
+          temperature: 0.3
+        }
+      };
+
+      const aiRes = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        if (aiData && aiData.response) {
+          aiAnswer = aiData.response.trim();
+        }
+      }
+    } catch (aiErr) {
+      console.warn('[BOT] Ollama offline ou erro na chamada de IA:', aiErr.message);
+    }
+
+    await sendBotMessage(row.cliente_jid, aiAnswer);
+
+    const edge = edges.find(e => e.source === node.id);
+    if (edge) {
+      const nextNode = nodes.find(n => n.id === edge.target);
+      if (nextNode) {
+        await new Promise(r => setTimeout(r, 1200 + Math.floor(Math.random() * 800)));
+        db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [nextNode.id, row.cliente_jid]);
+        executeNode(row, nextNode, texto, depth + 1);
+        return;
+      }
+    }
+  }
+
+  else if (node.type === 'operator') {
+    const operatorId = String(node.data.operatorId || '');
+    const opName = node.data.operatorName || 'Atendente';
+    const transferMsg = node.data.operatorTransferMessage || `Estou transferindo seu atendimento para ${opName}. Aguarde um instante.`;
+    
+    console.log(`[BOT] Direcionando cliente para o operador direto: ${operatorId} (${opName})`);
+    
+    await sendBotMessage(row.cliente_jid, transferMsg);
+    
+    db.run(
+      `UPDATE tabela_atendimentos SET status = 'aberto', atendente_id = ?, bot_node_id = NULL WHERE cliente_jid = ?`,
+      [operatorId || null, row.cliente_jid],
+      () => {
+        db.run(`INSERT INTO tabela_mensagens (cliente_jid, remetente, texto) VALUES (?, 'sistema', 'Atendimento transferido pelo Bot diretamente para o operador.')`, [row.cliente_jid]);
+        broadcastQueue();
+        broadcastBotList();
+      }
+    );
+  }
+
+  else if (node.type === 'create_ticket') {
+    const title = node.data.ticketTitle || 'Atendimento Aberto via WhatsApp';
+    const priority = node.data.ticketPriority || 'MEDIUM';
+    const categoryId = node.data.ticketCategoryId || 1;
+    const confirmMsg = node.data.ticketConfirmationMessage || 'Seu chamado foi registrado com sucesso em nosso sistema!';
+    
+    console.log(`[BOT] Criando chamado automático via API para [${row.cliente_jid}]: "${title}"`);
+    
+    let ticketId = null;
+    try {
+      const priorityMap = { 'LOW': 'Baixa', 'MEDIUM': 'Média', 'HIGH': 'Alta', 'URGENT': 'Urgente' };
+      const ptPriority = priorityMap[priority] || 'Média';
+      
+      const ticketPayload = {
+        title: title,
+        description: `Chamado gerado automaticamente pelo chatbot do WhatsApp.\nCliente: ${row.cliente_name || row.cliente_jid}\nTelefone: ${row.cliente_jid.replace('@c.us', '')}\nÚltima Mensagem: ${texto || 'N/A'}`,
+        priority: ptPriority,
+        client_name: row.cliente_name || row.cliente_jid.replace('@c.us', ''),
+        category_id: parseInt(categoryId) || 1
+      };
+
+      const ticketRes = await fetch('http://127.0.0.1:8080/tickets/simple', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ticketPayload)
+      });
+
+      if (ticketRes.ok) {
+        const ticketData = await ticketRes.json();
+        ticketId = ticketData.id;
+      }
+    } catch (tErr) {
+      console.warn('[BOT] Erro ao criar ticket no FastAPI:', tErr.message);
+    }
+
+    const finalMsg = ticketId ? `${confirmMsg}\n\n📋 *Protocolo do Chamado:* #${ticketId}` : confirmMsg;
+    await sendBotMessage(row.cliente_jid, finalMsg);
+
+    const edge = edges.find(e => e.source === node.id);
+    if (edge) {
+      const nextNode = nodes.find(n => n.id === edge.target);
+      if (nextNode) {
+        await new Promise(r => setTimeout(r, 1200 + Math.floor(Math.random() * 800)));
+        db.run(`UPDATE tabela_atendimentos SET bot_node_id = ? WHERE cliente_jid = ?`, [nextNode.id, row.cliente_jid]);
+        executeNode(row, nextNode, texto, depth + 1);
+        return;
+      }
+    }
+  }
   
   else if (node.type === 'question') {
     await sendQuestionNode(row.cliente_jid, node);

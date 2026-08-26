@@ -25,42 +25,64 @@ export default function SystemTooltip() {
         const textEl = tooltipEl.querySelector('.system-global-tooltip-text') as HTMLElement;
         const arrowEl = tooltipEl.querySelector('.system-global-tooltip-arrow') as HTMLElement;
 
+        const TOOLTIP_DELAY_MS = 1000;
+        let showTimeout: any = null;
+        let pendingTarget: HTMLElement | null = null;
         let currentTarget: HTMLElement | null = null;
 
+        function clearTimer() {
+            if (showTimeout) {
+                clearTimeout(showTimeout);
+                showTimeout = null;
+            }
+            pendingTarget = null;
+        }
+
         function hideTooltip() {
+            clearTimer();
             currentTarget = null;
             if (tooltipEl) {
                 tooltipEl.classList.remove('tooltip-visible');
             }
         }
 
-        function sanitizeTitlesInTree(node: Node) {
-            if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
-            const el = node as HTMLElement;
-            if (el.hasAttribute && el.hasAttribute('title')) {
+        function isIgnored(el: HTMLElement): boolean {
+            if (!el || !el.tagName) return true;
+            if (el.tagName === 'IFRAME' || el.hasAttribute('data-no-tooltip')) return true;
+            return false;
+        }
+
+        function sanitizeElement(el: HTMLElement) {
+            if (!el || !el.hasAttribute) return;
+            if (el.tagName === 'IFRAME') {
+                el.removeAttribute('title');
+                return;
+            }
+            if (el.hasAttribute('title')) {
                 const val = el.getAttribute('title');
                 if (val && val.trim()) {
                     el.setAttribute('data-tooltip', val.trim());
                 }
                 el.removeAttribute('title');
             }
+        }
+
+        function sanitizeTitlesInTree(node: Node) {
+            if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
+            const el = node as HTMLElement;
+            sanitizeElement(el);
             if (el.querySelectorAll) {
                 const titles = el.querySelectorAll('[title]');
                 for (let i = 0; i < titles.length; i++) {
-                    const item = titles[i] as HTMLElement;
-                    const val = item.getAttribute('title');
-                    if (val && val.trim()) {
-                        item.setAttribute('data-tooltip', val.trim());
-                    }
-                    item.removeAttribute('title');
+                    sanitizeElement(titles[i] as HTMLElement);
                 }
             }
         }
 
-        // Sanitiza títulos existentes no documento
+        // Sanitiza títulos existentes no documento imediatamente
         sanitizeTitlesInTree(document.body);
 
-        // Observa nós inseridos dinamicamente para neutralizar o atributo 'title' nativo
+        // Observa nós inseridos dinamicamente para neutralizar o atributo 'title' nativo imediatamente
         let observer: MutationObserver | null = null;
         if (typeof window !== 'undefined' && window.MutationObserver) {
             observer = new MutationObserver((mutations) => {
@@ -70,32 +92,17 @@ export default function SystemTooltip() {
                             sanitizeTitlesInTree(m.addedNodes[i]);
                         }
                     } else if (m.type === 'attributes' && m.attributeName === 'title' && m.target) {
-                        const target = m.target as HTMLElement;
-                        const val = target.getAttribute('title');
-                        if (val && val.trim()) {
-                            target.setAttribute('data-tooltip', val.trim());
-                        }
-                        target.removeAttribute('title');
+                        sanitizeElement(m.target as HTMLElement);
                     }
                 }
             });
             observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['title'] });
         }
 
-        function showTooltipFor(target: EventTarget | null) {
-            if (!target || !(target instanceof HTMLElement)) return;
-            const el = target.closest('[data-tooltip], [title], [data-title]') as HTMLElement | null;
-            if (!el) {
+        function showTooltipFor(el: HTMLElement) {
+            if (!el || isIgnored(el)) {
                 hideTooltip();
                 return;
-            }
-
-            if (el.hasAttribute('title')) {
-                const val = el.getAttribute('title');
-                if (val && val.trim()) {
-                    el.setAttribute('data-tooltip', val.trim());
-                }
-                el.removeAttribute('title');
             }
 
             const text = el.getAttribute('data-tooltip') || el.getAttribute('data-title');
@@ -167,6 +174,14 @@ export default function SystemTooltip() {
                 left = viewportWidth - minMargin - tipRect.width;
             }
 
+            if (pos === 'left' || pos === 'right') {
+                if (top < minMargin) {
+                    top = minMargin;
+                } else if (top + tipRect.height > viewportHeight - minMargin) {
+                    top = viewportHeight - minMargin - tipRect.height;
+                }
+            }
+
             if (arrowEl && (pos === 'top' || pos === 'bottom')) {
                 const arrowCenter = (tipRect.width / 2) + arrowOffset;
                 const clampedArrow = Math.max(10, Math.min(tipRect.width - 10, arrowCenter));
@@ -184,16 +199,52 @@ export default function SystemTooltip() {
         }
 
         const handleMouseOver = (e: MouseEvent) => {
-            showTooltipFor(e.target);
+            if (!e.target || !(e.target instanceof HTMLElement)) return;
+
+            // Neutraliza imediatamente qualquer 'title' no elemento ou ancestrais ao passar o cursor
+            const elWithTitle = e.target.closest('[title]') as HTMLElement | null;
+            if (elWithTitle) {
+                sanitizeElement(elWithTitle);
+            }
+
+            if (isIgnored(e.target)) {
+                hideTooltip();
+                return;
+            }
+
+            const el = e.target.closest('[data-tooltip], [data-title]') as HTMLElement | null;
+            if (!el || isIgnored(el)) {
+                if (currentTarget || pendingTarget) {
+                    hideTooltip();
+                }
+                return;
+            }
+
+            // Se já está agendado ou exibindo para o mesmo elemento, mantém o fluxo
+            if (el === pendingTarget || el === currentTarget) {
+                return;
+            }
+
+            hideTooltip();
+            pendingTarget = el;
+            showTimeout = setTimeout(() => {
+                if (pendingTarget && document.body.contains(pendingTarget)) {
+                    showTooltipFor(pendingTarget);
+                }
+                showTimeout = null;
+            }, TOOLTIP_DELAY_MS);
         };
 
         const handleMouseOut = (e: MouseEvent) => {
-            if (currentTarget && (!e.relatedTarget || !(e.relatedTarget instanceof Node) || !currentTarget.contains(e.relatedTarget))) {
+            const targetToCheck = currentTarget || pendingTarget;
+            if (targetToCheck && (!e.relatedTarget || !(e.relatedTarget instanceof Node) || !targetToCheck.contains(e.relatedTarget))) {
                 hideTooltip();
             }
         };
 
-        const handleDismiss = () => hideTooltip();
+        const handleDismiss = () => {
+            hideTooltip();
+        };
 
         document.addEventListener('mouseover', handleMouseOver, { passive: true });
         document.addEventListener('mouseout', handleMouseOut, { passive: true });
@@ -202,6 +253,7 @@ export default function SystemTooltip() {
         window.addEventListener('scroll', handleDismiss, { capture: true, passive: true });
 
         return () => {
+            clearTimer();
             if (observer) observer.disconnect();
             document.removeEventListener('mouseover', handleMouseOver);
             document.removeEventListener('mouseout', handleMouseOut);
