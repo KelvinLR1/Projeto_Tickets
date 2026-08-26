@@ -329,7 +329,7 @@ export default function LoginPage() {
                             ) : (
                                 <>
                                     <ShieldCheck className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                                    AUTENTICAR ACESSO
+                                    <span>AUTENTICAR ACESSO</span>
                                 </>
                             )}
                         </button>

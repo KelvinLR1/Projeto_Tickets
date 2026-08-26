@@ -11447,6 +11447,7 @@ let currentVoiceSession = null;
 let incomingVoiceCallData = null;
 let voiceLocalAudioStream = null;
 let voicePeerConnections = new Map(); // socketId -> RTCPeerConnection
+let pendingIceCandidates = new Map(); // socketId -> Array of RTCIceCandidateInit
 let voiceAudioContext = null;
 let voiceAnalyserNode = null;
 let voiceVadAnimationFrame = null;
@@ -11556,6 +11557,10 @@ async function initVoiceLocalAudio() {
   if (voiceLocalAudioStream) return voiceLocalAudioStream;
 
   try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('O navegador bloqueou o microfone porque a conexão não é HTTPS ou localhost. Acesse chrome://flags/#unsafely-treat-insecure-origin-as-secure');
+    }
+
     voiceLocalAudioStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -11625,8 +11630,14 @@ async function initVoiceLocalAudio() {
 
     return voiceLocalAudioStream;
   } catch (err) {
-    console.warn('Microfone não acessível (entrando no modo ouvinte):', err ? err.message : err);
+    const errorMsg = err && err.message ? err.message : String(err);
+    console.warn('Microfone não acessível (entrando no modo ouvinte):', errorMsg);
     voiceLocalAudioStream = null;
+    
+    // Alerta o usuário na interface para ele saber exatamente o motivo de estar sem microfone
+    if (errorMsg.includes('HTTPS') || errorMsg.includes('Insecure') || errorMsg.includes('getUserMedia') || errorMsg.includes('Permission') || errorMsg.includes('NotAllowedError')) {
+      showInputBarNotification('⚠️ Microfone bloqueado pelo navegador nesta máquina. Veja as instruções para liberar na rede.');
+    }
     return null;
   }
 }
@@ -11921,11 +11932,22 @@ async function createVoicePeerConnection(peerSocketId, isInitiator, peerInfo = n
   const pc = new RTCPeerConnection(rtcConfig);
   voicePeerConnections.set(peerSocketId, pc);
 
-  // Adiciona tracks de áudio local
-  if (voiceLocalAudioStream) {
-    voiceLocalAudioStream.getTracks().forEach(track => {
+  // Adiciona tracks de áudio local se disponíveis
+  let hasLocalTracks = false;
+  if (voiceLocalAudioStream && voiceLocalAudioStream.getAudioTracks().length > 0) {
+    voiceLocalAudioStream.getAudioTracks().forEach(track => {
       pc.addTrack(track, voiceLocalAudioStream);
+      hasLocalTracks = true;
     });
+  }
+
+  // Se não tem track local no momento, adiciona transceiver para garantir recepção bidirecional
+  if (!hasLocalTracks) {
+    try {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+    } catch (e) {
+      console.warn('Erro ao adicionar transceiver de áudio padrão:', e);
+    }
   }
 
   // Envio de ICE Candidates
@@ -11943,20 +11965,50 @@ async function createVoicePeerConnection(peerSocketId, isInitiator, peerInfo = n
 
   // Recebimento de Stream Remoto de Áudio
   pc.ontrack = (event) => {
+    console.log(`[WebRTC Voice] Track remoto de áudio recebido de: ${peerSocketId}`, event);
     let remoteAudio = document.getElementById(`voice-remote-audio-${peerSocketId}`);
     if (!remoteAudio) {
       remoteAudio = document.createElement('audio');
       remoteAudio.id = `voice-remote-audio-${peerSocketId}`;
       remoteAudio.autoplay = true;
       remoteAudio.playsInline = true;
-      const container = document.getElementById('voice-remote-audio-container');
-      if (container) container.appendChild(remoteAudio);
+      remoteAudio.volume = 1.0;
+      remoteAudio.muted = false;
+      const container = document.getElementById('voice-remote-audio-container') || document.body;
+      container.appendChild(remoteAudio);
     }
-    remoteAudio.srcObject = event.streams[0];
-    remoteAudio.play().catch(e => console.warn('Autoplay bloqueado pelo navegador:', e));
+
+    if (event.streams && event.streams[0]) {
+      remoteAudio.srcObject = event.streams[0];
+    } else if (event.track) {
+      remoteAudio.srcObject = new MediaStream([event.track]);
+    }
+
+    const tryPlayAudio = () => {
+      const playPromise = remoteAudio.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          console.log(`[WebRTC Voice] Áudio reproduzindo ativamente para o par ${peerSocketId}`);
+        }).catch(e => {
+          console.warn('[WebRTC Voice] Autoplay bloqueado pelo navegador. Aguardando interação do usuário:', e);
+          const unlockHandler = () => {
+            remoteAudio.play().catch(() => {});
+            document.removeEventListener('click', unlockHandler);
+            document.removeEventListener('keydown', unlockHandler);
+            document.removeEventListener('touchstart', unlockHandler);
+          };
+          document.addEventListener('click', unlockHandler, { once: true });
+          document.addEventListener('keydown', unlockHandler, { once: true });
+          document.addEventListener('touchstart', unlockHandler, { once: true });
+        });
+      }
+    };
+
+    tryPlayAudio();
   };
 
   pc.onconnectionstatechange = () => {
+    console.log(`[WebRTC Voice] Estado de conexão com ${peerSocketId}: ${pc.connectionState}`);
     if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       removeVoicePeer(peerSocketId);
     }
@@ -11989,8 +12041,23 @@ function removeVoicePeer(peerSocketId) {
     try { pc.close(); } catch (e) {}
     voicePeerConnections.delete(peerSocketId);
   }
+  pendingIceCandidates.delete(peerSocketId);
   const audioEl = document.getElementById(`voice-remote-audio-${peerSocketId}`);
   if (audioEl) audioEl.remove();
+}
+
+async function processPendingIceCandidates(peerSocketId, pc) {
+  const pending = pendingIceCandidates.get(peerSocketId);
+  if (pending && pending.length > 0) {
+    for (const cand of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (err) {
+        console.warn('[WebRTC Voice] Erro ao adicionar ICE candidate pendente:', err);
+      }
+    }
+    pendingIceCandidates.delete(peerSocketId);
+  }
 }
 
 // Inicia / Reseta o Timer de Duração da Chamada
@@ -12320,6 +12387,7 @@ function leaveCurrentVoiceCall() {
     try { pc.close(); } catch (e) {}
   });
   voicePeerConnections.clear();
+  pendingIceCandidates.clear();
 
   // Para o microfone local
   if (voiceLocalAudioStream) {
@@ -12409,6 +12477,8 @@ socket.on('voice_signal', async ({ fromSocketId, session_id, signal, fromOperato
       pc = await createVoicePeerConnection(fromSocketId, false, { operatorId: fromOperatorId, operatorName: fromOperatorName });
     }
     await pc.setRemoteDescription(new RTCSessionDescription(signal));
+    await processPendingIceCandidates(fromSocketId, pc);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -12422,14 +12492,20 @@ socket.on('voice_signal', async ({ fromSocketId, session_id, signal, fromOperato
   } else if (signal.type === 'answer') {
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(signal));
+      await processPendingIceCandidates(fromSocketId, pc);
     }
   } else if (signal.candidate) {
-    if (pc) {
+    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
       } catch (err) {
-        console.warn('Erro ao adicionar ICE candidate:', err);
+        console.warn('[WebRTC Voice] Erro ao adicionar ICE candidate:', err);
       }
+    } else {
+      if (!pendingIceCandidates.has(fromSocketId)) {
+        pendingIceCandidates.set(fromSocketId, []);
+      }
+      pendingIceCandidates.get(fromSocketId).push(signal.candidate);
     }
   }
 });

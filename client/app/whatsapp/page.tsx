@@ -291,7 +291,7 @@ export default function WhatsAppPage() {
                                 src={iframeUrl}
                                 className="w-full h-full border-none bg-transparent transition-opacity duration-300 opacity-0"
                                 onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
-                                allow="camera; microphone; clipboard-read; clipboard-write"
+                                allow="camera; microphone; autoplay; clipboard-read; clipboard-write; display-capture"
                                 aria-label={`WhatsApp — ${channel.name}`}
                             />
                         </div>

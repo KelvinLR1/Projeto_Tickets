@@ -2784,12 +2784,12 @@
     </div>
   </div>
 
-  <!-- Container Invisível para Elementos <audio> Remotos do WebRTC -->
-  <div id="voice-remote-audio-container" class="hidden" aria-hidden="true"></div>
+  <!-- Container Invisível para Elementos <audio> Remotos do WebRTC (mantido no DOM para pipeline de áudio) -->
+  <div id="voice-remote-audio-container" style="position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none;" aria-hidden="true"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   
   <!-- Lógica Javascript -->
-  <script src="app.js?v=119.0"></script>
+  <script src="app.js?v=120.0"></script>
 </body>
 </html>

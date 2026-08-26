@@ -41,11 +41,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="pt-BR" translate="no" className={`notranslate ${geistSans.variable} ${geistMono.variable} ${outfit.variable}`} suppressHydrationWarning>
       <head>
+        <meta name="google" content="notranslate" />
         <script src="/config.js" suppressHydrationWarning></script>
       </head>
-      <body>
+      <body className="notranslate" translate="no">
         {/* Hierarquia de Provedores: Tema -> Configurações -> Autenticação -> Notificações -> Timer -> Layout */}
         <ThemeProvider>
           <SystemSettingsProvider>

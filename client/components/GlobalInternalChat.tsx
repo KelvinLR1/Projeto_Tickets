@@ -506,7 +506,7 @@ export default function GlobalInternalChat() {
                         ref={iframeRef}
                         src={iframeUrl}
                         className="w-full h-full border-none bg-slate-950"
-                        allow="microphone; clipboard-read; clipboard-write"
+                        allow="camera; microphone; autoplay; clipboard-read; clipboard-write; display-capture"
                         aria-label="Chat Interno TicketFlow"
                         onLoad={requestVoiceState}
                     />
